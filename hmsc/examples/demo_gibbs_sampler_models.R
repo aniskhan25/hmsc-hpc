@@ -9,7 +9,7 @@ set.seed(RS)
 nParallel = 8
 flagFitR = 1
 
-path = dirname(dirname(rstudioapi::getSourceEditorContext()$path))
+path = getwd()
 
 #### Step 1. Load model ####
 
