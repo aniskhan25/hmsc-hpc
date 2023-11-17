@@ -1,15 +1,30 @@
 import ujson as json
 import pandas as pd
+import rdata
 import pyreadr
 import os
 
 
-def load_model_from_rds(rds_file_path):
+def read_r(fpath):
 
-    long_str = pyreadr.read_r(rds_file_path)
-    hmsc_obj = json.loads(long_str[None][None][0])
-    
-    return hmsc_obj, hmsc_obj.get("hM")
+    def json_constructor(obj, attrs):
+        assert len(obj) == 1
+        return json.loads(obj[0])
+
+    data = rdata.parser.parse_file(fpath)
+    data_dict = rdata.conversion.convert(
+        data,
+        {
+            **rdata.conversion.DEFAULT_CLASS_MAP,
+            "json": json_constructor,
+        }
+        )
+    return data_dict
+
+
+def load_model_from_rds(rds_file_path):
+    init_obj = read_r(rds_file_path)
+    return init_obj, init_obj["hM"]
 
 
 def save_chains_postList_to_rds(postList, postList_file_path, nChains, elapsedTime=-1, flag_save_eta=True):

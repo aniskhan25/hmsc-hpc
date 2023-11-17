@@ -215,7 +215,15 @@ for (r in seq_len(nr)) {
   }
 }
 
-saveRDS(to_json(init_obj), file = init_file_path, compress=TRUE)
+
+# Replace hM object with json representation for export
+hM = init_obj$hM
+init_obj$hM <- to_json(hM)
+
+saveRDS(init_obj, file = init_file_path, compress=TRUE)
+
+# Restore hM object
+init_obj$hM <- hM
 
 #### Step 3. Run R code ####
 
