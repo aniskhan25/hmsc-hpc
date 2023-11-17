@@ -252,11 +252,9 @@ python_cmd = paste("python", sprintf("'%s'",python_file_path),
                    "--transient", transient,
                    "--thin", thin,
                    "--verbose", verbose,
-                   "--input", init_file_name, 
-                   "--output", postList_file_name,
-                   "--path", sprintf("'%s'",path))
+                   "--input", init_file_path,
+                   "--output", postList_file_path)
 print(python_cmd)
-aaa
 #
 # Set RStudio to TF env
 #
