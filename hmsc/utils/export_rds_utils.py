@@ -9,7 +9,7 @@ def read_r(fpath):
 
     def json_constructor(obj, attrs):
         assert len(obj) == 1
-        return json.loads(obj[0])
+        return json.loads(str(obj[0]))
 
     data = rdata.parser.parse_file(fpath)
     data_dict = rdata.conversion.convert(
