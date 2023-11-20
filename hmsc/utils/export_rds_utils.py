@@ -11,11 +11,6 @@ def read_r(fpath):
         assert len(obj) == 1
         return tuple(obj[0])
 
-    def json_constructor(obj, attrs):
-        assert len(obj) == 1
-        return json.loads(str(obj[0]))
-
-
     # Fix a bug in default intseq_constructor
     def compact_intseq_constructor(state):
         import numpy as np
@@ -51,9 +46,8 @@ def read_r(fpath):
         {
             **rdata.conversion.DEFAULT_CLASS_MAP,
             "package_version": version_constructor,
-            "json": json_constructor,
         }
-        )
+    )
     return data_dict
 
 
