@@ -7,6 +7,10 @@ import os
 
 def read_r(fpath):
 
+    def version_constructor(obj, attrs):
+        assert len(obj) == 1
+        return tuple(obj[0])
+
     def json_constructor(obj, attrs):
         assert len(obj) == 1
         return json.loads(str(obj[0]))
@@ -16,6 +20,7 @@ def read_r(fpath):
         data,
         {
             **rdata.conversion.DEFAULT_CLASS_MAP,
+            "package_version": version_constructor,
             "json": json_constructor,
         }
         )

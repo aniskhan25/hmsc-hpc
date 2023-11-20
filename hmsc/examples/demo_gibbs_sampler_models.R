@@ -216,13 +216,24 @@ for (r in seq_len(nr)) {
 }
 
 
-# Replace hM object with json representation for export
-hM = init_obj$hM
-init_obj$hM <- to_json(hM)
+# Replace the Hmsc object with a similar list containing the relevant data only
+hM <- init_obj$hM
+hM_list <- list()
+for (key in names(hM)) {
+    value <- hM[[key]]
+    if (is.numeric(value)
+        || is.matrix(value)
+        || is.data.frame(value)
+        || is.list(value)
+        ) {
+        hM_list[[key]] <- value
+    }
+}
+init_obj$hM <- hM_list
 
 saveRDS(init_obj, file = init_file_path, compress=TRUE)
 
-# Restore hM object
+# Restore Hmsc object
 init_obj$hM <- hM
 
 #### Step 3. Run R code ####
