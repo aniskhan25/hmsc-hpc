@@ -15,7 +15,37 @@ def read_r(fpath):
         assert len(obj) == 1
         return json.loads(str(obj[0]))
 
-    data = rdata.parser.parse_file(fpath)
+
+    # Fix a bug in default intseq_constructor
+    def compact_intseq_constructor(state):
+        import numpy as np
+
+        info = rdata.parser.RObjectInfo(
+            type=rdata.parser.RObjectType.INT,
+            object=False,
+            attributes=False,
+            tag=False,
+            gp=0,
+            reference=0,
+        )
+        n = int(state.value[0])
+        start = int(state.value[1])
+        step = int(state.value[2])
+        stop = start + (n - 1) * step
+        value = np.array(range(start, stop + 1, step))
+        return info, value
+
+    altrep_constructor_dict = {**rdata.parser.DEFAULT_ALTREP_MAP}
+    altrep_constructor_dict[b"compact_intseq"] = compact_intseq_constructor
+    altrep_constructor_dict[b"compact_realseq"] = lambda state: 1/0  # realseq is also buggy
+
+    data = rdata.parser.parse_file(
+        fpath,
+        altrep_constructor_dict=altrep_constructor_dict,
+    )
+    # End of bug fix
+    # data = rdata.parser.parse_file(fpath)
+
     data_dict = rdata.conversion.convert(
         data,
         {
