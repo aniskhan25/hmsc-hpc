@@ -9,7 +9,7 @@ set.seed(RS)
 nParallel = 8
 flagFitR = 1
 
-path = dirname(dirname(rstudioapi::getSourceEditorContext()$path))
+path = getwd()
 
 #### Step 1. Load model ####
 
@@ -215,7 +215,26 @@ for (r in seq_len(nr)) {
   }
 }
 
-saveRDS(to_json(init_obj), file = init_file_path, compress=TRUE)
+
+# Replace the Hmsc object with a similar list containing the relevant data only
+hM <- init_obj$hM
+hM_list <- list()
+for (key in names(hM)) {
+    value <- hM[[key]]
+    if (is.numeric(value)
+        || is.matrix(value)
+        || is.data.frame(value)
+        || is.list(value)
+        ) {
+        hM_list[[key]] <- value
+    }
+}
+init_obj$hM <- hM_list
+
+saveRDS(init_obj, file = init_file_path, compress=TRUE)
+
+# Restore Hmsc object
+init_obj$hM <- hM
 
 #### Step 3. Run R code ####
 
@@ -244,11 +263,9 @@ python_cmd = paste("python", sprintf("'%s'",python_file_path),
                    "--transient", transient,
                    "--thin", thin,
                    "--verbose", verbose,
-                   "--input", init_file_name, 
-                   "--output", postList_file_name,
-                   "--path", sprintf("'%s'",path))
+                   "--input", init_file_path,
+                   "--output", postList_file_path)
 print(python_cmd)
-aaa
 #
 # Set RStudio to TF env
 #

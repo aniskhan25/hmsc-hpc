@@ -1,15 +1,59 @@
 import ujson as json
 import pandas as pd
+import rdata
 import pyreadr
 import os
 
 
-def load_model_from_rds(rds_file_path):
+def read_r(fpath):
 
-    long_str = pyreadr.read_r(rds_file_path)
-    hmsc_obj = json.loads(long_str[None][None][0])
-    
-    return hmsc_obj, hmsc_obj.get("hM")
+    def version_constructor(obj, attrs):
+        assert len(obj) == 1
+        return tuple(obj[0])
+
+    # Fix a bug in default intseq_constructor
+    def compact_intseq_constructor(state):
+        import numpy as np
+
+        info = rdata.parser.RObjectInfo(
+            type=rdata.parser.RObjectType.INT,
+            object=False,
+            attributes=False,
+            tag=False,
+            gp=0,
+            reference=0,
+        )
+        n = int(state.value[0])
+        start = int(state.value[1])
+        step = int(state.value[2])
+        stop = start + (n - 1) * step
+        value = np.array(range(start, stop + 1, step))
+        return info, value
+
+    altrep_constructor_dict = {**rdata.parser.DEFAULT_ALTREP_MAP}
+    altrep_constructor_dict[b"compact_intseq"] = compact_intseq_constructor
+    altrep_constructor_dict[b"compact_realseq"] = lambda state: 1/0  # realseq is also buggy
+
+    data = rdata.parser.parse_file(
+        fpath,
+        altrep_constructor_dict=altrep_constructor_dict,
+    )
+    # End of bug fix
+    # data = rdata.parser.parse_file(fpath)
+
+    data_dict = rdata.conversion.convert(
+        data,
+        {
+            **rdata.conversion.DEFAULT_CLASS_MAP,
+            "package_version": version_constructor,
+        }
+    )
+    return data_dict
+
+
+def load_model_from_rds(rds_file_path):
+    init_obj = read_r(rds_file_path)
+    return init_obj, init_obj["hM"]
 
 
 def save_chains_postList_to_rds(postList, postList_file_path, nChains, elapsedTime=-1, flag_save_eta=True):
