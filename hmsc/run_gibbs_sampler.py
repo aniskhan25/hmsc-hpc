@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 from hmsc.gibbs_sampler import GibbsSampler
-from hmsc.utils.export_rds_utils import (
+from hmsc.utils.rds import (
     load_model_from_rds,
     save_chains_postList_to_rds,
 )

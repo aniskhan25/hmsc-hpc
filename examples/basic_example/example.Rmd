@@ -98,7 +98,6 @@ Next, we load the required packages. We also set up the path to the working dire
 
 ```{r}
 library(Hmsc)
-library(jsonify)
 ```
 
 Next, we introduce the fundamental model fitting parameters determining the MCMC sampling: number of samples to obtain per MCMC chain, thinning and number of chains. We also define the regularity of progress printing during MCMC sampling. We set the transient phase being equally long as the sampling phase.
@@ -144,14 +143,14 @@ plotVariancePartitioning(fitR, computeVariancePartitioning(fitR),
 
 # Exporting model for Hmsc-HPC
 
-In order to use Hmsc-HPC, we need to export the model object, created by `Hmsc(...)` call. Also, the current design of `Hmsc-R` and `Hmsc-HPC` interplay requires that the model initialization, which happens just before the MCMC chains are run, is conducted in R. Thus, we use special keyword in the call `sampleMcmc(..., engine="HPC")`, which denotes that we are not interested in sampling the model, but only to initialize the sampling. We save the resulted object in obligatory JSON+RDS format to the working directory.
+In order to use Hmsc-HPC, we need to export the model object, created by `Hmsc(...)` call. Also, the current design of `Hmsc-R` and `Hmsc-HPC` interplay requires that the model initialization, which happens just before the MCMC chains are run, is conducted in R. Thus, we use special keyword in the call `sampleMcmc(..., engine="HPC")`, which denotes that we are not interested in sampling the model, but only to initialize the sampling. We save the resulted object in obligatory RDS format to the working directory.
 
 ```{r}
 init_obj = sampleMcmc(m, samples=nSamples, thin=thin,
 											transient=transient, nChains=nChains,
 											verbose=verbose, engine="HPC")
 init_file_path = file.path(getwd(), "init_file.rds")
-saveRDS(to_json(init_obj), file=init_file_path)
+saveRDS(init_obj, file=init_file_path)
 ```
 
 # Hmsc-HPC for sequential execution of chains
@@ -185,9 +184,9 @@ system2(python, python_cmd_args)
 Once the Python call has conducted, the following step is to import the calculated posterior samples back to R. We start by reading the output of `Hmsc-HPC`, which is a stacked list of fitted chains and time elapsed for model fitting.
 
 ```{r}
-importFromHPC = from_json(readRDS(file = post_file_path)[[1]])
-postList = importFromHPC[1:nChains]
-cat(sprintf("fitting time %.1f sec\n", importFromHPC[[nChains+1]]))
+importFromHPC = readRDS(file = post_file_path)
+postList = importFromHPC[["list"]]
+cat(sprintf("fitting time %.1f sec\n", importFromHPC["time"]))
 ```
 
 A fitted Hmsc-R model differs from its unfitted counterpart in two aspects. First, it contains information on the sampling being done. Next, it accommodates the list of fitted MCMC, each of which is a list of posterior samples for that chain. Both adjustments are made with a novel function of the `Hmsc` package, called `importPosteriorFromHPC(...)` that takes the unfitted model, imported list of chains produced by Hmsc-HPC and the core MCMC settings that were used for the fitting.
@@ -239,7 +238,7 @@ Therefore, once all Python calls have conducted, the following step is to import
 chainList = vector("list", nChains)
 for(cInd in 1:nChains){
 	chain_file_path = file.path(getwd(), sprintf("post_chain%.2d_file.rds", cInd-1))
-	chainList[[cInd]] = from_json(readRDS(file = chain_file_path)[[1]])[[1]]
+	chainList[[cInd]] = readRDS(file = chain_file_path)[["list"]][[1]]
 }
 ```
 

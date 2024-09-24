@@ -166,7 +166,7 @@ def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
                 iWList_csr = [None] * gN
                 RiWList = [None] * gN
                 detW = np.zeros([gN], dtype)
-                indMat = np.concatenate([ind for ind in indList if len(ind) > 0], 1).T.astype(int) - 1
+                indMat = np.concatenate([ind for ind in indList if (ind is not None and len(ind) > 0)], 1).T.astype(int) - 1
                 for ag in range(gN):
                   alpha = rLPar["alphapw"][ag,0]
                   if alpha == 0:
@@ -177,7 +177,7 @@ def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
                     D[0] = 1
                     valList = [[]] * npVec[r]
                     for i in range(1,npVec[r]):
-                      if len(indList[i]) > 1:
+                      if indList[i] is not None and len(indList[i]) > 1:
                         Kp = np.exp(-np.array(distList[i]).astype(dtype)/alpha)
                         valList[i] = np.linalg.solve(Kp[:-1,:-1], Kp[:-1,-1])
                         D[i] = Kp[-1,-1] - np.matmul(Kp[:-1,-1], valList[i])
