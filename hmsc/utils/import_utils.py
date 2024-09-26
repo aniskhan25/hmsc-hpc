@@ -102,6 +102,80 @@ def load_model_hyperparams(hmscModel, dataParList, dtype=np.float64):
     return dataParams
 
 
+def eye_like(tensor):
+    return tf.eye(*tensor.shape[-2:], batch_shape=tensor.shape[:-2], dtype=tensor.dtype)
+
+
+def calculate_W(dist, alpha):
+    assert dist.ndim == 2
+    assert tf.size(alpha) == 1
+    if alpha == 0.0:
+        one = tf.constant(1, dtype=dist.dtype)
+        zero = tf.constant(0, dtype=dist.dtype)
+        return tf.where(tfm.logical_or(dist == 0, tfm.is_nan(dist)), one, zero)
+    return tf.exp(-dist / alpha)
+
+
+def set_slice(variable, i, tensor):
+    variable.scatter_update(tf.IndexedSlices(tensor[tf.newaxis], tf.constant([i], dtype=tf.int64)))
+
+
+def calculate_GPP(d12, d22, alpha):
+    assert d12.ndim == 2
+    assert d22.ndim == 2
+    assert alpha.ndim == 1
+    assert d12.dtype == d22.dtype
+    dtype = d12.dtype
+    idD_g   = tf.Variable(tf.zeros(shape=[alpha.shape[0], d12.shape[0]], dtype=dtype))
+    iDW12_g = tf.Variable(tf.zeros(shape=[alpha.shape[0], *d12.shape], dtype=dtype))
+    F_g     = tf.Variable(tf.zeros(shape=[alpha.shape[0], *d22.shape], dtype=dtype))
+    iF_g    = tf.Variable(tf.zeros(shape=[alpha.shape[0], *d22.shape], dtype=dtype))
+    detD_g  = tf.Variable(tf.zeros(shape=[alpha.shape[0]], dtype=dtype))
+    for i, a in enumerate(alpha):
+        W22 = calculate_W(d22, a)
+        LW22 = tfla.cholesky(W22)
+        detD = -2*tf.reduce_sum(tfm.log(tfla.diag_part(LW22)), -1)
+        iW22 = tfla.cholesky_solve(LW22, eye_like(LW22))
+        del LW22
+
+        W12 = calculate_W(d12, a)
+        W12iW22 = tf.matmul(W12, iW22)
+        del iW22
+
+        dD = 1 - tf.einsum("ih,ih->i", W12iW22, W12)
+        del W12iW22
+        detD += tf.reduce_sum(tfm.log(dD), -1)
+        idD = dD**-1
+        del dD
+        set_slice(idD_g, i, idD)
+
+        iDW12 = tf.einsum("i,ik->ik", idD, W12)
+        set_slice(iDW12_g, i, iDW12)
+
+        F = W22 + tf.einsum("ik,ih->kh", iDW12, W12)
+        del W12
+        del W22
+        set_slice(F_g, i, F)
+
+        LF = tfla.cholesky(F)
+        detD += 2*tf.reduce_sum(tfm.log(tfla.diag_part(LF)), -1)
+        set_slice(detD_g, i, detD)
+        del detD
+
+        iF = tfla.cholesky_solve(LF, eye_like(LF))
+        del LF
+        set_slice(iF_g, i, iF)
+        del iF
+
+    iDW12_g = iDW12_g.read_value_no_copy()
+    idD_g = idD_g.read_value_no_copy()
+    F_g = F_g.read_value_no_copy()
+    iF_g = iF_g.read_value_no_copy()
+    detD_g = detD_g.read_value_no_copy()
+
+    return idD_g, iDW12_g, F_g, iF_g, detD_g
+
+
 def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
 
     nr = int(np.squeeze(hmscModel.get("nr")))
@@ -136,29 +210,20 @@ def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
 
             elif rLPar["spatialMethod"] == "GPP":
                 nK = int(dataParList["rLPar"][r]["nKnots"][0])
-                d12 = np.reshape(dataParList["rLPar"][r]["distMat12"], [npVec[r], nK]).astype(dtype)
-                d22 = np.reshape(dataParList["rLPar"][r]["distMat22"], [nK, nK]).astype(dtype)
-                W12 = d12 / rLPar["alphapw"][:,0,None,None]
-                W12[np.isnan(W12)] = 0
-                W12 = tf.exp(-W12)
-                W22 = d22 / rLPar["alphapw"][:,0,None,None]
-                W22[np.isnan(W22)] = 0
-                W22 = tf.exp(-W22)
-                LW22 = tfla.cholesky(W22)
-                iW22 = tfla.cholesky_solve(LW22, tf.eye(nK, nK, [gN], dtype))
-                dD = 1 - tf.einsum("gik,gkh,gih->gi", W12, iW22, W12)
-                idD = dD**-1
-                F = W22 + tf.einsum("gik,gi,gih->gkh", W12, idD, W12)
-                LF = tfla.cholesky(F)
-                iDW12 = tf.einsum("gi,gik->gik", idD, W12)
-                detD = tf.reduce_sum(tfm.log(dD), -1) - 2*tf.reduce_sum(tfm.log(tfla.diag_part(LW22)), -1) + \
-                  2*tf.reduce_sum(tfm.log(tfla.diag_part(LF)), -1)
-                
+                alpha = tf.convert_to_tensor(rLPar["alphapw"][:, 0], dtype=dtype)
+                d12 = tf.convert_to_tensor(dataParList["rLPar"][r]["distMat12"], dtype=dtype)
+                d22 = tf.convert_to_tensor(dataParList["rLPar"][r]["distMat22"], dtype=dtype)
+
+                assert d12.shape == (npVec[r], nK)
+                assert d22.shape == (nK, nK)
+
+                idD, iDW12, F, iF, detD = calculate_GPP(d12, d22, alpha)
+
                 rLPar["nK"] = nK
                 rLPar["idDg"] = idD
                 rLPar["idDW12g"] = iDW12
                 rLPar["Fg"] = F
-                rLPar["iFg"] = tfla.cholesky_solve(tf.cast(tfla.cholesky(F), dtype=dtype), tf.eye(nK, nK, [gN], dtype))
+                rLPar["iFg"] = iF
                 rLPar["detDg"] = detD
                 
             elif rLPar["spatialMethod"] == "NNGP":
