@@ -1,0 +1,6 @@
+response: Y_poisson.csv
+covariates: X.csv
+formula:
+  X: "~ forest_cover + elevation"
+distribution: poisson
+chains: 2

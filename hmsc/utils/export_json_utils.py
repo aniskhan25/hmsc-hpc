@@ -1,6 +1,5 @@
 import ujson as json
 import pandas as pd
-import pyreadr
 import os
 
 
@@ -13,6 +12,10 @@ def load_model_from_json(json_file_path):
 
 
 def load_model_from_rds(rds_file_path):
+    try:
+        import pyreadr
+    except ImportError as exc:
+        raise RuntimeError("Install pyreadr to read RDS compatibility inputs") from exc
 
     long_str = pyreadr.read_r(rds_file_path)
     hmsc_obj = json.loads(long_str[None][None][0])
@@ -96,6 +99,10 @@ def save_chains_postList_to_json(postList, postList_file_path, nChains):
 
 
 def save_chains_postList_to_rds(postList, postList_file_path, nChains):
+    try:
+        import pyreadr
+    except ImportError as exc:
+        raise RuntimeError("Install pyreadr to write RDS compatibility outputs") from exc
 
     json_data = {chain: {} for chain in range(nChains)}
 

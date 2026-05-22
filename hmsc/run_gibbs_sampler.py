@@ -9,6 +9,9 @@ from hmsc.utils.export_rds_utils import (
     load_model_from_rds,
     save_chains_postList_to_rds,
 )
+from hmsc.utils.export_json_utils import save_chains_postList_to_json
+from hmsc.utils.export_hdf5_utils import save_chains_postList_to_hdf5
+from hmsc.utils.export_native_utils import load_native_params
 from hmsc.utils.import_utils import (
     load_model_dims,
     load_model_data,
@@ -21,6 +24,8 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 
 def load_params(file_path, dtype=np.float64):
+    if os.path.splitext(file_path)[1].lower() == ".json":
+        return load_native_params(file_path, dtype)
     hmscImport, hmscModel = load_model_from_rds(file_path)
     modelDims = load_model_dims(hmscModel)
     modelData = load_model_data(hmscModel, hmscImport.get("initParList"), dtype)
@@ -49,7 +54,6 @@ def run_gibbs_sampler(
     flag_update_beta_eta=True,
     truncated_normal_library="tf",
     flag_save_eta=True,
-    flag_save_postList_to_rds=True,
     flag_profile=False,
     dtype=np.float64,
 ):
@@ -147,7 +151,12 @@ def run_gibbs_sampler(
         elapsedTime = time.time() - startTime
         print("\n", "Whole Gibbs sampler elapsed %.1f" % elapsedTime)
     
-    if flag_save_postList_to_rds:
+    output_suffix = os.path.splitext(postList_file_path)[1].lower()
+    if output_suffix == ".json":
+        save_chains_postList_to_json(postList, postList_file_path, len(chainIndList))
+    elif output_suffix in {".h5", ".hdf5"}:
+        save_chains_postList_to_hdf5(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
+    else:
         save_chains_postList_to_rds(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
 
 
@@ -287,7 +296,6 @@ if __name__ == "__main__":
         flag_update_beta_eta=bool(args.updbe),
         truncated_normal_library=args.tnlib,
         flag_save_eta=bool(args.fse),
-        flag_save_postList_to_rds=True,
         flag_profile=bool(args.profile),
         dtype=dtype,
     )

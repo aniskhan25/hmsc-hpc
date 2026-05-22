@@ -1,0 +1,71 @@
+import numpy as np
+import pandas as pd
+import pytest
+
+from pyhmsc import HmscModel
+
+
+@pytest.mark.parametrize(
+    ("distr", "Y"),
+    [
+        (
+            "normal",
+            pd.DataFrame({"sp1": [1.2, 1.5, -0.2], "sp2": [0.2, 0.3, 1.1]}),
+        ),
+        (
+            "poisson",
+            pd.DataFrame({"sp1": [1, 2, 0], "sp2": [0, 1, 3]}),
+        ),
+        (
+            "probit",
+            pd.DataFrame({"sp1": [1, 1, 0], "sp2": [0, 1, 1]}),
+        ),
+    ],
+)
+def test_python_native_sampler_smoke(tmp_path, distr, Y):
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0]})
+    model = HmscModel(Y=Y, X=X, x_formula="~ x", distr=distr)
+
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / distr,
+    )
+
+    beta = fit.beta_mean()
+    assert beta.shape == (2, 2)
+    assert list(beta.index) == ["Intercept", "x"]
+    assert np.isfinite(beta.to_numpy()).all()
+    assert fit.output_file.exists()
+    assert fit.output_file.suffix == ".h5"
+
+
+def test_python_native_iid_random_intercept_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0], "sp2": [0, 1, 3]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0]})
+    study_design = pd.DataFrame({"plot": ["a", "b", "a"]})
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={"plot": {"column": "plot", "type": "iid"}},
+    )
+
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "iid",
+    )
+
+    assert fit.beta_mean().shape == (2, 2)
+    assert np.isfinite(fit.beta_mean().to_numpy()).all()

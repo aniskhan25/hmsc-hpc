@@ -9,10 +9,16 @@ setup(
     install_requires=[
         'numpy',
         'pandas',
-        'pyreadr',
+        'patsy',
+        'h5py',
+        'PyYAML',
         'scipy',
         'tensorflow',
         'tensorflow-probability[tf]',
         'ujson',
-    ]
+    ],
+    extras_require={
+        'rds': ['pyreadr'],
+        'diagnostics': ['arviz'],
+    },
 )
