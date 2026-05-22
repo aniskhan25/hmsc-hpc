@@ -23,6 +23,7 @@ def test_compile_writes_json_and_hdf5(tmp_path):
         "n_sites": 2,
         "n_species": 2,
         "n_covariates": 2,
+        "n_traits": 1,
         "n_chains": 2,
     }
     assert metadata["arrays"]["Y"] == "init_arrays.h5:/Y"

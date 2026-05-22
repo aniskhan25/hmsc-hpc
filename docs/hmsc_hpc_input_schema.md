@@ -172,18 +172,36 @@ Example `init.json`:
 }
 ```
 
-The current Python-native sampler loader supports this format for fixed-effect
-models with no traits, random levels, phylogeny, or spatial effects. It maps the
-compiled artifact into the existing sampler internals:
+The current Python-native sampler loader supports fixed effects plus initial
+support for traits, phylogenetic covariance matrices, iid random intercepts, and
+full spatial random intercepts. It maps the compiled artifact into the existing
+sampler internals:
 
 | Compiled field | Internal sampler object |
 | --- | --- |
 | `dimensions` | `modelDims` |
 | `Y`, `X` | `modelData["Y"]`, `modelData["X"]`, `initParList[*]["Xeff"]` |
 | `distribution` | `modelData["distr"]` integer matrix |
+| `T` | `modelData["T"]` trait design matrix |
+| `C` | `modelData["C"]`, `modelData["eC"]`, `modelData["VC"]` |
+| `Pi`, random-level init arrays | `modelData["Pi"]`, `rLHyperparams`, `initParList[*]["Eta"]`, `Lambda`, `Psi`, `Delta`, `AlphaInd` |
 | `Beta_init` | `initParList[*]["Beta"]` |
 | `priors.Beta` | default `Gamma`, `V`, and sigma prior hyperparameters |
 
 This is a functional fixed-effect Python-native path. Scientific validation
 should be done with pure-Python simulation recovery and posterior predictive
 tests so routine development does not depend on R.
+
+Supported native feature scope:
+
+- Traits: user-provided species trait table plus `trait_formula`
+- Phylogeny: user-provided species covariance matrix
+- Random effects: iid random intercepts
+- Spatial effects: full spatial random intercepts from per-level coordinates
+
+Not yet supported:
+
+- Newick tree parsing
+- GPP/NNGP spatial approximations
+- Random slopes
+- Trait/phylogeny/spatial model diagnostics beyond core posterior samples

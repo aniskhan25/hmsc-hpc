@@ -1,0 +1,9 @@
+response: Y_poisson.csv
+covariates: X.csv
+formula:
+  X: "~ forest_cover + elevation"
+distribution: poisson
+traits: traits.csv
+trait_formula: "~ body_size + forest_specialist"
+phylo_cov: phylo_cov.csv
+chains: 2

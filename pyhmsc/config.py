@@ -44,9 +44,12 @@ def model_from_config(path: str | Path) -> tuple[HmscModel, dict[str, Any]]:
         X=read_table(base / config["covariates"]),
         x_formula=formula,
         distr=config["distribution"],
+        traits=read_table(base / config["traits"]) if config.get("traits") else None,
+        trait_formula=config.get("trait_formula"),
         study_design=read_table(base / config["study_design"])
         if config.get("study_design")
         else None,
         random_levels=config.get("random_levels"),
+        phylo_cov=read_table(base / config["phylo_cov"]) if config.get("phylo_cov") else None,
     )
     return model, config

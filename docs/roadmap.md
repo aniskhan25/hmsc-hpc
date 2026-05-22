@@ -33,7 +33,7 @@ This milestone still requires R plus the R packages `Hmsc` and `jsonify`.
 
 ## Later milestones
 
-- iid random intercepts by study-design group
-- trait design matrices and trait-related posterior summaries
-- phylogenetic covariance matrix support
-- spatial random effects after the simpler model classes are stable
+- Newick tree parsing for phylogeny
+- GPP and NNGP spatial random levels
+- Random slopes
+- Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples

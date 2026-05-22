@@ -31,6 +31,9 @@ def compile_hmsc_model(
     beta_prior_variance: float = 100.0,
     study_design: Any | None = None,
     random_levels: dict[str, Any] | None = None,
+    traits: Any | None = None,
+    trait_formula: str | None = None,
+    phylo_cov: Any | None = None,
 ) -> CompiledModel:
     """Compile the fixed-effect Phase 2 target format.
 
@@ -46,12 +49,17 @@ def compile_hmsc_model(
 
     formula = normalize_formula(formula)
     X_design = build_design_matrix(formula, X_frame)
+    T_design = _compile_traits(traits, trait_formula, Y_frame)
+    C = _compile_phylo_cov(phylo_cov, Y_frame)
     beta_init = np.zeros((chains, X_design.shape[1], Y_frame.shape[1]), dtype=float)
     arrays = {
         "Y": Y_frame.to_numpy(dtype=float),
         "X": X_design.to_numpy(dtype=float),
         "Beta_init": beta_init,
+        "T": T_design.to_numpy(dtype=float),
     }
+    if C is not None:
+        arrays["C"] = C
     random_meta, random_arrays = _compile_random_levels(
         study_design=study_design,
         random_levels=random_levels,
@@ -70,12 +78,14 @@ def compile_hmsc_model(
             "n_sites": int(Y_frame.shape[0]),
             "n_species": int(Y_frame.shape[1]),
             "n_covariates": int(X_design.shape[1]),
+            "n_traits": int(T_design.shape[1]),
             "n_chains": int(chains),
         },
         "names": {
             "sites": [str(value) for value in Y_frame.index],
             "species": [str(value) for value in Y_frame.columns],
             "covariates": [str(value) for value in X_design.columns],
+            "traits": [str(value) for value in T_design.columns],
         },
         "priors": {
             "Beta": {
@@ -86,9 +96,9 @@ def compile_hmsc_model(
         "capabilities": {
             "fixed_effects": True,
             "random_levels": bool(random_meta),
-            "traits": False,
-            "phylogeny": False,
-            "spatial": False,
+            "traits": traits is not None,
+            "phylogeny": C is not None,
+            "spatial": any(level.get("spatial", False) for level in random_meta),
         },
         "random_levels": random_meta,
     }
@@ -125,8 +135,9 @@ def _compile_random_levels(
     meta = []
     arrays: dict[str, np.ndarray] = {}
     for idx, (name, spec) in enumerate(random_levels.items()):
-        if spec.get("type", "iid") != "iid":
-            raise NotImplementedError("Only iid random intercepts are currently supported")
+        level_type = spec.get("type", "iid")
+        if level_type not in {"iid", "spatial_full"}:
+            raise NotImplementedError("Only iid and spatial_full random intercepts are currently supported")
         column = spec.get("column", name)
         if column not in design:
             raise ValueError(f"study_design is missing random level column {column!r}")
@@ -140,11 +151,10 @@ def _compile_random_levels(
         arrays[f"{prefix}_Psi_init"] = np.ones((chains, nf, n_species), dtype=float)
         arrays[f"{prefix}_Delta_init"] = np.ones((chains, nf, 1), dtype=float)
         arrays[f"{prefix}_Alpha_init"] = np.ones((chains, nf), dtype=int)
-        meta.append(
-            {
+        level_meta = {
                 "name": name,
                 "column": column,
-                "type": "iid",
+                "type": level_type,
                 "n_levels": n_levels,
                 "levels": [str(level) for level in levels],
                 "nf": nf,
@@ -156,7 +166,51 @@ def _compile_random_levels(
                 "b2": float(spec.get("b2", 1.0)),
                 "nfMin": int(spec.get("nfMin", nf)),
                 "nfMax": int(spec.get("nfMax", max(nf, 4))),
+                "spatial": level_type == "spatial_full",
             }
-        )
+        if level_type == "spatial_full":
+            coord_cols = spec.get("coords", ["x", "y"])
+            if len(coord_cols) != 2 or any(col not in design for col in coord_cols):
+                raise ValueError("spatial_full random levels require coordinate columns via coords")
+            coords = (
+                design.assign(__code=codes)
+                .groupby("__code", sort=True)[coord_cols]
+                .mean()
+                .to_numpy(dtype=float)
+            )
+            dist = _pairwise_distances(coords)
+            arrays[f"{prefix}_distMat"] = dist
+            scale = float(spec.get("alpha", np.median(dist[dist > 0]) if np.any(dist > 0) else 1.0))
+            level_meta["alphapw"] = [[scale, 1.0]]
+        meta.append(level_meta)
     arrays["Pi"] = np.column_stack(pi_columns).astype(int)
     return meta, arrays
+
+
+def _compile_traits(traits: Any | None, trait_formula: str | None, Y: pd.DataFrame) -> pd.DataFrame:
+    if traits is None:
+        return pd.DataFrame({"Intercept": np.ones(Y.shape[1])}, index=Y.columns)
+    trait_frame = _as_frame(traits, "traits")
+    missing = [species for species in Y.columns if species not in trait_frame.index]
+    if missing:
+        raise ValueError(f"traits missing species rows: {missing}")
+    trait_frame = trait_frame.loc[Y.columns]
+    return build_design_matrix(trait_formula or "~ .", trait_frame)
+
+
+def _compile_phylo_cov(phylo_cov: Any | None, Y: pd.DataFrame) -> np.ndarray | None:
+    if phylo_cov is None:
+        return None
+    cov = _as_frame(phylo_cov, "phylo_cov")
+    missing = [species for species in Y.columns if species not in cov.index or species not in cov.columns]
+    if missing:
+        raise ValueError(f"phylo_cov missing species rows/columns: {missing}")
+    cov = cov.loc[Y.columns, Y.columns].to_numpy(dtype=float)
+    if cov.shape[0] != cov.shape[1]:
+        raise ValueError("phylo_cov must be square")
+    return cov
+
+
+def _pairwise_distances(coords: np.ndarray) -> np.ndarray:
+    delta = coords[:, None, :] - coords[None, :, :]
+    return np.sqrt(np.sum(delta * delta, axis=-1))

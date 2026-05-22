@@ -32,6 +32,7 @@ class HmscModel:
         trait_formula: str | None = None,
         study_design: Any | None = None,
         random_levels: dict[str, Any] | None = None,
+        phylo_cov: Any | None = None,
     ) -> None:
         self.Y = self._as_frame(Y, "Y")
         self.X = self._as_frame(X, "X")
@@ -45,6 +46,7 @@ class HmscModel:
             None if study_design is None else self._as_frame(study_design, "study_design")
         )
         self.random_levels = random_levels
+        self.phylo_cov = None if phylo_cov is None else self._as_frame(phylo_cov, "phylo_cov")
         self.species_names = list(self.Y.columns)
         self.covariate_names = covariate_names_from_formula(self.x_formula, self.X)
 
@@ -67,10 +69,6 @@ class HmscModel:
         """Compile raw model data to the Python-native JSON+HDF5 artifact."""
         if init != "python-native":
             raise ValueError("compile currently supports init='python-native' only")
-        if self.traits is not None:
-            raise NotImplementedError(
-                "Python-native compilation does not support traits yet"
-            )
         return compile_hmsc_model(
             Y=self.Y,
             X=self.X,
@@ -80,6 +78,9 @@ class HmscModel:
             output=output,
             study_design=self.study_design,
             random_levels=self.random_levels,
+            traits=self.traits,
+            trait_formula=self.trait_formula,
+            phylo_cov=self.phylo_cov,
         )
 
     def sample(
@@ -104,9 +105,6 @@ class HmscModel:
             raise ValueError("init must be 'r-bridge' or 'python-native'")
         if samples <= 0 or thin <= 0 or chains <= 0 or transient < 0:
             raise ValueError("samples, thin, and chains must be positive; transient must be >= 0")
-        if self.traits is not None:
-            raise NotImplementedError("Traits are not supported yet")
-
         if workdir is not None:
             run_dir = Path(workdir)
             run_dir.mkdir(parents=True, exist_ok=True)

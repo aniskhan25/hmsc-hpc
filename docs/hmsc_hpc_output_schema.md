@@ -31,6 +31,7 @@ Each chain object is keyed by sample index (`0`, `1`, ...). Each sample contains
 | `PsiRRR` | matrix or `null` | RRR shrinkage draw |
 | `DeltaRRR` | vector/matrix or `null` | RRR shrinkage draw |
 
-`pyhmsc.HmscFit` currently consumes `Beta` for fixed-effect summaries and
-predictions. The remaining fields are preserved in `fit.posterior` for later
-diagnostics and feature expansion.
+`pyhmsc.HmscFit` consumes `Beta` for summaries and predictions. HDF5 posterior
+output stores dense core arrays such as `Beta`, `Gamma`, `iV`, `rhoInd`, and
+`sigma`; JSON/RDS compatibility output preserves the larger nested chain/sample
+structure.
