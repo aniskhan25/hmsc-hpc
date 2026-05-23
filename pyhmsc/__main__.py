@@ -44,6 +44,8 @@ def main() -> None:
     predict_parser.add_argument("--X", required=True)
     predict_parser.add_argument("--formula", required=True)
     predict_parser.add_argument("--distribution", default="poisson")
+    predict_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
+    predict_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
     predict_parser.add_argument("--output")
 
     diagnostics_parser = subparsers.add_parser("diagnostics", help="compute basic diagnostics")
@@ -99,7 +101,7 @@ def main() -> None:
             args.posterior,
             model=HmscModel(Y=dummy_y, X=X, x_formula=args.formula, distr=args.distribution),
         )
-        pred = fit.predict(X)
+        pred = fit.predict(X, random_effects=args.random_effects, unseen_groups=args.unseen_groups)
         if args.output:
             pred.to_csv(args.output)
         else:

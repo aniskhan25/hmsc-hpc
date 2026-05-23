@@ -20,6 +20,7 @@ setup(
     extras_require={
         'parquet': ['pyarrow'],
         'zarr': ['zarr'],
+        'phylo': ['biopython'],
         'rds': ['pyreadr'],
         'diagnostics': ['arviz'],
     },

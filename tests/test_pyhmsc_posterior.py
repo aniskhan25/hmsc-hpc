@@ -60,3 +60,13 @@ def test_known_random_effect_prediction_from_hdf5(tmp_path):
     fit = HmscFit.from_file(path, model=model)
     pred = fit.predict(pd.DataFrame({"x": [0.0, 1.0], "plot": ["a", "b"]}), random_effects="known")
     np.testing.assert_allclose(pred.to_numpy(), [[0.2], [0.5]])
+
+    zero = fit.predict(
+        pd.DataFrame({"x": [0.0], "plot": ["new"]}),
+        random_effects="known",
+        unseen_groups="zero",
+    )
+    np.testing.assert_allclose(zero.to_numpy(), [[0.0]])
+
+    marginal = fit.predict(pd.DataFrame({"x": [0.0], "plot": ["new"]}), random_effects="marginal")
+    np.testing.assert_allclose(marginal.to_numpy(), [[0.35]])

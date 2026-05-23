@@ -33,6 +33,7 @@ class HmscModel:
         study_design: Any | None = None,
         random_levels: dict[str, Any] | None = None,
         phylo_cov: Any | None = None,
+        phylo_tree: str | Path | None = None,
     ) -> None:
         self.Y = self._as_frame(Y, "Y")
         self.X = self._as_frame(X, "X")
@@ -47,6 +48,7 @@ class HmscModel:
         )
         self.random_levels = random_levels
         self.phylo_cov = None if phylo_cov is None else self._as_frame(phylo_cov, "phylo_cov")
+        self.phylo_tree = phylo_tree
         self.species_names = list(self.Y.columns)
         self.covariate_names = covariate_names_from_formula(self.x_formula, self.X)
 
@@ -81,6 +83,7 @@ class HmscModel:
             traits=self.traits,
             trait_formula=self.trait_formula,
             phylo_cov=self.phylo_cov,
+            phylo_tree=self.phylo_tree,
         )
 
     def sample(
@@ -105,6 +108,16 @@ class HmscModel:
             raise ValueError("init must be 'r-bridge' or 'python-native'")
         if samples <= 0 or thin <= 0 or chains <= 0 or transient < 0:
             raise ValueError("samples, thin, and chains must be positive; transient must be >= 0")
+        if init == "python-native" and self.random_levels:
+            unsupported = [
+                name for name, spec in self.random_levels.items()
+                if spec.get("x_formula")
+            ]
+            if unsupported:
+                raise NotImplementedError(
+                    "Random-slope compilation is supported, but native TensorFlow sampling "
+                    f"for random slopes is not yet safe for levels: {unsupported}"
+                )
         if workdir is not None:
             run_dir = Path(workdir)
             run_dir.mkdir(parents=True, exist_ok=True)

@@ -51,5 +51,6 @@ def model_from_config(path: str | Path) -> tuple[HmscModel, dict[str, Any]]:
         else None,
         random_levels=config.get("random_levels"),
         phylo_cov=read_table(base / config["phylo_cov"]) if config.get("phylo_cov") else None,
+        phylo_tree=base / config["phylo_tree"] if config.get("phylo_tree") else None,
     )
     return model, config

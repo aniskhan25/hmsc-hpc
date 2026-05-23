@@ -196,8 +196,11 @@ Supported native feature scope:
 
 - Traits: user-provided species trait table plus `trait_formula`
 - Phylogeny: user-provided species covariance matrix
+- Phylogeny: optional Newick input via the `phylo` extra
 - Random effects: iid random intercepts
 - Spatial effects: full spatial random intercepts from per-level coordinates
+- Random slopes: compiled/loaded from `random_levels.*.x_formula`; native
+  sampling remains guarded
 
 CLI workflow:
 
@@ -211,7 +214,6 @@ python -m pyhmsc validate run/posterior.h5 --X data/X.csv --Y data/Y.csv --formu
 
 Not yet supported:
 
-- Newick tree parsing
 - GPP/NNGP spatial approximations
-- Random slopes
+- Native TensorFlow sampling for random slopes
 - Trait/phylogeny/spatial model diagnostics beyond core posterior samples

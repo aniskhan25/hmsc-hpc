@@ -34,6 +34,7 @@ def compile_hmsc_model(
     traits: Any | None = None,
     trait_formula: str | None = None,
     phylo_cov: Any | None = None,
+    phylo_tree: str | Path | None = None,
 ) -> CompiledModel:
     """Compile the fixed-effect Phase 2 target format.
 
@@ -50,7 +51,7 @@ def compile_hmsc_model(
     formula = normalize_formula(formula)
     X_design = build_design_matrix(formula, X_frame)
     T_design = _compile_traits(traits, trait_formula, Y_frame)
-    C = _compile_phylo_cov(phylo_cov, Y_frame)
+    C = _compile_phylo_cov(phylo_cov, phylo_tree, Y_frame)
     beta_init = np.zeros((chains, X_design.shape[1], Y_frame.shape[1]), dtype=float)
     arrays = {
         "Y": Y_frame.to_numpy(dtype=float),
@@ -146,11 +147,17 @@ def _compile_random_levels(
         n_levels = len(levels)
         nf = int(spec.get("nf", 1))
         prefix = f"RandomLevel_{idx}"
+        x_design = _random_level_design(spec, design, codes)
+        x_dim = x_design.shape[1]
         arrays[f"{prefix}_Eta_init"] = np.zeros((chains, n_levels, nf), dtype=float)
-        arrays[f"{prefix}_Lambda_init"] = np.zeros((chains, nf, n_species), dtype=float)
-        arrays[f"{prefix}_Psi_init"] = np.ones((chains, nf, n_species), dtype=float)
+        lambda_shape = (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        arrays[f"{prefix}_Lambda_init"] = np.zeros(lambda_shape, dtype=float)
+        psi_shape = (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        arrays[f"{prefix}_Psi_init"] = np.ones(psi_shape, dtype=float)
         arrays[f"{prefix}_Delta_init"] = np.ones((chains, nf, 1), dtype=float)
         arrays[f"{prefix}_Alpha_init"] = np.ones((chains, nf), dtype=int)
+        if x_dim > 0:
+            arrays[f"{prefix}_xMat"] = x_design
         level_meta = {
                 "name": name,
                 "column": column,
@@ -158,6 +165,8 @@ def _compile_random_levels(
                 "n_levels": n_levels,
                 "levels": [str(level) for level in levels],
                 "nf": nf,
+                "xDim": x_dim,
+                "x_formula": spec.get("x_formula"),
                 "array_prefix": prefix,
                 "nu": float(spec.get("nu", 3.0)),
                 "a1": float(spec.get("a1", 2.0)),
@@ -198,9 +207,11 @@ def _compile_traits(traits: Any | None, trait_formula: str | None, Y: pd.DataFra
     return build_design_matrix(trait_formula or "~ .", trait_frame)
 
 
-def _compile_phylo_cov(phylo_cov: Any | None, Y: pd.DataFrame) -> np.ndarray | None:
-    if phylo_cov is None:
+def _compile_phylo_cov(phylo_cov: Any | None, phylo_tree: str | Path | None, Y: pd.DataFrame) -> np.ndarray | None:
+    if phylo_cov is None and phylo_tree is None:
         return None
+    if phylo_tree is not None:
+        return _phylo_cov_from_newick(phylo_tree, Y)
     cov = _as_frame(phylo_cov, "phylo_cov")
     missing = [species for species in Y.columns if species not in cov.index or species not in cov.columns]
     if missing:
@@ -208,6 +219,39 @@ def _compile_phylo_cov(phylo_cov: Any | None, Y: pd.DataFrame) -> np.ndarray | N
     cov = cov.loc[Y.columns, Y.columns].to_numpy(dtype=float)
     if cov.shape[0] != cov.shape[1]:
         raise ValueError("phylo_cov must be square")
+    return cov
+
+
+def _random_level_design(spec: dict[str, Any], design: pd.DataFrame, codes: np.ndarray) -> np.ndarray:
+    formula = spec.get("x_formula")
+    if not formula:
+        return np.zeros((len(np.unique(codes)), 0), dtype=float)
+    matrix = build_design_matrix(formula, design)
+    matrix = matrix.groupby(codes, sort=True).mean()
+    return matrix.to_numpy(dtype=float)
+
+
+def _phylo_cov_from_newick(phylo_tree: str | Path, Y: pd.DataFrame) -> np.ndarray:
+    try:
+        from Bio import Phylo  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install biopython to use phylo_tree Newick input") from exc
+    tree = Phylo.read(str(phylo_tree), "newick")
+    terminals = {terminal.name: terminal for terminal in tree.get_terminals()}
+    missing = [species for species in Y.columns if species not in terminals]
+    if missing:
+        raise ValueError(f"phylo_tree missing species: {missing}")
+    depths = tree.depths()
+    if all(depth == 0 for depth in depths.values()):
+        depths = tree.depths(unit_branch_lengths=True)
+    cov = np.zeros((len(Y.columns), len(Y.columns)), dtype=float)
+    for i, left in enumerate(Y.columns):
+        for j, right in enumerate(Y.columns):
+            ancestor = tree.common_ancestor(terminals[left], terminals[right])
+            cov[i, j] = depths[ancestor]
+    diag = np.diag(cov)
+    if np.any(diag == 0):
+        cov = cov + np.eye(cov.shape[0])
     return cov
 
 

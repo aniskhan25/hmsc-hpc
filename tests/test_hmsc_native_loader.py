@@ -117,3 +117,37 @@ def test_native_loader_builds_full_spatial_random_level_state(tmp_path):
     assert random_hyper[0]["spatialMethod"] == "Full"
     assert random_hyper[0]["iWg"].shape == (1, 3, 3)
     assert init_list[0]["Eta"][0].shape == (3, 1)
+
+
+def test_native_loader_builds_random_slope_state(tmp_path):
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2, 0], "sp2": [0, 3, 1]}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
+        x_formula="~ x",
+        distr="poisson",
+        study_design=pd.DataFrame({"plot": ["a", "b", "a"], "elevation": [10.0, 20.0, 10.0]}),
+        random_levels={"plot": {"column": "plot", "type": "iid", "x_formula": "~ elevation"}},
+    )
+    compiled = model.compile(tmp_path / "random-slope", chains=1)
+    dims, _data, _priors, _model_hyper, random_hyper, init_list, _n_chains = load_native_params(
+        compiled.init_json
+    )
+    assert dims["nr"] == 1
+    assert random_hyper[0]["xDim"] == 2
+    assert random_hyper[0]["xMat"].shape == (2, 2)
+    assert init_list[0]["Lambda"][0].shape == (1, 2, 2)
+
+
+def test_random_slope_sampling_is_guarded(tmp_path):
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2, 0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
+        x_formula="~ x",
+        distr="poisson",
+        study_design=pd.DataFrame({"plot": ["a", "b", "a"], "elevation": [10.0, 20.0, 10.0]}),
+        random_levels={"plot": {"column": "plot", "type": "iid", "x_formula": "~ elevation"}},
+    )
+    import pytest
+
+    with pytest.raises(NotImplementedError):
+        model.sample(samples=1, transient=0, thin=1, chains=1, init="python-native", workdir=tmp_path)

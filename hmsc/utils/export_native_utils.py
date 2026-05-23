@@ -225,6 +225,8 @@ def _validate_fixed_effect_schema(metadata, arrays):
                 raise ValueError(f"Native random-level input missing arrays: {missing}")
             if level.get("type") == "spatial_full" and f"{prefix}_distMat" not in arrays:
                 raise ValueError("Native spatial random level missing distMat array")
+            if int(level.get("xDim", 0)) > 0 and f"{prefix}_xMat" not in arrays:
+                raise ValueError("Native random-slope input missing xMat array")
 
 
 def _distribution_matrix(distribution, n_species):
@@ -254,8 +256,10 @@ def _random_level_hyperparams(level, arrays, dtype):
         "nfMin": int(level.get("nfMin", level.get("nf", 1))),
         "nfMax": int(level.get("nfMax", max(level.get("nf", 1), 4))),
         "sDim": 0,
-        "xDim": 0,
+        "xDim": int(level.get("xDim", 0)),
     }
+    if params["xDim"] > 0:
+        params["xMat"] = np.asarray(arrays[f"{level['array_prefix']}_xMat"], dtype=dtype)
     if level.get("type") == "spatial_full":
         alphapw = np.asarray(level.get("alphapw", [[1.0, 1.0]]), dtype=dtype)
         dist = np.asarray(arrays[f"{level['array_prefix']}_distMat"], dtype=dtype)

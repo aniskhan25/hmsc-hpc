@@ -83,6 +83,8 @@ def test_cli_sample_and_summarize(tmp_path):
             "tests/fixtures/fixed_effect/X.csv",
             "--formula",
             "~ forest_cover + elevation",
+            "--random-effects",
+            "none",
             "--output",
             str(pred_out),
         ],

@@ -122,6 +122,7 @@ class HmscFit:
         X_new: Any,
         response: bool = True,
         random_effects: str = "none",
+        unseen_groups: str = "error",
     ) -> np.ndarray:
         if self.model is None:
             raise ValueError("predict_samples requires the HmscModel used to create the fit")
@@ -139,15 +140,26 @@ class HmscFit:
         if random_effects not in {"none", "known", "marginal"}:
             raise ValueError("random_effects must be 'none', 'known', or 'marginal'")
         if random_effects == "known":
-            linear = linear + self._known_random_effect_prediction(X_new)
+            linear = linear + self._known_random_effect_prediction(X_new, unseen_groups=unseen_groups)
         elif random_effects == "marginal":
-            pass
+            linear = linear + self._marginal_random_effect_prediction(linear.shape[2])
         if response and self.model.distr.lower() == "poisson":
             linear = np.exp(linear)
         return linear
 
-    def predict_mean(self, X_new: Any, response: bool = True, random_effects: str = "none") -> pd.DataFrame:
-        samples = self.predict_samples(X_new, response=response, random_effects=random_effects)
+    def predict_mean(
+        self,
+        X_new: Any,
+        response: bool = True,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+    ) -> pd.DataFrame:
+        samples = self.predict_samples(
+            X_new,
+            response=response,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
         values = samples.mean(axis=(0, 1))
         return pd.DataFrame(
             values,
@@ -161,8 +173,14 @@ class HmscFit:
         level: float = 0.95,
         response: bool = True,
         random_effects: str = "none",
+        unseen_groups: str = "error",
     ) -> dict[str, pd.DataFrame]:
-        samples = self.predict_samples(X_new, response=response, random_effects=random_effects)
+        samples = self.predict_samples(
+            X_new,
+            response=response,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
         lo = np.quantile(samples, (1 - level) / 2, axis=(0, 1))
         hi = np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1))
         index = X_new.index if isinstance(X_new, pd.DataFrame) else None
@@ -221,8 +239,27 @@ class HmscFit:
                 )
         return pd.DataFrame(rows)
 
-    def predict(self, X_new: Any, response: bool = True, random_effects: str = "none") -> pd.DataFrame:
-        return self.predict_mean(X_new, response=response, random_effects=random_effects)
+    def predict(
+        self,
+        X_new: Any,
+        response: bool = True,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        return_samples: bool = False,
+    ) -> pd.DataFrame | np.ndarray:
+        if return_samples:
+            return self.predict_samples(
+                X_new,
+                response=response,
+                random_effects=random_effects,
+                unseen_groups=unseen_groups,
+            )
+        return self.predict_mean(
+            X_new,
+            response=response,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
 
     def _beta_frame(self, beta: np.ndarray) -> pd.DataFrame:
         covariates = None
@@ -255,7 +292,9 @@ class HmscFit:
             raise ValueError("Posterior contains no chains")
         return np.stack(chains, axis=0)
 
-    def _known_random_effect_prediction(self, X_new: pd.DataFrame) -> np.ndarray:
+    def _known_random_effect_prediction(self, X_new: pd.DataFrame, unseen_groups: str = "error") -> np.ndarray:
+        if unseen_groups not in {"error", "zero", "sample", "nearest"}:
+            raise ValueError("unseen_groups must be 'error', 'zero', 'sample', or 'nearest'")
         if self.model is None or not getattr(self.model, "random_levels", None):
             return 0
         total = 0
@@ -267,10 +306,53 @@ class HmscFit:
                 raise ValueError("Known random-effect prediction requires model.study_design")
             _, levels = pd.factorize(self.model.study_design[column], sort=True)
             mapping = {value: idx for idx, value in enumerate(levels)}
-            codes = [mapping.get(value) for value in X_new[column]]
-            if any(code is None for code in codes):
-                raise ValueError(f"Prediction contains unknown levels in {column!r}")
+            codes = []
+            zero_mask = []
+            for row_idx, value in enumerate(X_new[column]):
+                code = mapping.get(value)
+                if code is None:
+                    zero_mask.append(unseen_groups == "zero")
+                    code = self._resolve_unseen_group(spec, X_new, row_idx, unseen_groups)
+                else:
+                    zero_mask.append(False)
+                codes.append(code)
             eta = self.eta_samples(level_idx)[:, :, codes, :]
+            lam = self.lambda_samples(level_idx)
+            effect = np.einsum("cdnf,cdfs->cdns", eta, lam)
+            if any(zero_mask):
+                effect[:, :, zero_mask, :] = 0
+            total = total + effect
+        return total
+
+    def _resolve_unseen_group(self, spec: dict[str, Any], X_new: pd.DataFrame, row_idx: int, mode: str) -> int:
+        if mode == "error":
+            raise ValueError("Prediction contains unknown random-effect group")
+        if mode == "zero":
+            return 0
+        if mode == "sample":
+            return row_idx % self.eta_samples(0).shape[2]
+        if mode == "nearest":
+            if spec.get("type") != "spatial_full":
+                return row_idx % self.eta_samples(0).shape[2]
+            coords = spec.get("coords", ["x", "y"])
+            if self.model is None or self.model.study_design is None or any(col not in X_new for col in coords):
+                raise ValueError("nearest unseen-group prediction requires coordinate columns")
+            known = (
+                self.model.study_design.groupby(spec.get("column", "plot"), sort=True)[coords]
+                .mean()
+                .to_numpy(dtype=float)
+            )
+            point = X_new.iloc[row_idx][coords].to_numpy(dtype=float)
+            return int(np.argmin(np.sum((known - point) ** 2, axis=1)))
+        raise ValueError(f"Unsupported unseen group mode {mode!r}")
+
+    def _marginal_random_effect_prediction(self, n_new: int) -> np.ndarray:
+        if self.model is None or not getattr(self.model, "random_levels", None):
+            return 0
+        total = 0
+        for level_idx, _item in enumerate(self.model.random_levels.items()):
+            eta = self.eta_samples(level_idx).mean(axis=2, keepdims=True)
+            eta = np.repeat(eta, n_new, axis=2)
             lam = self.lambda_samples(level_idx)
             total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)
         return total
