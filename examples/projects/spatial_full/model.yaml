@@ -1,0 +1,12 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ x"
+distribution: poisson
+study_design: data/study_design.csv
+random_levels:
+  plot:
+    column: plot
+    type: spatial_full
+    coords: [xcoord, ycoord]
+chains: 1

@@ -31,7 +31,28 @@ Each chain object is keyed by sample index (`0`, `1`, ...). Each sample contains
 | `PsiRRR` | matrix or `null` | RRR shrinkage draw |
 | `DeltaRRR` | vector/matrix or `null` | RRR shrinkage draw |
 
-`pyhmsc.HmscFit` consumes `Beta` for summaries and predictions. HDF5 posterior
-output stores dense core arrays such as `Beta`, `Gamma`, `iV`, `rhoInd`, and
-`sigma`; JSON/RDS compatibility output preserves the larger nested chain/sample
+`pyhmsc.HmscFit` consumes `Beta` for summaries and predictions and now exposes
+core summaries for `Gamma`, `sigma`, `Eta`, `Lambda`, and `rhoInd` where present.
+HDF5 posterior output stores dense core arrays plus nested random-level groups:
+
+```text
+Beta
+Gamma
+iV
+rhoInd
+sigma
+random_levels/0/Eta
+random_levels/0/Lambda
+random_levels/0/Psi
+random_levels/0/Delta
+random_levels/0/Alpha
+```
+
+JSON/RDS compatibility output preserves the larger nested chain/sample
 structure.
+
+Optional Zarr output is available when the `zarr` extra is installed:
+
+```bash
+python -m pyhmsc sample run/init.json --output run/posterior.zarr
+```

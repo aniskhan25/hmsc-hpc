@@ -199,6 +199,16 @@ Supported native feature scope:
 - Random effects: iid random intercepts
 - Spatial effects: full spatial random intercepts from per-level coordinates
 
+CLI workflow:
+
+```bash
+python -m pyhmsc compile model.yaml --output run
+python -m pyhmsc sample run/init.json --output run/posterior.h5 --samples 100 --transient 100 --thin 1
+python -m pyhmsc summarize run/posterior.h5 --param Beta
+python -m pyhmsc predict run/posterior.h5 --X data/X_new.csv --formula "~ forest_cover + elevation"
+python -m pyhmsc validate run/posterior.h5 --X data/X.csv --Y data/Y.csv --formula "~ forest_cover + elevation"
+```
+
 Not yet supported:
 
 - Newick tree parsing

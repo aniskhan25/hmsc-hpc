@@ -37,3 +37,5 @@ This milestone still requires R plus the R packages `Hmsc` and `jsonify`.
 - GPP and NNGP spatial random levels
 - Random slopes
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
+- Harden optional Zarr posterior output on large runs
+- More robust simulation recovery tests with longer optional `slow` runs

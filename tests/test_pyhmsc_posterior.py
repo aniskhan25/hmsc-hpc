@@ -38,3 +38,25 @@ def test_beta_mean_and_prediction_for_poisson():
     ci = fit.predict_ci(pd.DataFrame({"x": [1.0]}))
     assert ci["lower"].shape == (1, 2)
     assert ci["upper"].shape == (1, 2)
+
+
+def test_known_random_effect_prediction_from_hdf5(tmp_path):
+    import h5py
+
+    path = tmp_path / "posterior.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("Beta", data=np.zeros((1, 1, 2, 1)))
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=np.array([[[[0.2], [0.5]]]]))
+        level.create_dataset("Lambda", data=np.array([[[[1.0]]]]))
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"]}),
+        random_levels={"plot": {"column": "plot", "type": "iid"}},
+    )
+    fit = HmscFit.from_file(path, model=model)
+    pred = fit.predict(pd.DataFrame({"x": [0.0, 1.0], "plot": ["a", "b"]}), random_effects="known")
+    np.testing.assert_allclose(pred.to_numpy(), [[0.2], [0.5]])

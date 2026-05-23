@@ -11,6 +11,7 @@ from hmsc.utils.export_rds_utils import (
 )
 from hmsc.utils.export_json_utils import save_chains_postList_to_json
 from hmsc.utils.export_hdf5_utils import save_chains_postList_to_hdf5
+from hmsc.utils.export_zarr_utils import save_chains_postList_to_zarr
 from hmsc.utils.export_native_utils import load_native_params
 from hmsc.utils.import_utils import (
     load_model_dims,
@@ -156,6 +157,8 @@ def run_gibbs_sampler(
         save_chains_postList_to_json(postList, postList_file_path, len(chainIndList))
     elif output_suffix in {".h5", ".hdf5"}:
         save_chains_postList_to_hdf5(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
+    elif output_suffix == ".zarr":
+        save_chains_postList_to_zarr(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
     else:
         save_chains_postList_to_rds(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
 

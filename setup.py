@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="hmsc",
+    name="hmsc-hpc",
     version="0.1.8",
     author="[removed for review]",
     license='GPLv3+',
-    packages=find_packages(include=['hmsc', 'hmsc.*']),
+    packages=find_packages(include=['hmsc', 'hmsc.*', 'pyhmsc', 'pyhmsc.*']),
     install_requires=[
         'numpy',
         'pandas',
@@ -18,6 +18,8 @@ setup(
         'ujson',
     ],
     extras_require={
+        'parquet': ['pyarrow'],
+        'zarr': ['zarr'],
         'rds': ['pyreadr'],
         'diagnostics': ['arviz'],
     },

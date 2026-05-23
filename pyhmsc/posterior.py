@@ -27,6 +27,8 @@ class HmscFit:
             data = json.loads(path.read_text(encoding="utf-8"))
         elif path.suffix.lower() in {".h5", ".hdf5"}:
             data = _read_hdf5_posterior(path)
+        elif path.suffix.lower() == ".zarr":
+            data = _read_zarr_posterior(path)
         else:
             try:
                 import pyreadr  # type: ignore
@@ -60,9 +62,44 @@ class HmscFit:
         """Return Beta samples with shape chains x draws x covariates x species."""
         return self._samples("Beta")
 
+    def gamma_samples(self) -> np.ndarray:
+        return self._samples("Gamma")
+
+    def sigma_samples(self) -> np.ndarray:
+        return self._samples("sigma")
+
+    def eta_samples(self, level: int = 0) -> np.ndarray:
+        return self._random_level_samples("Eta", level)
+
+    def lambda_samples(self, level: int = 0) -> np.ndarray:
+        return self._random_level_samples("Lambda", level)
+
+    def rho_samples(self) -> np.ndarray:
+        return self._samples("rhoInd")
+
     def beta_mean(self) -> pd.DataFrame:
         beta = self.beta_samples().mean(axis=(0, 1))
         return self._beta_frame(beta)
+
+    def gamma_mean(self) -> pd.DataFrame:
+        gamma = self.gamma_samples().mean(axis=(0, 1))
+        return pd.DataFrame(gamma)
+
+    def sigma_mean(self) -> pd.Series:
+        sigma = self.sigma_samples().mean(axis=(0, 1))
+        return pd.Series(sigma, index=self._species_names(len(sigma)), name="sigma")
+
+    def eta_mean(self, level: int = 0) -> pd.DataFrame:
+        eta = self.eta_samples(level).mean(axis=(0, 1))
+        return pd.DataFrame(eta)
+
+    def lambda_mean(self, level: int = 0) -> pd.DataFrame:
+        values = self.lambda_samples(level).mean(axis=(0, 1))
+        return pd.DataFrame(values, columns=self._species_names(values.shape[-1]))
+
+    def rho_mean(self) -> pd.Series:
+        rho = self.rho_samples().mean(axis=(0, 1))
+        return pd.Series(rho, index=[f"rho_{idx}" for idx in range(len(rho))], name="rho")
 
     def beta_ci(self, level: float = 0.95) -> dict[str, pd.DataFrame]:
         if not 0 < level < 1:
@@ -72,7 +109,20 @@ class HmscFit:
         hi = np.quantile(beta, 1 - (1 - level) / 2, axis=(0, 1))
         return {"lower": self._beta_frame(lo), "upper": self._beta_frame(hi)}
 
-    def predict_samples(self, X_new: Any, response: bool = True) -> np.ndarray:
+    def gamma_ci(self, level: float = 0.95) -> dict[str, pd.DataFrame]:
+        return _ci_frames(self.gamma_samples(), level)
+
+    def sigma_ci(self, level: float = 0.95) -> dict[str, pd.Series]:
+        lo, hi = _ci_arrays(self.sigma_samples(), level)
+        names = self._species_names(len(lo))
+        return {"lower": pd.Series(lo, index=names), "upper": pd.Series(hi, index=names)}
+
+    def predict_samples(
+        self,
+        X_new: Any,
+        response: bool = True,
+        random_effects: str = "none",
+    ) -> np.ndarray:
         if self.model is None:
             raise ValueError("predict_samples requires the HmscModel used to create the fit")
         X_new = X_new if isinstance(X_new, pd.DataFrame) else pd.DataFrame(X_new)
@@ -86,12 +136,18 @@ class HmscFit:
             design[column] = 1.0
         design = design.loc[:, beta_frame.index].to_numpy(dtype=float)
         linear = np.einsum("nk,cdks->cdns", design, self.beta_samples())
+        if random_effects not in {"none", "known", "marginal"}:
+            raise ValueError("random_effects must be 'none', 'known', or 'marginal'")
+        if random_effects == "known":
+            linear = linear + self._known_random_effect_prediction(X_new)
+        elif random_effects == "marginal":
+            pass
         if response and self.model.distr.lower() == "poisson":
             linear = np.exp(linear)
         return linear
 
-    def predict_mean(self, X_new: Any, response: bool = True) -> pd.DataFrame:
-        samples = self.predict_samples(X_new, response=response)
+    def predict_mean(self, X_new: Any, response: bool = True, random_effects: str = "none") -> pd.DataFrame:
+        samples = self.predict_samples(X_new, response=response, random_effects=random_effects)
         values = samples.mean(axis=(0, 1))
         return pd.DataFrame(
             values,
@@ -99,8 +155,14 @@ class HmscFit:
             columns=self.beta_mean().columns,
         )
 
-    def predict_ci(self, X_new: Any, level: float = 0.95, response: bool = True) -> dict[str, pd.DataFrame]:
-        samples = self.predict_samples(X_new, response=response)
+    def predict_ci(
+        self,
+        X_new: Any,
+        level: float = 0.95,
+        response: bool = True,
+        random_effects: str = "none",
+    ) -> dict[str, pd.DataFrame]:
+        samples = self.predict_samples(X_new, response=response, random_effects=random_effects)
         lo = np.quantile(samples, (1 - level) / 2, axis=(0, 1))
         hi = np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1))
         index = X_new.index if isinstance(X_new, pd.DataFrame) else None
@@ -112,7 +174,13 @@ class HmscFit:
             import arviz as az  # type: ignore
         except ImportError as exc:
             raise RuntimeError("Install arviz to use diagnostics") from exc
-        return az.from_dict(posterior={"Beta": self.beta_samples()})
+        posterior = {"Beta": self.beta_samples()}
+        for param in ["Gamma", "sigma"]:
+            try:
+                posterior[param] = self._samples(param)
+            except ValueError:
+                pass
+        return az.from_dict(posterior=posterior)
 
     def rhat(self, param: str = "Beta") -> Any:
         return self.to_arviz().posterior[param].to_numpy() if False else _arviz_stat(self, param, "rhat")
@@ -153,8 +221,8 @@ class HmscFit:
                 )
         return pd.DataFrame(rows)
 
-    def predict(self, X_new: Any, response: bool = True) -> pd.DataFrame:
-        return self.predict_mean(X_new, response=response)
+    def predict(self, X_new: Any, response: bool = True, random_effects: str = "none") -> pd.DataFrame:
+        return self.predict_mean(X_new, response=response, random_effects=random_effects)
 
     def _beta_frame(self, beta: np.ndarray) -> pd.DataFrame:
         covariates = None
@@ -165,6 +233,54 @@ class HmscFit:
         covariates = _names_or_default(covariates, beta.shape[0], "covariate")
         species = _names_or_default(species, beta.shape[1], "species")
         return pd.DataFrame(beta, index=covariates, columns=species)
+
+    def _random_level_samples(self, param: str, level: int) -> np.ndarray:
+        if "__arrays__" in self.posterior:
+            key = f"random_levels/{level}/{param}"
+            arrays = self.posterior["__arrays__"]
+            if key not in arrays:
+                raise ValueError(f"Posterior does not contain {key!r}")
+            return arrays[key]
+        chains = []
+        for chain_key in sorted(
+            [key for key in self.posterior.keys() if str(key).isdigit()],
+            key=lambda value: int(value),
+        ):
+            chain = self.posterior[chain_key]
+            draws = []
+            for draw_key in sorted(chain.keys(), key=lambda value: int(value)):
+                draws.append(np.asarray(chain[draw_key][param][level], dtype=float))
+            chains.append(np.stack(draws, axis=0))
+        if not chains:
+            raise ValueError("Posterior contains no chains")
+        return np.stack(chains, axis=0)
+
+    def _known_random_effect_prediction(self, X_new: pd.DataFrame) -> np.ndarray:
+        if self.model is None or not getattr(self.model, "random_levels", None):
+            return 0
+        total = 0
+        for level_idx, (level_name, spec) in enumerate(self.model.random_levels.items()):
+            column = spec.get("column", level_name)
+            if column not in X_new:
+                raise ValueError(f"Known random-effect prediction requires column {column!r}")
+            if self.model.study_design is None:
+                raise ValueError("Known random-effect prediction requires model.study_design")
+            _, levels = pd.factorize(self.model.study_design[column], sort=True)
+            mapping = {value: idx for idx, value in enumerate(levels)}
+            codes = [mapping.get(value) for value in X_new[column]]
+            if any(code is None for code in codes):
+                raise ValueError(f"Prediction contains unknown levels in {column!r}")
+            eta = self.eta_samples(level_idx)[:, :, codes, :]
+            lam = self.lambda_samples(level_idx)
+            total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)
+        return total
+
+    def _species_names(self, size: int) -> list[str]:
+        if self.model is not None and getattr(self.model, "species_names", None):
+            names = self.model.species_names
+            if len(names) == size:
+                return names
+        return [f"species_{idx}" for idx in range(size)]
 
 
 def _names_or_default(names: list[str] | None, size: int, prefix: str) -> list[str]:
@@ -180,9 +296,37 @@ def _read_hdf5_posterior(path: Path) -> dict[str, Any]:
         raise RuntimeError("Install h5py to read HDF5 posterior files") from exc
     arrays = {}
     with h5py.File(path, "r") as handle:
-        for name in handle.keys():
-            arrays[name] = handle[name][()]
+        _read_hdf5_group(handle, arrays)
     return {"__arrays__": arrays}
+
+
+def _read_hdf5_group(group: Any, arrays: dict[str, np.ndarray], prefix: str = "") -> None:
+    for name, value in group.items():
+        key = f"{prefix}/{name}" if prefix else name
+        if hasattr(value, "keys"):
+            _read_hdf5_group(value, arrays, key)
+        else:
+            arrays[key] = value[()]
+
+
+def _read_zarr_posterior(path: Path) -> dict[str, Any]:
+    try:
+        import zarr  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install zarr to read Zarr posterior files") from exc
+    arrays = {}
+    root = zarr.open_group(str(path), mode="r")
+    _read_zarr_group(root, arrays)
+    return {"__arrays__": arrays}
+
+
+def _read_zarr_group(group: Any, arrays: dict[str, np.ndarray], prefix: str = "") -> None:
+    for name, value in group.items():
+        key = f"{prefix}/{name}" if prefix else name
+        if hasattr(value, "items"):
+            _read_zarr_group(value, arrays, key)
+        else:
+            arrays[key] = value[:]
 
 
 def _arviz_stat(fit: HmscFit, param: str, fn: str) -> Any:
@@ -192,3 +336,17 @@ def _arviz_stat(fit: HmscFit, param: str, fn: str) -> Any:
         raise RuntimeError("Install arviz to use diagnostics") from exc
     data = fit.to_arviz()
     return getattr(az, fn)(data, var_names=[param])
+
+
+def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarray]:
+    if not 0 < level < 1:
+        raise ValueError("level must be between 0 and 1")
+    return (
+        np.quantile(samples, (1 - level) / 2, axis=(0, 1)),
+        np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1)),
+    )
+
+
+def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
+    lo, hi = _ci_arrays(samples, level)
+    return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}

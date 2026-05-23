@@ -19,3 +19,13 @@ Instructions for new users
 #. Open the `basic_example/example.Rmd <examples/basic_example/example.Rmd>`_ notebook.
 #. Follow the step-by-step instructions and code snippets to explore the functionalities and usage of the Hmsc-HPC implementation.
 #. `Detailed install instruction for CSC clusters <docs/csc_install.md>`_
+Python-native quickstart
+------------------------
+
+The Python-native workflow does not require R:
+
+.. code-block:: bash
+
+   python -m pyhmsc compile examples/projects/fixed_poisson/model.yaml --output run
+   python -m pyhmsc sample run/init.json --output run/posterior.h5 --samples 100 --transient 100 --thin 1
+   python -m pyhmsc summarize run/posterior.h5 --param Beta
