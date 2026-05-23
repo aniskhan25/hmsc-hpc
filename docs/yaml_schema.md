@@ -34,3 +34,12 @@ random_levels:
 Supported random-level types are `iid` and `spatial_full`.
 Random-slope `x_formula` is compiled and loaded but native TensorFlow sampling is
 currently guarded until the random-slope updater path is hardened.
+
+Before sampling a compiled Python-native model, run:
+
+```bash
+python -m pyhmsc validate-init run/init.json --strict
+```
+
+This validates the no-R compiled model boundary and reports whether the artifact
+uses only features supported by the existing Python sampler.

@@ -10,7 +10,7 @@ from pyhmsc.config import model_from_config
 from pyhmsc.data import read_table
 from pyhmsc.posterior import HmscFit
 from pyhmsc.runner import run_gibbs_sampler
-from pyhmsc.validation import validate_fit
+from pyhmsc.validation import validate_compiled_native_model, validate_fit
 
 
 def main() -> None:
@@ -34,6 +34,17 @@ def main() -> None:
     sample_parser.add_argument("--thin", type=int, default=1)
     sample_parser.add_argument("--verbose", type=int, default=100)
     sample_parser.add_argument("--chains", type=int, nargs="*")
+
+    validate_init_parser = subparsers.add_parser(
+        "validate-init",
+        help="validate a Python-native compiled init.json before sampling",
+    )
+    validate_init_parser.add_argument("input", help="compiled init.json")
+    validate_init_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero when any validation check fails",
+    )
 
     summarize_parser = subparsers.add_parser("summarize", help="summarize a posterior file")
     summarize_parser.add_argument("posterior", help="posterior .h5, .json, or .rds file")
@@ -78,6 +89,15 @@ def main() -> None:
             )
         print(compiled.init_json)
     elif args.command == "sample":
+        if str(args.input).lower().endswith(".json"):
+            try:
+                results = validate_compiled_native_model(args.input)
+            except ValueError as exc:
+                parser.error(str(exc))
+            failed = [result for result in results if not result.passed]
+            if failed:
+                details = "; ".join(f"{result.name}: {result.details}" for result in failed)
+                raise SystemExit(f"Compiled native model is not sampler-ready: {details}")
         run_gibbs_sampler(
             init_file=args.input,
             output_file=args.output,
@@ -88,6 +108,18 @@ def main() -> None:
             chains=args.chains,
         )
         print(args.output)
+    elif args.command == "validate-init":
+        try:
+            results = validate_compiled_native_model(args.input)
+        except ValueError as exc:
+            parser.error(str(exc))
+        failed = False
+        for result in results:
+            status = "passed" if result.passed else "failed"
+            print(f"{result.name}: {status} {result.details}")
+            failed = failed or not result.passed
+        if failed and args.strict:
+            raise SystemExit(1)
     elif args.command == "summarize":
         fit = HmscFit.from_file(args.posterior)
         print(fit.summary(args.param).to_string(index=False))

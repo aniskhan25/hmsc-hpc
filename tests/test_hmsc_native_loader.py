@@ -1,8 +1,11 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from hmsc.utils.export_native_utils import load_native_params
+from hmsc.run_gibbs_sampler import validate_sampler_supported_params
 from pyhmsc import HmscModel
+from pyhmsc.validation import validate_compiled_native_model
 
 
 def test_native_loader_builds_fixed_effect_sampler_state(tmp_path):
@@ -137,6 +140,12 @@ def test_native_loader_builds_random_slope_state(tmp_path):
     assert random_hyper[0]["xMat"].shape == (2, 2)
     assert init_list[0]["Lambda"][0].shape == (1, 2, 2)
 
+    results = validate_compiled_native_model(compiled.init_json)
+    by_name = {result.name: result for result in results}
+    assert not by_name["native_sampler_supported"].passed
+    with pytest.raises(NotImplementedError, match="random intercepts only"):
+        validate_sampler_supported_params(random_hyper)
+
 
 def test_random_slope_sampling_is_guarded(tmp_path):
     model = HmscModel(
@@ -147,7 +156,5 @@ def test_random_slope_sampling_is_guarded(tmp_path):
         study_design=pd.DataFrame({"plot": ["a", "b", "a"], "elevation": [10.0, 20.0, 10.0]}),
         random_levels={"plot": {"column": "plot", "type": "iid", "x_formula": "~ elevation"}},
     )
-    import pytest
-
     with pytest.raises(NotImplementedError):
         model.sample(samples=1, transient=0, thin=1, chains=1, init="python-native", workdir=tmp_path)

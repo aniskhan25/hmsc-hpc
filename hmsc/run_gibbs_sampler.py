@@ -41,6 +41,20 @@ def load_params(file_path, dtype=np.float64):
     return modelDims, modelData, priorHyperparams, modelHyperparams, rLHyperparams, initParList, nChains
 
 
+def validate_sampler_supported_params(rLHyperparams):
+    """Fail early for native artifacts that compile but are not sampler-ready."""
+    unsupported = []
+    for idx, params in enumerate(rLHyperparams):
+        if int(params.get("xDim", 0)) > 0:
+            unsupported.append(f"random level {idx} has xDim={int(params['xDim'])}")
+    if unsupported:
+        raise NotImplementedError(
+            "Native random-slope inputs are compiled and loadable, but this "
+            "TensorFlow sampler path currently supports random intercepts only: "
+            + ", ".join(unsupported)
+        )
+
+
 def run_gibbs_sampler(
     num_samples,
     sample_thining,
@@ -67,6 +81,8 @@ def run_gibbs_sampler(
         initParList,
         nChainsTotal,
     ) = load_params(init_obj_file_path, dtype)
+    if os.path.splitext(init_obj_file_path)[1].lower() == ".json":
+        validate_sampler_supported_params(rLHyperparams)
     gibbs = GibbsSampler(modelDims, modelData, priorHyperparams, rLHyperparams)
     
     if chainIndList is None:

@@ -4,9 +4,31 @@ Compile and sample without R:
 
 ```bash
 python -m pyhmsc compile examples/projects/fixed_poisson/model.yaml --output run
+python -m pyhmsc validate-init run/init.json --strict
 python -m pyhmsc sample run/init.json --output run/posterior.h5 --samples 100 --transient 100 --thin 1
 python -m pyhmsc summarize run/posterior.h5 --param Beta
 ```
+
+Run the supported no-R example projects from one command:
+
+```bash
+python examples/run_python_native_smoke.py --clean
+```
+
+For a fast compile/validation-only check:
+
+```bash
+python examples/run_python_native_smoke.py --skip-sample --clean
+```
+
+The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
+raw CSV files directly. This keeps file loading, formula expansion, prior setup,
+and parameter initialization outside the TensorFlow Gibbs sampler.
+
+Supported no-R sampler inputs are fixed effects, traits, phylogenetic covariance
+or Newick-derived covariance, iid random intercepts, and full spatial random
+intercepts. Random-slope metadata can be compiled for schema work, but
+`validate-init --strict` marks it as not sampler-ready.
 
 From Python:
 

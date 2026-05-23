@@ -23,6 +23,30 @@ def test_cli_compile_yaml_config(tmp_path):
     assert init_json.exists()
     assert init_json == out / "init.json"
 
+    validate = subprocess.run(
+        [sys.executable, "-m", "pyhmsc", "validate-init", str(init_json), "--strict"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert "native_sampler_supported: passed" in validate.stdout
+
+
+def test_cli_validate_init_rejects_model_yaml():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "validate-init",
+            "tests/fixtures/fixed_effect/model.yaml",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "compile MODEL.yaml" in result.stderr
+
 
 def test_cli_sample_and_summarize(tmp_path):
     run_dir = tmp_path / "run"

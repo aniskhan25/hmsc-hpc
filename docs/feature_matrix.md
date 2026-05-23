@@ -15,4 +15,6 @@
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | CLI compile/sample/summarize/predict/validate | Supported |
+| CLI init validation | Supported |
+| No-R example smoke runner | Supported |
 | ArviZ diagnostics | Optional extra |
