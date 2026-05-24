@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=7
 #SBATCH --gpus-per-node=1
 #SBATCH --mem=60G
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=output/%x-%j.out
 #SBATCH --error=output/%x-%j.err
 
@@ -37,7 +37,7 @@ VENV="${USER_WORK}/venvs/hmsc_tf_env"
 PYTHON="${VENV}/bin/python3"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${SLURM_JOB_ID:-manual}"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
-MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
+EXAMPLE_PROJECTS="${EXAMPLE_PROJECTS:-fixed_poisson traits_phylogeny iid_random_intercept spatial_full}"
 
 mkdir -p output "${USER_WORK}/hmsc-hpc-runs" "${RUN_ROOT}"
 
@@ -72,25 +72,44 @@ cd "${REPO_DIR}"
 
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
-echo "Model config: ${MODEL_CONFIG}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
 "${PYTHON}" -c "import tf_keras; print('tf_keras:', tf_keras.__version__)"
 "${PYTHON}" -c "import tensorflow_probability as tfp; print('TFP:', tfp.__version__)"
 "${PYTHON}" -c "import hmsc, pyhmsc; print('hmsc-hpc import: ok')"
 
-"${PYTHON}" -m pyhmsc compile "${MODEL_CONFIG}" --output "${RUN_ROOT}/compiled"
-"${PYTHON}" -m pyhmsc validate-init "${RUN_ROOT}/compiled/init.json" --strict
+run_model() {
+  local name="$1"
+  local config="$2"
+  local model_run_root="${RUN_ROOT}/${name}"
+  local compiled="${model_run_root}/compiled"
+  local posterior="${model_run_root}/posterior.h5"
 
-srun "${PYTHON}" -m pyhmsc sample \
-  "${RUN_ROOT}/compiled/init.json" \
-  --output "${RUN_ROOT}/posterior.h5" \
-  --samples "${SAMPLES:-1000}" \
-  --transient "${TRANSIENT:-500}" \
-  --thin "${THIN:-10}" \
-  --verbose "${VERBOSE:-100}"
+  echo
+  echo "== ${name} =="
+  echo "Model config: ${config}"
 
-"${PYTHON}" -m pyhmsc summarize "${RUN_ROOT}/posterior.h5" --param Beta \
-  > "${RUN_ROOT}/beta_summary.txt"
+  "${PYTHON}" -m pyhmsc compile "${config}" --output "${compiled}"
+  "${PYTHON}" -m pyhmsc validate-init "${compiled}/init.json" --strict
+
+  srun "${PYTHON}" -m pyhmsc sample \
+    "${compiled}/init.json" \
+    --output "${posterior}" \
+    --samples "${SAMPLES:-1000}" \
+    --transient "${TRANSIENT:-500}" \
+    --thin "${THIN:-10}" \
+    --verbose "${VERBOSE:-100}"
+
+  "${PYTHON}" -m pyhmsc summarize "${posterior}" --param Beta \
+    > "${model_run_root}/beta_summary.txt"
+}
+
+if [[ -n "${MODEL_CONFIG:-}" ]]; then
+  run_model "custom" "${MODEL_CONFIG}"
+else
+  for project in ${EXAMPLE_PROJECTS}; do
+    run_model "${project}" "${REPO_DIR}/examples/projects/${project}/model.yaml"
+  done
+fi
 
 echo "Done. Outputs are in ${RUN_ROOT}"

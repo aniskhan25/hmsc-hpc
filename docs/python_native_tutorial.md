@@ -26,6 +26,36 @@ On LUMI, use the Slurm template in
 `project_462000131`, writes runs under
 `/scratch/project_462000131/anisrahm/hmsc-hpc-runs`, and expects a virtual
 environment at `/scratch/project_462000131/anisrahm/venvs/hmsc_tf_env`.
+By default it runs the supported no-R examples: `fixed_poisson`,
+`traits_phylogeny`, `iid_random_intercept`, and `spatial_full`.
+
+To run one custom model config instead:
+
+```bash
+MODEL_CONFIG=/path/to/model.yaml sbatch docs/lumi_python_native_sbatch.sh
+```
+
+To run a subset of bundled examples:
+
+```bash
+EXAMPLE_PROJECTS="traits_phylogeny iid_random_intercept spatial_full" \
+  sbatch docs/lumi_python_native_sbatch.sh
+```
+
+Known working LUMI environment:
+
+```text
+module load tensorflow/2.16
+Python: /scratch/project_462000131/anisrahm/venvs/hmsc_tf_env/bin/python3
+TensorFlow: 2.16.1
+GPU visible to TensorFlow: yes
+tf_keras: 2.16.0
+tensorflow_probability: 0.24.0
+```
+
+The fixed Poisson example has been verified on LUMI with 2 chains, 1000 saved
+samples, 500 transient iterations, and thin 10, writing `posterior.h5` under the
+scratch run directory.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
