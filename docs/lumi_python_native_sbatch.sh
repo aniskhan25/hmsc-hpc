@@ -24,8 +24,9 @@ set -euo pipefail
 #   mkdir -p venvs
 #   python3 -m venv --system-site-packages venvs/hmsc_tf_env
 #   source venvs/hmsc_tf_env/bin/activate
-#   python -m pip install --upgrade pip
-#   python -m pip install --no-deps /path/to/hmsc-hpc
+#   python3 -m pip install --upgrade pip
+#   python3 -m pip install tensorflow-probability==0.24.*
+#   python3 -m pip install --no-deps /path/to/hmsc-hpc
 #
 # If your LUMI module environment uses a different TensorFlow/AI stack, adjust
 # the module lines below but keep the GPU sanity check.
@@ -33,7 +34,7 @@ set -euo pipefail
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
 VENV="${USER_WORK}/venvs/hmsc_tf_env"
-PYTHON="${VENV}/bin/python"
+PYTHON="${VENV}/bin/python3"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${SLURM_JOB_ID:-manual}"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
@@ -56,8 +57,9 @@ Create it once on LUMI, then resubmit:
   mkdir -p venvs
   python3 -m venv --system-site-packages venvs/hmsc_tf_env
   source venvs/hmsc_tf_env/bin/activate
-  python -m pip install --upgrade pip
-  python -m pip install --no-deps ${REPO_DIR}
+  python3 -m pip install --upgrade pip
+  python3 -m pip install tensorflow-probability==0.24.*
+  python3 -m pip install --no-deps ${REPO_DIR}
 
 If TensorFlow is provided through a different LUMI AI/container stack, create
 the venv from that stack and update docs/lumi_python_native_sbatch.sh.
@@ -73,6 +75,7 @@ echo "Run root: ${RUN_ROOT}"
 echo "Model config: ${MODEL_CONFIG}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
+"${PYTHON}" -c "import tensorflow_probability as tfp; print('TFP:', tfp.__version__)"
 "${PYTHON}" -c "import hmsc, pyhmsc; print('hmsc-hpc import: ok')"
 
 "${PYTHON}" -m pyhmsc compile "${MODEL_CONFIG}" --output "${RUN_ROOT}/compiled"
