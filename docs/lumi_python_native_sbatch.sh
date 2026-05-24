@@ -21,8 +21,9 @@ set -euo pipefail
 #   cd /scratch/project_462000131/anisrahm
 #   module use /appl/local/csc/modulefiles
 #   module load tensorflow/2.16
-#   python3 -m venv --system-site-packages hmsc_tf_env
-#   source hmsc_tf_env/bin/activate
+#   mkdir -p venvs
+#   python3 -m venv --system-site-packages venvs/hmsc_tf_env
+#   source venvs/hmsc_tf_env/bin/activate
 #   python -m pip install --upgrade pip
 #   python -m pip install --no-deps /path/to/hmsc-hpc
 #
@@ -31,7 +32,7 @@ set -euo pipefail
 
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
-VENV="${USER_WORK}/hmsc_tf_env"
+VENV="${USER_WORK}/venvs/hmsc_tf_env"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${SLURM_JOB_ID:-manual}"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
@@ -51,8 +52,9 @@ Create it once on LUMI, then resubmit:
   cd ${USER_WORK}
   module use /appl/local/csc/modulefiles
   module load tensorflow/2.16
-  python3 -m venv --system-site-packages hmsc_tf_env
-  source hmsc_tf_env/bin/activate
+  mkdir -p venvs
+  python3 -m venv --system-site-packages venvs/hmsc_tf_env
+  source venvs/hmsc_tf_env/bin/activate
   python -m pip install --upgrade pip
   python -m pip install --no-deps ${REPO_DIR}
 

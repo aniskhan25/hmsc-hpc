@@ -25,7 +25,7 @@ On LUMI, use the Slurm template in
 [`docs/lumi_python_native_sbatch.sh`](lumi_python_native_sbatch.sh). It uses
 `project_462000131`, writes runs under
 `/scratch/project_462000131/anisrahm/hmsc-hpc-runs`, and expects a virtual
-environment at `/scratch/project_462000131/anisrahm/hmsc_tf_env`.
+environment at `/scratch/project_462000131/anisrahm/venvs/hmsc_tf_env`.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
