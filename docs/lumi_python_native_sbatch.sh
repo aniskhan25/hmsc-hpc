@@ -33,6 +33,7 @@ set -euo pipefail
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
 VENV="${USER_WORK}/venvs/hmsc_tf_env"
+PYTHON="${VENV}/bin/python"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${SLURM_JOB_ID:-manual}"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
@@ -70,14 +71,14 @@ cd "${REPO_DIR}"
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
 echo "Model config: ${MODEL_CONFIG}"
-echo "Python: $(which python)"
-python -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
-python -c "import hmsc, pyhmsc; print('hmsc-hpc import: ok')"
+echo "Python: ${PYTHON}"
+"${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
+"${PYTHON}" -c "import hmsc, pyhmsc; print('hmsc-hpc import: ok')"
 
-python -m pyhmsc compile "${MODEL_CONFIG}" --output "${RUN_ROOT}/compiled"
-python -m pyhmsc validate-init "${RUN_ROOT}/compiled/init.json" --strict
+"${PYTHON}" -m pyhmsc compile "${MODEL_CONFIG}" --output "${RUN_ROOT}/compiled"
+"${PYTHON}" -m pyhmsc validate-init "${RUN_ROOT}/compiled/init.json" --strict
 
-srun python -m pyhmsc sample \
+srun "${PYTHON}" -m pyhmsc sample \
   "${RUN_ROOT}/compiled/init.json" \
   --output "${RUN_ROOT}/posterior.h5" \
   --samples "${SAMPLES:-1000}" \
@@ -85,7 +86,7 @@ srun python -m pyhmsc sample \
   --thin "${THIN:-10}" \
   --verbose "${VERBOSE:-100}"
 
-python -m pyhmsc summarize "${RUN_ROOT}/posterior.h5" --param Beta \
+"${PYTHON}" -m pyhmsc summarize "${RUN_ROOT}/posterior.h5" --param Beta \
   > "${RUN_ROOT}/beta_summary.txt"
 
 echo "Done. Outputs are in ${RUN_ROOT}"
