@@ -7,8 +7,8 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --mem=60G
 #SBATCH --time=01:00:00
-#SBATCH --output=/scratch/project_462000131/anisrahm/hmsc-hpc-runs/%x-%j.out
-#SBATCH --error=/scratch/project_462000131/anisrahm/hmsc-hpc-runs/%x-%j.err
+#SBATCH --output=output/%x-%j.out
+#SBATCH --error=output/%x-%j.err
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ set -euo pipefail
 #
 #   cd /scratch/project_462000131/anisrahm
 #   module use /appl/local/csc/modulefiles
-#   module load tensorflow/2.18
+#   module load tensorflow/2.16
 #   python3 -m venv --system-site-packages hmsc_tf_env
 #   source hmsc_tf_env/bin/activate
 #   python -m pip install --upgrade pip
@@ -36,10 +36,10 @@ RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${SLURM_JOB_ID:-manual}"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
 
-mkdir -p "${USER_WORK}/hmsc-hpc-runs" "${RUN_ROOT}"
+mkdir -p output "${USER_WORK}/hmsc-hpc-runs" "${RUN_ROOT}"
 
 module use /appl/local/csc/modulefiles
-module load tensorflow/2.18
+module load tensorflow/2.16
 
 if [[ ! -f "${VENV}/bin/activate" ]]; then
   cat >&2 <<EOF
@@ -50,7 +50,7 @@ Create it once on LUMI, then resubmit:
 
   cd ${USER_WORK}
   module use /appl/local/csc/modulefiles
-  module load tensorflow/2.18
+  module load tensorflow/2.16
   python3 -m venv --system-site-packages hmsc_tf_env
   source hmsc_tf_env/bin/activate
   python -m pip install --upgrade pip
