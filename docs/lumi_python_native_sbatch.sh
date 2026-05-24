@@ -25,7 +25,7 @@ set -euo pipefail
 #   python3 -m venv --system-site-packages venvs/hmsc_tf_env
 #   source venvs/hmsc_tf_env/bin/activate
 #   python3 -m pip install --upgrade pip
-#   python3 -m pip install tensorflow-probability==0.24.*
+#   python3 -m pip install --no-deps tf-keras==2.16.* tensorflow-probability==0.24.*
 #   python3 -m pip install --no-deps /path/to/hmsc-hpc
 #
 # If your LUMI module environment uses a different TensorFlow/AI stack, adjust
@@ -58,7 +58,7 @@ Create it once on LUMI, then resubmit:
   python3 -m venv --system-site-packages venvs/hmsc_tf_env
   source venvs/hmsc_tf_env/bin/activate
   python3 -m pip install --upgrade pip
-  python3 -m pip install tensorflow-probability==0.24.*
+  python3 -m pip install --no-deps tf-keras==2.16.* tensorflow-probability==0.24.*
   python3 -m pip install --no-deps ${REPO_DIR}
 
 If TensorFlow is provided through a different LUMI AI/container stack, create
@@ -75,6 +75,7 @@ echo "Run root: ${RUN_ROOT}"
 echo "Model config: ${MODEL_CONFIG}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
+"${PYTHON}" -c "import tf_keras; print('tf_keras:', tf_keras.__version__)"
 "${PYTHON}" -c "import tensorflow_probability as tfp; print('TFP:', tfp.__version__)"
 "${PYTHON}" -c "import hmsc, pyhmsc; print('hmsc-hpc import: ok')"
 
