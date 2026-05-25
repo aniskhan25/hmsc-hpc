@@ -58,7 +58,10 @@ distribution, and random-level metadata without requiring the original
 HDF5 posterior shards from separate chain jobs can be merged with:
 
 ```bash
-python -m pyhmsc merge run/chains/posterior_chain_*.h5 --output run/posterior.h5
+python -m pyhmsc chain-status run/chains --expected-chains 0 1
+python -m pyhmsc merge run/chains/posterior_chain_*.h5 \
+  --expected-chains 0 1 \
+  --output run/posterior.h5
 ```
 
 Merge concatenates every dataset along the first dimension, validates matching

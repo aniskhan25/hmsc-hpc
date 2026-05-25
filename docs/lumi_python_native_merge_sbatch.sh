@@ -25,6 +25,7 @@ RUN_NAME="${RUN_NAME:?Set RUN_NAME to the array run name, for example array_<job
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 CHAIN_DIR="${RUN_ROOT}/chains"
 OUTPUT="${RUN_ROOT}/posterior.h5"
+EXPECTED_CHAINS="${EXPECTED_CHAINS:-0 1}"
 
 mkdir -p output
 
@@ -39,7 +40,14 @@ if [[ ! -e "${inputs[0]}" ]]; then
   exit 2
 fi
 
-"${PYTHON}" -m pyhmsc merge "${inputs[@]}" --output "${OUTPUT}"
+"${PYTHON}" -m pyhmsc chain-status "${CHAIN_DIR}" \
+  --expected-chains ${EXPECTED_CHAINS} \
+  --run-name "${RUN_NAME}" \
+  --strict
+
+"${PYTHON}" -m pyhmsc merge "${inputs[@]}" \
+  --expected-chains ${EXPECTED_CHAINS} \
+  --output "${OUTPUT}"
 "${PYTHON}" -m pyhmsc summarize "${OUTPUT}" --param Beta \
   > "${RUN_ROOT}/beta_summary.txt"
 

@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import pytest
 
-from pyhmsc.merge import merge_hdf5_posteriors
+from pyhmsc.merge import inspect_chain_directory, merge_hdf5_posteriors
 from pyhmsc.posterior import HmscFit
 
 
@@ -54,7 +54,7 @@ def test_cli_merge_hdf5_posteriors(tmp_path):
 
     paths = []
     for idx in range(2):
-        path = tmp_path / f"chain_{idx}.h5"
+        path = tmp_path / f"posterior_chain_{idx}.h5"
         with h5py.File(path, "w") as handle:
             handle.attrs["nChains"] = 1
             handle.create_dataset("Beta", data=np.ones((1, 1, 1, 1)) * idx)
@@ -71,6 +71,9 @@ def test_cli_merge_hdf5_posteriors(tmp_path):
             str(paths[1]),
             "--output",
             str(output),
+            "--expected-chains",
+            "0",
+            "1",
         ],
         check=True,
         text=True,
@@ -92,3 +95,57 @@ def test_merge_hdf5_requires_matching_dataset_keys(tmp_path):
 
     with pytest.raises(ValueError, match="datasets do not match"):
         merge_hdf5_posteriors([first, second], tmp_path / "merged.h5")
+
+
+def test_chain_status_detects_missing_and_bad_files(tmp_path):
+    import h5py
+
+    with h5py.File(tmp_path / "posterior_chain_0.h5", "w") as handle:
+        handle.create_dataset("Beta", data=np.ones((1, 5, 1, 1)))
+    with h5py.File(tmp_path / "posterior_chain_2.h5", "w") as handle:
+        handle.create_dataset("Gamma", data=np.ones((1, 5, 1, 1)))
+
+    statuses = inspect_chain_directory(tmp_path, expected_chains=[0, 1, 2], expected_draws=5)
+    by_chain = {status.chain: status for status in statuses}
+    assert by_chain[0].status == "passed"
+    assert by_chain[1].status == "missing"
+    assert by_chain[2].status == "failed"
+    assert "missing Beta" in by_chain[2].message
+
+
+def test_cli_chain_status_prints_rerun_command(tmp_path):
+    import h5py
+
+    with h5py.File(tmp_path / "posterior_chain_0.h5", "w") as handle:
+        handle.create_dataset("Beta", data=np.ones((1, 5, 1, 1)))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "chain-status",
+            str(tmp_path),
+            "--expected-chains",
+            "0",
+            "1",
+            "--run-name",
+            "demo",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0
+    assert "1 missing" in result.stdout
+    assert "RUN_NAME=demo sbatch --array=1" in result.stdout
+
+
+def test_merge_hdf5_rejects_missing_expected_chain(tmp_path):
+    import h5py
+
+    path = tmp_path / "posterior_chain_0.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("Beta", data=np.ones((1, 1, 1, 1)))
+
+    with pytest.raises(ValueError, match="Missing expected chain outputs"):
+        merge_hdf5_posteriors([path], tmp_path / "merged.h5", expected_chains=[0, 1])

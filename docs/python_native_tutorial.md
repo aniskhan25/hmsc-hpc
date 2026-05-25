@@ -56,6 +56,27 @@ array script reads that shared `init.json` and writes per-chain files under
 `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/<run_name>/chains`, and the
 merge script writes one metadata-preserving `posterior.h5`.
 
+Inspect chain status before merging or after a failed array run:
+
+```bash
+python -m pyhmsc chain-status \
+  /scratch/project_462000131/anisrahm/hmsc-hpc-runs/fixed_poisson_array/chains \
+  --expected-chains 0 1 \
+  --run-name fixed_poisson_array
+```
+
+Rerun failed chains only:
+
+```bash
+RUN_NAME=fixed_poisson_array sbatch --array=1 docs/lumi_python_native_array_sbatch.sh
+```
+
+To safely resubmit an array without overwriting completed chains:
+
+```bash
+RUN_NAME=fixed_poisson_array SKIP_EXISTING=1 sbatch docs/lumi_python_native_array_sbatch.sh
+```
+
 Known working LUMI environment:
 
 ```text

@@ -20,6 +20,7 @@ set -euo pipefail
 # Optional overrides:
 #   RUN_NAME=my_model
 #   SAMPLES=1000 TRANSIENT=500 THIN=10 VERBOSE=100
+#   SKIP_EXISTING=1
 
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
@@ -31,6 +32,7 @@ RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
 COMPILED_INIT="${RUN_ROOT}/compiled/init.json"
 CHAIN_DIR="${RUN_ROOT}/chains"
+CHAIN_OUTPUT="${CHAIN_DIR}/posterior_chain_${CHAIN_ID}.h5"
 
 mkdir -p output "${CHAIN_DIR}"
 
@@ -59,13 +61,18 @@ fi
 
 "${PYTHON}" -m pyhmsc validate-init "${COMPILED_INIT}" --strict
 
+if [[ "${SKIP_EXISTING:-0}" == "1" && -s "${CHAIN_OUTPUT}" ]]; then
+  echo "Skipping existing chain output: ${CHAIN_OUTPUT}"
+  exit 0
+fi
+
 srun "${PYTHON}" -m pyhmsc sample \
   "${COMPILED_INIT}" \
-  --output "${CHAIN_DIR}/posterior_chain_${CHAIN_ID}.h5" \
+  --output "${CHAIN_OUTPUT}" \
   --chains "${CHAIN_ID}" \
   --samples "${SAMPLES:-1000}" \
   --transient "${TRANSIENT:-500}" \
   --thin "${THIN:-10}" \
   --verbose "${VERBOSE:-100}"
 
-echo "Done. Chain output: ${CHAIN_DIR}/posterior_chain_${CHAIN_ID}.h5"
+echo "Done. Chain output: ${CHAIN_OUTPUT}"

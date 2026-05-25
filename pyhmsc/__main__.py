@@ -8,7 +8,7 @@ from pathlib import Path
 from pyhmsc.compiler import compile_hmsc_model
 from pyhmsc.config import model_from_config
 from pyhmsc.data import read_table
-from pyhmsc.merge import merge_hdf5_posteriors
+from pyhmsc.merge import inspect_chain_directory, merge_hdf5_posteriors
 from pyhmsc.posterior import HmscFit
 from pyhmsc.runner import run_gibbs_sampler
 from pyhmsc.validation import validate_compiled_native_model, validate_fit
@@ -54,6 +54,14 @@ def main() -> None:
     merge_parser = subparsers.add_parser("merge", help="merge HDF5 posterior shards")
     merge_parser.add_argument("inputs", nargs="+", help="input posterior .h5 files")
     merge_parser.add_argument("--output", required=True, help="merged posterior .h5 path")
+    merge_parser.add_argument("--expected-chains", type=int, nargs="*", help="expected chain ids")
+
+    chain_status_parser = subparsers.add_parser("chain-status", help="inspect HDF5 chain shards")
+    chain_status_parser.add_argument("directory", help="directory containing posterior_chain_<id>.h5 files")
+    chain_status_parser.add_argument("--expected-chains", type=int, nargs="+", required=True)
+    chain_status_parser.add_argument("--expected-draws", type=int)
+    chain_status_parser.add_argument("--run-name", help="LUMI RUN_NAME to include in rerun commands")
+    chain_status_parser.add_argument("--strict", action="store_true", help="exit non-zero if any chain failed")
 
     predict_parser = subparsers.add_parser("predict", help="predict from a posterior and covariate table")
     predict_parser.add_argument("posterior")
@@ -129,8 +137,28 @@ def main() -> None:
         fit = HmscFit.from_file(args.posterior)
         print(fit.summary(args.param).to_string(index=False))
     elif args.command == "merge":
-        output = merge_hdf5_posteriors(args.inputs, args.output)
+        output = merge_hdf5_posteriors(args.inputs, args.output, expected_chains=args.expected_chains)
         print(output)
+    elif args.command == "chain-status":
+        statuses = inspect_chain_directory(
+            args.directory,
+            expected_chains=args.expected_chains,
+            expected_draws=args.expected_draws,
+        )
+        failed = [status for status in statuses if status.status != "passed"]
+        print("chain status")
+        for status in statuses:
+            print(f"{status.chain} {status.status} {status.path} {status.message}")
+        if failed:
+            failed_ids = " ".join(str(status.chain) for status in failed)
+            print("rerun")
+            if args.run_name:
+                print(f"RUN_NAME={args.run_name} sbatch --array={','.join(str(status.chain) for status in failed)} docs/lumi_python_native_array_sbatch.sh")
+            else:
+                print(f"sbatch --array={','.join(str(status.chain) for status in failed)} docs/lumi_python_native_array_sbatch.sh")
+            print(f"failed_chains {failed_ids}")
+            if args.strict:
+                raise SystemExit(1)
     elif args.command == "predict":
         from pyhmsc.model import HmscModel
 
