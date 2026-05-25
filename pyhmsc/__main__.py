@@ -8,6 +8,7 @@ from pathlib import Path
 from pyhmsc.compiler import compile_hmsc_model
 from pyhmsc.config import model_from_config
 from pyhmsc.data import read_table
+from pyhmsc.merge import merge_hdf5_posteriors
 from pyhmsc.posterior import HmscFit
 from pyhmsc.runner import run_gibbs_sampler
 from pyhmsc.validation import validate_compiled_native_model, validate_fit
@@ -49,6 +50,10 @@ def main() -> None:
     summarize_parser = subparsers.add_parser("summarize", help="summarize a posterior file")
     summarize_parser.add_argument("posterior", help="posterior .h5, .json, or .rds file")
     summarize_parser.add_argument("--param", default="Beta")
+
+    merge_parser = subparsers.add_parser("merge", help="merge HDF5 posterior shards")
+    merge_parser.add_argument("inputs", nargs="+", help="input posterior .h5 files")
+    merge_parser.add_argument("--output", required=True, help="merged posterior .h5 path")
 
     predict_parser = subparsers.add_parser("predict", help="predict from a posterior and covariate table")
     predict_parser.add_argument("posterior")
@@ -123,6 +128,9 @@ def main() -> None:
     elif args.command == "summarize":
         fit = HmscFit.from_file(args.posterior)
         print(fit.summary(args.param).to_string(index=False))
+    elif args.command == "merge":
+        output = merge_hdf5_posteriors(args.inputs, args.output)
+        print(output)
     elif args.command == "predict":
         from pyhmsc.model import HmscModel
 

@@ -55,6 +55,15 @@ summaries and predictions can recover species names, covariate names, formula,
 distribution, and random-level metadata without requiring the original
 `HmscModel` object.
 
+HDF5 posterior shards from separate chain jobs can be merged with:
+
+```bash
+python -m pyhmsc merge run/chains/posterior_chain_*.h5 --output run/posterior.h5
+```
+
+Merge concatenates every dataset along the first dimension, validates matching
+dataset shapes after the chain axis, and preserves `pyhmsc_metadata`.
+
 JSON/RDS compatibility output preserves the larger nested chain/sample
 structure.
 
