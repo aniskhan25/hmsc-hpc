@@ -45,11 +45,14 @@ EXAMPLE_PROJECTS="traits_phylogeny iid_random_intercept spatial_full" \
 For one-chain-per-array-task sampling, use:
 
 ```bash
+RUN_NAME=fixed_poisson_array sbatch docs/lumi_python_native_compile_sbatch.sh
 RUN_NAME=fixed_poisson_array sbatch docs/lumi_python_native_array_sbatch.sh
 RUN_NAME=fixed_poisson_array sbatch docs/lumi_python_native_merge_sbatch.sh
 ```
 
-The array script writes per-chain files under
+The compile script writes one shared native model under
+`/scratch/project_462000131/anisrahm/hmsc-hpc-runs/<run_name>/compiled`. The
+array script reads that shared `init.json` and writes per-chain files under
 `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/<run_name>/chains`, and the
 merge script writes one metadata-preserving `posterior.h5`.
 

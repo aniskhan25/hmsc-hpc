@@ -13,12 +13,11 @@
 
 set -euo pipefail
 
-# Submit from the hmsc-hpc repository root. Each array task compiles the model
-# into its own task directory and samples one chain selected by
-# SLURM_ARRAY_TASK_ID.
+# Submit from the hmsc-hpc repository root after running
+# docs/lumi_python_native_compile_sbatch.sh. Each array task samples one chain
+# selected by SLURM_ARRAY_TASK_ID from the shared compiled model.
 #
 # Optional overrides:
-#   MODEL_CONFIG=/path/to/model.yaml
 #   RUN_NAME=my_model
 #   SAMPLES=1000 TRANSIENT=500 THIN=10 VERBOSE=100
 
@@ -30,11 +29,10 @@ REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 RUN_NAME="${RUN_NAME:-array_${SLURM_ARRAY_JOB_ID:-manual}}"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 CHAIN_ID="${SLURM_ARRAY_TASK_ID}"
-TASK_ROOT="${RUN_ROOT}/tasks/${CHAIN_ID}"
+COMPILED_INIT="${RUN_ROOT}/compiled/init.json"
 CHAIN_DIR="${RUN_ROOT}/chains"
-MODEL_CONFIG="${MODEL_CONFIG:-${REPO_DIR}/examples/projects/fixed_poisson/model.yaml}"
 
-mkdir -p output "${TASK_ROOT}" "${CHAIN_DIR}"
+mkdir -p output "${CHAIN_DIR}"
 
 module use /appl/local/csc/modulefiles
 module load tensorflow/2.16
@@ -44,15 +42,25 @@ cd "${REPO_DIR}"
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
 echo "Chain id: ${CHAIN_ID}"
-echo "Model config: ${MODEL_CONFIG}"
+echo "Compiled init: ${COMPILED_INIT}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
 
-"${PYTHON}" -m pyhmsc compile "${MODEL_CONFIG}" --output "${TASK_ROOT}/compiled"
-"${PYTHON}" -m pyhmsc validate-init "${TASK_ROOT}/compiled/init.json" --strict
+if [[ ! -f "${COMPILED_INIT}" ]]; then
+  cat >&2 <<EOF
+Missing compiled model:
+  ${COMPILED_INIT}
+
+Run the compile job first:
+  RUN_NAME=${RUN_NAME} sbatch docs/lumi_python_native_compile_sbatch.sh
+EOF
+  exit 2
+fi
+
+"${PYTHON}" -m pyhmsc validate-init "${COMPILED_INIT}" --strict
 
 srun "${PYTHON}" -m pyhmsc sample \
-  "${TASK_ROOT}/compiled/init.json" \
+  "${COMPILED_INIT}" \
   --output "${CHAIN_DIR}/posterior_chain_${CHAIN_ID}.h5" \
   --chains "${CHAIN_ID}" \
   --samples "${SAMPLES:-1000}" \

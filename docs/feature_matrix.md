@@ -16,7 +16,7 @@
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
 | HDF5 posterior merge | Supported |
-| LUMI Slurm array workflow | Template scripts included |
+| LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | CLI compile/sample/summarize/predict/validate | Supported |
 | CLI init validation | Supported |
 | No-R example smoke runner | Supported |
