@@ -48,6 +48,13 @@ random_levels/0/Delta
 random_levels/0/Alpha
 ```
 
+For Python-native runs sampled from `init.json`, HDF5 and Zarr posterior output
+also preserve the compiled model metadata under the `pyhmsc_metadata` root
+attribute. `pyhmsc.HmscFit.from_file()` reads this metadata so posterior-only
+summaries and predictions can recover species names, covariate names, formula,
+distribution, and random-level metadata without requiring the original
+`HmscModel` object.
+
 JSON/RDS compatibility output preserves the larger nested chain/sample
 structure.
 

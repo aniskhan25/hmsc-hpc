@@ -1,4 +1,5 @@
 import os
+import json
 from contextlib import nullcontext
 import time
 import argparse
@@ -39,6 +40,13 @@ def load_params(file_path, dtype=np.float64):
     nChains = int(hmscImport.get("nChains")[0])
   
     return modelDims, modelData, priorHyperparams, modelHyperparams, rLHyperparams, initParList, nChains
+
+
+def load_native_metadata(file_path):
+    if os.path.splitext(file_path)[1].lower() != ".json":
+        return None
+    with open(file_path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def validate_sampler_supported_params(rLHyperparams):
@@ -169,12 +177,27 @@ def run_gibbs_sampler(
         print("\n", "Whole Gibbs sampler elapsed %.1f" % elapsedTime)
     
     output_suffix = os.path.splitext(postList_file_path)[1].lower()
+    metadata = load_native_metadata(init_obj_file_path)
     if output_suffix == ".json":
         save_chains_postList_to_json(postList, postList_file_path, len(chainIndList))
     elif output_suffix in {".h5", ".hdf5"}:
-        save_chains_postList_to_hdf5(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
+        save_chains_postList_to_hdf5(
+            postList,
+            postList_file_path,
+            len(chainIndList),
+            elapsedTime,
+            flag_save_eta,
+            metadata=metadata,
+        )
     elif output_suffix == ".zarr":
-        save_chains_postList_to_zarr(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
+        save_chains_postList_to_zarr(
+            postList,
+            postList_file_path,
+            len(chainIndList),
+            elapsedTime,
+            flag_save_eta,
+            metadata=metadata,
+        )
     else:
         save_chains_postList_to_rds(postList, postList_file_path, len(chainIndList), elapsedTime, flag_save_eta)
 

@@ -53,8 +53,8 @@ def main() -> None:
     predict_parser = subparsers.add_parser("predict", help="predict from a posterior and covariate table")
     predict_parser.add_argument("posterior")
     predict_parser.add_argument("--X", required=True)
-    predict_parser.add_argument("--formula", required=True)
-    predict_parser.add_argument("--distribution", default="poisson")
+    predict_parser.add_argument("--formula")
+    predict_parser.add_argument("--distribution")
     predict_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
     predict_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
     predict_parser.add_argument("--output")
@@ -127,12 +127,18 @@ def main() -> None:
         from pyhmsc.model import HmscModel
 
         X = read_table(args.X)
-        dummy_y = X.iloc[:, :1].copy()
-        dummy_y.columns = ["species_0"]
-        fit = HmscFit.from_file(
-            args.posterior,
-            model=HmscModel(Y=dummy_y, X=X, x_formula=args.formula, distr=args.distribution),
-        )
+        fit = HmscFit.from_file(args.posterior)
+        if args.formula:
+            dummy_y = X.iloc[:, :1].copy()
+            dummy_y.columns = ["species_0"]
+            fit.model = HmscModel(
+                Y=dummy_y,
+                X=X,
+                x_formula=args.formula,
+                distr=args.distribution or fit._distribution(),
+            )
+        elif fit._x_formula() is None:
+            parser.error("predict requires --formula unless posterior metadata includes formula.X")
         pred = fit.predict(X, random_effects=args.random_effects, unseen_groups=args.unseen_groups)
         if args.output:
             pred.to_csv(args.output)

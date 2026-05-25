@@ -12,6 +12,7 @@ def save_chains_postList_to_zarr(
     elapsedTime=-1,
     flag_save_eta=True,
     chunks=None,
+    metadata=None,
 ):
     try:
         import zarr  # type: ignore
@@ -21,6 +22,8 @@ def save_chains_postList_to_zarr(
     root = zarr.open_group(str(postList_file_path), mode="w")
     root.attrs["time"] = float(elapsedTime)
     root.attrs["nChains"] = int(nChains)
+    if metadata is not None:
+        root.attrs["pyhmsc_metadata"] = metadata
     for param in ["Beta", "Gamma", "iV", "rhoInd", "sigma"]:
         data = _stack_dense(postList, param)
         root.create_array(param, data=data, chunks=chunks or _default_chunks(data), overwrite=True)

@@ -94,6 +94,8 @@ def test_cli_sample_and_summarize(tmp_path):
         capture_output=True,
     )
     assert "covariate" in result.stdout
+    assert "forest_cover" in result.stdout
+    assert "sparrow" in result.stdout
 
     pred_out = tmp_path / "pred.csv"
     subprocess.run(
@@ -105,8 +107,6 @@ def test_cli_sample_and_summarize(tmp_path):
             str(posterior),
             "--X",
             "tests/fixtures/fixed_effect/X.csv",
-            "--formula",
-            "~ forest_cover + elevation",
             "--random-effects",
             "none",
             "--output",

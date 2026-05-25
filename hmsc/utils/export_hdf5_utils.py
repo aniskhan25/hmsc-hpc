@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 
-def save_chains_postList_to_hdf5(postList, postList_file_path, nChains, elapsedTime=-1, flag_save_eta=True):
+def save_chains_postList_to_hdf5(
+    postList,
+    postList_file_path,
+    nChains,
+    elapsedTime=-1,
+    flag_save_eta=True,
+    metadata=None,
+):
     try:
         import h5py  # type: ignore
     except ImportError as exc:
@@ -14,6 +23,8 @@ def save_chains_postList_to_hdf5(postList, postList_file_path, nChains, elapsedT
     with h5py.File(postList_file_path, "w") as handle:
         handle.attrs["time"] = elapsedTime
         handle.attrs["nChains"] = nChains
+        if metadata is not None:
+            handle.attrs["pyhmsc_metadata"] = json.dumps(metadata)
         for param in ["Beta", "Gamma", "iV", "rhoInd", "sigma"]:
             handle.create_dataset(param, data=_stack_dense(postList, param))
         random_group = handle.create_group("random_levels")

@@ -16,6 +16,7 @@ class HmscFit:
     def __init__(self, posterior: dict[str, Any], model: Any | None = None) -> None:
         self.posterior = posterior
         self.model = model
+        self.metadata = posterior.get("__metadata__")
         self.init_file: Path | None = None
         self.output_file: Path | None = None
         self.workdir: Path | None = None
@@ -125,9 +126,13 @@ class HmscFit:
         unseen_groups: str = "error",
     ) -> np.ndarray:
         if self.model is None:
-            raise ValueError("predict_samples requires the HmscModel used to create the fit")
+            if self._x_formula() is None:
+                raise ValueError(
+                    "predict_samples requires the HmscModel used to create the fit "
+                    "or embedded posterior metadata with formula.X"
+                )
         X_new = X_new if isinstance(X_new, pd.DataFrame) else pd.DataFrame(X_new)
-        design = build_design_matrix(self.model.x_formula, X_new)
+        design = build_design_matrix(self._x_formula(), X_new)
         beta_frame = self.beta_mean()
         missing = [column for column in beta_frame.index if column not in design.columns]
         missing_non_intercept = [column for column in missing if column != "Intercept"]
@@ -143,7 +148,7 @@ class HmscFit:
             linear = linear + self._known_random_effect_prediction(X_new, unseen_groups=unseen_groups)
         elif random_effects == "marginal":
             linear = linear + self._marginal_random_effect_prediction(linear.shape[2])
-        if response and self.model.distr.lower() == "poisson":
+        if response and self._distribution().lower() == "poisson":
             linear = np.exp(linear)
         return linear
 
@@ -267,6 +272,17 @@ class HmscFit:
         if self.model is not None:
             covariates = getattr(self.model, "covariate_names", None)
             species = getattr(self.model, "species_names", None)
+        if (
+            covariates is None
+            or len(covariates) != beta.shape[0]
+            or species is None
+            or len(species) != beta.shape[1]
+        ):
+            names = self._metadata_names()
+            if covariates is None or len(covariates) != beta.shape[0]:
+                covariates = names.get("covariates")
+            if species is None or len(species) != beta.shape[1]:
+                species = names.get("species")
         covariates = _names_or_default(covariates, beta.shape[0], "covariate")
         species = _names_or_default(species, beta.shape[1], "species")
         return pd.DataFrame(beta, index=covariates, columns=species)
@@ -362,7 +378,40 @@ class HmscFit:
             names = self.model.species_names
             if len(names) == size:
                 return names
+        names = self._metadata_names().get("species")
+        if names and len(names) == size:
+            return names
         return [f"species_{idx}" for idx in range(size)]
+
+    def _metadata_names(self) -> dict[str, list[str]]:
+        if not isinstance(self.metadata, dict):
+            return {}
+        names = self.metadata.get("names", {})
+        if not isinstance(names, dict):
+            return {}
+        return {
+            key: [str(value) for value in values]
+            for key, values in names.items()
+            if isinstance(values, list)
+        }
+
+    def _x_formula(self) -> str | None:
+        if self.model is not None:
+            return self.model.x_formula
+        if isinstance(self.metadata, dict):
+            formula = self.metadata.get("formula", {})
+            if isinstance(formula, dict):
+                return formula.get("X")
+            if isinstance(formula, str):
+                return formula
+        return None
+
+    def _distribution(self) -> str:
+        if self.model is not None:
+            return self.model.distr
+        if isinstance(self.metadata, dict):
+            return str(self.metadata.get("distribution", "normal"))
+        return "normal"
 
 
 def _names_or_default(names: list[str] | None, size: int, prefix: str) -> list[str]:
@@ -377,9 +426,15 @@ def _read_hdf5_posterior(path: Path) -> dict[str, Any]:
     except ImportError as exc:
         raise RuntimeError("Install h5py to read HDF5 posterior files") from exc
     arrays = {}
+    metadata = None
     with h5py.File(path, "r") as handle:
+        if "pyhmsc_metadata" in handle.attrs:
+            metadata = json.loads(handle.attrs["pyhmsc_metadata"])
         _read_hdf5_group(handle, arrays)
-    return {"__arrays__": arrays}
+    data: dict[str, Any] = {"__arrays__": arrays}
+    if metadata is not None:
+        data["__metadata__"] = metadata
+    return data
 
 
 def _read_hdf5_group(group: Any, arrays: dict[str, np.ndarray], prefix: str = "") -> None:
@@ -398,8 +453,12 @@ def _read_zarr_posterior(path: Path) -> dict[str, Any]:
         raise RuntimeError("Install zarr to read Zarr posterior files") from exc
     arrays = {}
     root = zarr.open_group(str(path), mode="r")
+    metadata = root.attrs.get("pyhmsc_metadata")
     _read_zarr_group(root, arrays)
-    return {"__arrays__": arrays}
+    data: dict[str, Any] = {"__arrays__": arrays}
+    if metadata is not None:
+        data["__metadata__"] = metadata
+    return data
 
 
 def _read_zarr_group(group: Any, arrays: dict[str, np.ndarray], prefix: str = "") -> None:
