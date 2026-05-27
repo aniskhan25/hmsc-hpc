@@ -1,0 +1,12 @@
+# LUMI uses the CSC TensorFlow module/base container through
+# venv --system-site-packages. Do not list core numeric or TensorFlow packages
+# here; avoid upgrading/reinstalling system-site packages.
+#
+# Install with:
+#   python3 -m pip install --upgrade-strategy only-if-needed -r requirements_lumi.txt
+patsy
+PyYAML
+h5py
+tf-keras==2.16.*
+tensorflow-probability==0.24.*
+ujson

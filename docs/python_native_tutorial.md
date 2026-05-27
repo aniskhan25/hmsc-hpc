@@ -26,6 +26,8 @@ On LUMI, use the Slurm template in
 `project_462000131`, writes runs under
 `/scratch/project_462000131/anisrahm/hmsc-hpc-runs`, and expects a virtual
 environment at `/scratch/project_462000131/anisrahm/venvs/hmsc_tf_env`.
+GPU scripts use the `dev-g` partition with a 30 minute default walltime for the
+bundled smoke-scale runs.
 By default it runs the supported no-R examples: `fixed_poisson`,
 `traits_phylogeny`, `iid_random_intercept`, and `spatial_full`.
 
@@ -86,7 +88,19 @@ TensorFlow: 2.16.1
 GPU visible to TensorFlow: yes
 tf_keras: 2.16.0
 tensorflow_probability: 0.24.0
+h5py: required for init_arrays.h5 and posterior.h5
 ```
+
+For a fresh LUMI venv, install the non-TensorFlow Python dependencies with:
+
+```bash
+python3 -m pip install --upgrade-strategy only-if-needed -r /path/to/hmsc-hpc/requirements_lumi.txt
+python3 -m pip install --no-deps /path/to/hmsc-hpc
+```
+
+The LUMI requirements file intentionally avoids core system-site packages such
+as NumPy, pandas, SciPy, and TensorFlow so the CSC module/base container is not
+upgraded or replaced inside the venv.
 
 The fixed Poisson example has been verified on LUMI with 2 chains, 1000 saved
 samples, 500 transient iterations, and thin 10, writing `posterior.h5` under the

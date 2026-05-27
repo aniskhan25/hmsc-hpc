@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #SBATCH --job-name=pyhmsc-chain
 #SBATCH --account=project_462000131
-#SBATCH --partition=small-g
+#SBATCH --partition=dev-g
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=7
 #SBATCH --gpus-per-node=1
 #SBATCH --mem=60G
-#SBATCH --time=02:00:00
+#SBATCH --time=00:30:00
 #SBATCH --array=0-1
 #SBATCH --output=output/%x-%A_%a.out
 #SBATCH --error=output/%x-%A_%a.err
@@ -47,6 +47,7 @@ echo "Chain id: ${CHAIN_ID}"
 echo "Compiled init: ${COMPILED_INIT}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
+"${PYTHON}" -c "import h5py; print('h5py:', h5py.__version__)"
 
 if [[ ! -f "${COMPILED_INIT}" ]]; then
   cat >&2 <<EOF

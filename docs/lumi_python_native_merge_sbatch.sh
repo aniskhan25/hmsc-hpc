@@ -33,6 +33,7 @@ module use /appl/local/csc/modulefiles
 module load tensorflow/2.16
 source "${VENV}/bin/activate"
 cd "${REPO_DIR}"
+"${PYTHON}" -c "import h5py; print('h5py:', h5py.__version__)"
 
 inputs=("${CHAIN_DIR}"/posterior_chain_*.h5)
 if [[ ! -e "${inputs[0]}" ]]; then

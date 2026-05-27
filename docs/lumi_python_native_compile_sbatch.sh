@@ -40,6 +40,7 @@ echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
 echo "Model config: ${MODEL_CONFIG}"
 echo "Python: ${PYTHON}"
+"${PYTHON}" -c "import h5py; print('h5py:', h5py.__version__)"
 
 "${PYTHON}" -m pyhmsc compile "${MODEL_CONFIG}" --output "${COMPILED_DIR}"
 "${PYTHON}" -m pyhmsc validate-init "${COMPILED_DIR}/init.json" --strict
