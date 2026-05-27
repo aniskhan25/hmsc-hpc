@@ -79,6 +79,12 @@ To safely resubmit an array without overwriting completed chains:
 RUN_NAME=fixed_poisson_array SKIP_EXISTING=1 sbatch docs/lumi_python_native_array_sbatch.sh
 ```
 
+Run the opt-in slow recovery suite on LUMI:
+
+```bash
+sbatch docs/lumi_python_native_recovery_tests_sbatch.sh
+```
+
 Known working LUMI environment:
 
 ```text
