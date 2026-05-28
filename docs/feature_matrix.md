@@ -16,6 +16,7 @@
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
 | HDF5 posterior merge | Supported |
+| Posterior predictive checks | Supported |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |

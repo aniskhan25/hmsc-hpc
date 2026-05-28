@@ -39,6 +39,36 @@ def test_beta_mean_and_prediction_for_poisson():
     assert ci["lower"].shape == (1, 2)
     assert ci["upper"].shape == (1, 2)
 
+    yrep = fit.posterior_predictive(pd.DataFrame({"x": [1.0]}), rng_seed=7)
+    assert yrep.shape == (1, 2, 1, 2)
+    assert np.all(yrep >= 0)
+    assert np.all(yrep == np.floor(yrep))
+
+    ppc = fit.ppc_summary(model.Y, model.X, rng_seed=7)
+    assert list(ppc.columns) == ["species", "observed_mean", "replicated_mean", "lower", "upper", "covered"]
+    assert list(ppc["species"]) == ["sp1", "sp2"]
+
+
+def test_gaussian_posterior_predictive_uses_sigma():
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1.0, 2.0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+    )
+    posterior = {
+        "0": {
+            "0": {"Beta": [[0.0], [1.0]], "sigma": [0.1]},
+            "1": {"Beta": [[0.5], [1.0]], "sigma": [0.2]},
+        }
+    }
+    fit = HmscFit(posterior, model=model)
+
+    yrep = fit.posterior_predictive(pd.DataFrame({"x": [1.0]}), rng_seed=3)
+
+    assert yrep.shape == (1, 2, 1, 1)
+    assert np.isfinite(yrep).all()
+
 
 def test_known_random_effect_prediction_from_hdf5(tmp_path):
     import h5py

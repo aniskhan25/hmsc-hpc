@@ -192,6 +192,101 @@ class HmscFit:
         cols = self.beta_mean().columns
         return {"lower": pd.DataFrame(lo, index=index, columns=cols), "upper": pd.DataFrame(hi, index=index, columns=cols)}
 
+    def posterior_predictive(
+        self,
+        X_new: Any,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        rng_seed: int | None = None,
+    ) -> np.ndarray:
+        """Draw replicated responses from the posterior predictive distribution."""
+        rng = np.random.default_rng(rng_seed)
+        distribution = self._distribution().lower()
+        if distribution in {"normal", "gaussian"}:
+            mean = self.predict_samples(
+                X_new,
+                response=False,
+                random_effects=random_effects,
+                unseen_groups=unseen_groups,
+            )
+            sigma = np.maximum(self.sigma_samples(), np.finfo(float).eps)
+            return rng.normal(loc=mean, scale=sigma[:, :, None, :])
+        if distribution == "poisson":
+            rate = self.predict_samples(
+                X_new,
+                response=True,
+                random_effects=random_effects,
+                unseen_groups=unseen_groups,
+            )
+            return rng.poisson(np.clip(rate, 0.0, 1e12))
+        if distribution in {"probit", "bernoulli", "binomial"}:
+            linear = self.predict_samples(
+                X_new,
+                response=False,
+                random_effects=random_effects,
+                unseen_groups=unseen_groups,
+            )
+            probability = np.clip(_normal_cdf(linear), 0.0, 1.0)
+            return rng.binomial(1, probability)
+        raise ValueError(f"Posterior predictive checks do not support distribution {distribution!r}")
+
+    def posterior_predictive_summary(
+        self,
+        Y: Any,
+        X: Any,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        rng_seed: int | None = None,
+    ) -> pd.DataFrame:
+        """Summarize observed species means against replicated posterior means."""
+        if not 0 < level < 1:
+            raise ValueError("level must be between 0 and 1")
+        y_frame = Y if isinstance(Y, pd.DataFrame) else pd.DataFrame(Y)
+        samples = self.posterior_predictive(
+            X,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+            rng_seed=rng_seed,
+        )
+        species = self._species_names(samples.shape[-1])
+        missing = [name for name in species if name not in y_frame.columns]
+        if missing:
+            raise ValueError(f"Observed Y is missing species columns: {missing}")
+        observed = y_frame.loc[:, species].mean(axis=0).to_numpy(dtype=float)
+        replicated_means = samples.mean(axis=2).reshape(-1, samples.shape[-1])
+        predicted = replicated_means.mean(axis=0)
+        lo = np.quantile(replicated_means, (1 - level) / 2, axis=0)
+        hi = np.quantile(replicated_means, 1 - (1 - level) / 2, axis=0)
+        return pd.DataFrame(
+            {
+                "species": species,
+                "observed_mean": observed,
+                "replicated_mean": predicted,
+                "lower": lo,
+                "upper": hi,
+                "covered": (lo <= observed) & (observed <= hi),
+            }
+        )
+
+    def ppc_summary(
+        self,
+        Y: Any,
+        X: Any,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        rng_seed: int | None = None,
+    ) -> pd.DataFrame:
+        return self.posterior_predictive_summary(
+            Y=Y,
+            X=X,
+            level=level,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+            rng_seed=rng_seed,
+        )
+
     def to_arviz(self) -> Any:
         try:
             import arviz as az  # type: ignore
@@ -491,3 +586,14 @@ def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarra
 def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
     lo, hi = _ci_arrays(samples, level)
     return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}
+
+
+def _normal_cdf(values: np.ndarray) -> np.ndarray:
+    try:
+        from scipy.special import ndtr  # type: ignore
+
+        return ndtr(values)
+    except ImportError:
+        import math
+
+        return np.vectorize(lambda value: 0.5 * (1.0 + math.erf(value / math.sqrt(2.0))))(values)

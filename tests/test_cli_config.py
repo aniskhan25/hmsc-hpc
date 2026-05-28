@@ -118,6 +118,32 @@ def test_cli_sample_and_summarize(tmp_path):
     )
     assert pred_out.exists()
 
+    ppc_out = tmp_path / "ppc.csv"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "ppc",
+            str(posterior),
+            "--X",
+            "tests/fixtures/fixed_effect/X.csv",
+            "--Y",
+            "tests/fixtures/fixed_effect/Y_poisson.csv",
+            "--random-effects",
+            "none",
+            "--seed",
+            "1",
+            "--output",
+            str(ppc_out),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert ppc_out.exists()
+    assert "sparrow" in ppc_out.read_text(encoding="utf-8")
+
     validate = subprocess.run(
         [
             sys.executable,

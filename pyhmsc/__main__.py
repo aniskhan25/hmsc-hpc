@@ -72,6 +72,18 @@ def main() -> None:
     predict_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
     predict_parser.add_argument("--output")
 
+    ppc_parser = subparsers.add_parser("ppc", help="run posterior predictive checks")
+    ppc_parser.add_argument("posterior")
+    ppc_parser.add_argument("--X", required=True)
+    ppc_parser.add_argument("--Y", required=True)
+    ppc_parser.add_argument("--formula")
+    ppc_parser.add_argument("--distribution")
+    ppc_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
+    ppc_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
+    ppc_parser.add_argument("--level", type=float, default=0.95)
+    ppc_parser.add_argument("--seed", type=int)
+    ppc_parser.add_argument("--output")
+
     diagnostics_parser = subparsers.add_parser("diagnostics", help="compute basic diagnostics")
     diagnostics_parser.add_argument("posterior")
     diagnostics_parser.add_argument("--param", default="Beta")
@@ -180,6 +192,33 @@ def main() -> None:
             pred.to_csv(args.output)
         else:
             print(pred.to_string())
+    elif args.command == "ppc":
+        from pyhmsc.model import HmscModel
+
+        X = read_table(args.X)
+        Y = read_table(args.Y)
+        fit = HmscFit.from_file(args.posterior)
+        if args.formula:
+            fit.model = HmscModel(
+                Y=Y,
+                X=X,
+                x_formula=args.formula,
+                distr=args.distribution or fit._distribution(),
+            )
+        elif fit._x_formula() is None:
+            parser.error("ppc requires --formula unless posterior metadata includes formula.X")
+        summary = fit.ppc_summary(
+            Y=Y,
+            X=X,
+            level=args.level,
+            random_effects=args.random_effects,
+            unseen_groups=args.unseen_groups,
+            rng_seed=args.seed,
+        )
+        if args.output:
+            summary.to_csv(args.output, index=False)
+        else:
+            print(summary.to_string(index=False))
     elif args.command == "diagnostics":
         fit = HmscFit.from_file(args.posterior)
         print("rhat")

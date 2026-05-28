@@ -7,6 +7,10 @@ python -m pyhmsc compile examples/projects/fixed_poisson/model.yaml --output run
 python -m pyhmsc validate-init run/init.json --strict
 python -m pyhmsc sample run/init.json --output run/posterior.h5 --samples 100 --transient 100 --thin 1
 python -m pyhmsc summarize run/posterior.h5 --param Beta
+python -m pyhmsc ppc run/posterior.h5 \
+  --X examples/projects/fixed_poisson/data/X.csv \
+  --Y examples/projects/fixed_poisson/data/Y.csv \
+  --output run/ppc.csv
 ```
 
 Run the supported no-R example projects from one command:
@@ -133,4 +137,5 @@ X = pd.read_csv("examples/projects/fixed_poisson/data/X.csv", index_col=0)
 model = HmscModel(Y=Y, X=X, x_formula="~ forest_cover + elevation", distr="poisson")
 fit = model.sample(samples=100, transient=100, thin=1, chains=2, init="python-native")
 print(fit.beta_mean())
+print(fit.ppc_summary(Y=Y, X=X))
 ```
