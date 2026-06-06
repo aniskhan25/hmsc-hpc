@@ -1,0 +1,12 @@
+response: data/Y_presence.csv
+covariates: data/X.csv
+formula:
+  X: "~ TMG"
+distribution: probit
+traits: data/traits.csv
+trait_formula: "~ CN"
+phylo_cov: data/phylo_cov.csv
+chains: 2
+samples: 1000
+transient: 500
+thin: 10
