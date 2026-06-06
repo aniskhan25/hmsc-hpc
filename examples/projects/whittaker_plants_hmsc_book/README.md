@@ -43,6 +43,15 @@ python -m pyhmsc validate-init run_whittaker/init.json --strict
 python -m pyhmsc sample run_whittaker/init.json --output run_whittaker/posterior.h5 --samples 1000 --transient 500 --thin 10
 ```
 
+After sampling, generate the book-comparison report:
+
+```bash
+python examples/analyze_whittaker_plants.py \
+  --posterior run_whittaker/posterior.h5 \
+  --project examples/projects/whittaker_plants_hmsc_book \
+  --output run_whittaker/whittaker_report.txt
+```
+
 ## Literature Checks
 
 The original HMSC Section 6.7 scripts state these expected qualitative results:

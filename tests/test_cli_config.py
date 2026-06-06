@@ -2,6 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 
 def test_cli_compile_yaml_config(tmp_path):
     out = tmp_path / "run"
@@ -46,6 +48,42 @@ def test_cli_validate_init_rejects_model_yaml():
     )
     assert result.returncode != 0
     assert "compile MODEL.yaml" in result.stderr
+
+
+def test_cli_predict_probit_uses_response_scale(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    x_path = tmp_path / "X.csv"
+    output = tmp_path / "pred.csv"
+    pd.DataFrame({"x": [1.0]}, index=["site_1"]).to_csv(x_path)
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset("Beta", data=[[[[0.0], [1.0]], [[0.0], [-1.0]]]])
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"covariates":["Intercept","x"],"species":["sp1"]},'
+            '"formula":{"X":"~ x"},"distribution":"probit"}'
+        )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "predict",
+            str(posterior),
+            "--X",
+            str(x_path),
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    pred = pd.read_csv(output, index_col=0)
+    assert 0 <= pred.loc["site_1", "sp1"] <= 1
+    assert abs(pred.loc["site_1", "sp1"] - 0.5) < 1e-8
 
 
 def test_cli_sample_and_summarize(tmp_path):
