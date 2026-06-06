@@ -54,3 +54,5 @@ def test_whittaker_analysis_script_smoke(tmp_path):
     assert "Whittaker Plant Validation Report" in result.stdout
     assert "negative mean effects: 1 / 2" in result.stdout
     assert "community-weighted CN" in result.stdout
+    assert "Diagnostics" in result.stdout
+    assert "max R-hat" in result.stdout

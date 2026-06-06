@@ -299,10 +299,53 @@ class HmscFit:
         return az.from_dict(posterior=posterior)
 
     def rhat(self, param: str = "Beta") -> Any:
-        return self.to_arviz().posterior[param].to_numpy() if False else _arviz_stat(self, param, "rhat")
+        return self._diagnostic_frame(param, _rhat_array(self._samples(param)), "rhat")
 
     def ess(self, param: str = "Beta") -> Any:
-        return _arviz_stat(self, param, "ess")
+        return self._diagnostic_frame(param, _ess_array(self._samples(param)), "ess")
+
+    def diagnostics(self, param: str = "Beta") -> pd.DataFrame:
+        samples = self._samples(param)
+        mean = samples.mean(axis=(0, 1))
+        sd = samples.reshape((-1,) + samples.shape[2:]).std(axis=0, ddof=1)
+        rhat = _rhat_array(samples)
+        ess = _ess_array(samples)
+        labels = self._diagnostic_labels(param, mean.shape)
+        rows = []
+        for flat_idx, index in enumerate(np.ndindex(mean.shape)):
+            row = dict(labels[flat_idx])
+            row.update(
+                {
+                    "mean": float(mean[index]),
+                    "sd": float(sd[index]),
+                    "rhat": float(rhat[index]),
+                    "ess": float(ess[index]),
+                }
+            )
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def diagnostics_overview(
+        self,
+        param: str = "Beta",
+        rhat_threshold: float = 1.01,
+        ess_threshold: float = 400.0,
+    ) -> dict[str, Any]:
+        diagnostics = self.diagnostics(param)
+        rhat = diagnostics["rhat"].replace([np.inf, -np.inf], np.nan)
+        ess = diagnostics["ess"].replace([np.inf, -np.inf], np.nan)
+        return {
+            "param": param,
+            "n_parameters": int(len(diagnostics)),
+            "rhat_max": float(rhat.max(skipna=True)),
+            "rhat_median": float(rhat.median(skipna=True)),
+            "ess_min": float(ess.min(skipna=True)),
+            "ess_median": float(ess.median(skipna=True)),
+            "rhat_threshold": float(rhat_threshold),
+            "ess_threshold": float(ess_threshold),
+            "n_rhat_flagged": int((rhat > rhat_threshold).sum()),
+            "n_ess_flagged": int((ess < ess_threshold).sum()),
+        }
 
     def traceplot(self, param: str = "Beta") -> Any:
         try:
@@ -497,6 +540,35 @@ class HmscFit:
         covariates = _names_or_default(covariates, gamma.shape[0], "covariate")
         traits = _names_or_default(traits, gamma.shape[1], "trait")
         return pd.DataFrame(gamma, index=covariates, columns=traits)
+
+    def _diagnostic_frame(self, param: str, values: np.ndarray, value_name: str) -> pd.DataFrame:
+        labels = self._diagnostic_labels(param, values.shape)
+        rows = []
+        for flat_idx, index in enumerate(np.ndindex(values.shape)):
+            row = dict(labels[flat_idx])
+            row[value_name] = float(values[index])
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    def _diagnostic_labels(self, param: str, shape: tuple[int, ...]) -> list[dict[str, Any]]:
+        if param == "Beta" and len(shape) == 2:
+            frame = self._beta_frame(np.zeros(shape))
+            return [
+                {"covariate": covariate, "species": species}
+                for covariate in frame.index
+                for species in frame.columns
+            ]
+        if param == "Gamma" and len(shape) == 2:
+            frame = self._gamma_frame(np.zeros(shape))
+            return [
+                {"covariate": covariate, "trait": trait}
+                for covariate in frame.index
+                for trait in frame.columns
+            ]
+        return [
+            {f"dim_{axis}": int(value) for axis, value in enumerate(index)}
+            for index in np.ndindex(shape)
+        ]
 
     def _random_level_samples(self, param: str, level: int) -> np.ndarray:
         if "__arrays__" in self.posterior:
@@ -702,6 +774,60 @@ def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarra
 def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
     lo, hi = _ci_arrays(samples, level)
     return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}
+
+
+def _rhat_array(samples: np.ndarray) -> np.ndarray:
+    if samples.ndim < 3:
+        raise ValueError("diagnostics require samples with shape chains x draws x ...")
+    n_chains, n_draws = samples.shape[:2]
+    if n_chains < 2 or n_draws < 2:
+        return np.full(samples.shape[2:], np.nan, dtype=float)
+    chain_means = samples.mean(axis=1)
+    chain_vars = samples.var(axis=1, ddof=1)
+    within = chain_vars.mean(axis=0)
+    between = n_draws * chain_means.var(axis=0, ddof=1)
+    var_hat = ((n_draws - 1) / n_draws) * within + between / n_draws
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rhat = np.sqrt(var_hat / within)
+    rhat = np.where((within == 0) & (between == 0), 1.0, rhat)
+    return rhat
+
+
+def _ess_array(samples: np.ndarray) -> np.ndarray:
+    if samples.ndim < 3:
+        raise ValueError("diagnostics require samples with shape chains x draws x ...")
+    n_chains, n_draws = samples.shape[:2]
+    if n_chains < 1 or n_draws < 2:
+        return np.full(samples.shape[2:], np.nan, dtype=float)
+    flat = samples.reshape(n_chains, n_draws, -1)
+    ess = np.empty(flat.shape[-1], dtype=float)
+    for idx in range(flat.shape[-1]):
+        ess[idx] = _ess_one(flat[:, :, idx])
+    return ess.reshape(samples.shape[2:])
+
+
+def _ess_one(values: np.ndarray) -> float:
+    n_chains, n_draws = values.shape
+    chain_vars = values.var(axis=1, ddof=1)
+    variance = float(chain_vars.mean())
+    if variance <= 0 or not np.isfinite(variance):
+        return float(n_chains * n_draws)
+    rho_sum = 0.0
+    previous_pair = np.inf
+    centered = values - values.mean(axis=1, keepdims=True)
+    for lag in range(1, n_draws):
+        autocov = np.mean(centered[:, :-lag] * centered[:, lag:])
+        rho = float(autocov / variance)
+        if lag % 2 == 0:
+            pair = previous_pair + rho
+            if pair < 0:
+                break
+            rho_sum += pair
+            previous_pair = np.inf
+        else:
+            previous_pair = rho
+    estimate = n_chains * n_draws / max(1.0 + 2.0 * rho_sum, np.finfo(float).eps)
+    return float(min(max(estimate, 0.0), n_chains * n_draws))
 
 
 def _gradient_summary_frame(values: pd.Series, samples: np.ndarray, level: float) -> pd.DataFrame:

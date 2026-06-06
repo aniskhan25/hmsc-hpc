@@ -64,6 +64,10 @@ srun "${PYTHON}" -m pyhmsc sample \
   > "${RUN_ROOT}/beta_summary.txt"
 "${PYTHON}" -m pyhmsc summarize "${POSTERIOR}" --param Gamma \
   > "${RUN_ROOT}/gamma_summary.txt"
+"${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Beta \
+  --output "${RUN_ROOT}/beta_diagnostics.txt"
+"${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Gamma \
+  --output "${RUN_ROOT}/gamma_diagnostics.txt"
 "${PYTHON}" examples/analyze_whittaker_plants.py \
   --posterior "${POSTERIOR}" \
   --project "${PROJECT_DIR}" \
@@ -72,4 +76,6 @@ srun "${PYTHON}" -m pyhmsc sample \
 echo "Posterior: ${POSTERIOR}"
 echo "Beta summary: ${RUN_ROOT}/beta_summary.txt"
 echo "Gamma summary: ${RUN_ROOT}/gamma_summary.txt"
+echo "Beta diagnostics: ${RUN_ROOT}/beta_diagnostics.txt"
+echo "Gamma diagnostics: ${RUN_ROOT}/gamma_diagnostics.txt"
 echo "Validation report: ${RUN_ROOT}/whittaker_report.txt"

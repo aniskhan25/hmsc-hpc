@@ -110,6 +110,49 @@ def test_cli_summarize_gamma_uses_metadata_names(tmp_path):
     assert "CN" in result.stdout
 
 
+def test_cli_diagnostics_writes_named_report(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    output = tmp_path / "diagnostics.txt"
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset(
+            "Beta",
+            data=[
+                [[[0.0], [1.0]], [[0.1], [1.1]], [[0.2], [1.2]]],
+                [[[0.0], [1.0]], [[0.1], [1.1]], [[0.2], [1.2]]],
+            ],
+        )
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"covariates":["Intercept","x"],"species":["sp1"]},'
+            '"formula":{"X":"~ x"},"distribution":"normal"}'
+        )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "diagnostics",
+            str(posterior),
+            "--param",
+            "Beta",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "diagnostics" in text
+    assert "rhat_max" in text
+    assert "ess_min" in text
+    assert "Intercept" in text
+    assert "sp1" in text
+
+
 def test_cli_sample_and_summarize(tmp_path):
     run_dir = tmp_path / "run"
     subprocess.run(

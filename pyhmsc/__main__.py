@@ -88,6 +88,9 @@ def main() -> None:
     diagnostics_parser = subparsers.add_parser("diagnostics", help="compute basic diagnostics")
     diagnostics_parser.add_argument("posterior")
     diagnostics_parser.add_argument("--param", default="Beta")
+    diagnostics_parser.add_argument("--rhat-threshold", type=float, default=1.01)
+    diagnostics_parser.add_argument("--ess-threshold", type=float, default=400.0)
+    diagnostics_parser.add_argument("--output")
 
     validate_parser = subparsers.add_parser("validate", help="run simple validation checks")
     validate_parser.add_argument("posterior")
@@ -222,10 +225,23 @@ def main() -> None:
             print(summary.to_string(index=False))
     elif args.command == "diagnostics":
         fit = HmscFit.from_file(args.posterior)
-        print("rhat")
-        print(fit.rhat(args.param))
-        print("ess")
-        print(fit.ess(args.param))
+        overview = fit.diagnostics_overview(
+            args.param,
+            rhat_threshold=args.rhat_threshold,
+            ess_threshold=args.ess_threshold,
+        )
+        diagnostics = fit.diagnostics(args.param)
+        lines = [
+            "diagnostics",
+            *(f"{key}: {value}" for key, value in overview.items()),
+            "",
+            diagnostics.to_string(index=False),
+        ]
+        text = "\n".join(lines) + "\n"
+        if args.output:
+            Path(args.output).write_text(text, encoding="utf-8")
+        else:
+            print(text, end="")
     elif args.command == "validate":
         from pyhmsc.model import HmscModel
 

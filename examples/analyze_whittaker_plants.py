@@ -93,6 +93,12 @@ def build_report(
         "",
         _gamma_report(fit, level=level),
         "",
+        "## Diagnostics",
+        "",
+        _diagnostics_report(fit, "Beta"),
+        "",
+        _diagnostics_report(fit, "Gamma"),
+        "",
         "## TMG Gradient",
         "",
         _format_gradient("predicted richness", richness_gradient),
@@ -116,6 +122,25 @@ def _gamma_report(fit: HmscFit, level: float) -> str:
     except ValueError:
         return "Gamma samples unavailable."
     return gamma.to_string(index=False)
+
+
+def _diagnostics_report(fit: HmscFit, param: str) -> str:
+    try:
+        overview = fit.diagnostics_overview(param)
+    except ValueError:
+        return f"{param}: samples unavailable."
+    return "\n".join(
+        [
+            f"{param}:",
+            f"  parameters: {overview['n_parameters']}",
+            f"  max R-hat: {overview['rhat_max']:.6g}",
+            f"  median R-hat: {overview['rhat_median']:.6g}",
+            f"  min ESS: {overview['ess_min']:.6g}",
+            f"  median ESS: {overview['ess_median']:.6g}",
+            f"  R-hat > {overview['rhat_threshold']}: {overview['n_rhat_flagged']}",
+            f"  ESS < {overview['ess_threshold']}: {overview['n_ess_flagged']}",
+        ]
+    )
 
 
 def _endpoint_summary(samples: np.ndarray, level: float) -> dict[str, float]:
