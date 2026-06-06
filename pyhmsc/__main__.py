@@ -50,6 +50,7 @@ def main() -> None:
     summarize_parser = subparsers.add_parser("summarize", help="summarize a posterior file")
     summarize_parser.add_argument("posterior", help="posterior .h5, .json, or .rds file")
     summarize_parser.add_argument("--param", default="Beta")
+    summarize_parser.add_argument("--level", type=float, default=0.95)
 
     merge_parser = subparsers.add_parser("merge", help="merge HDF5 posterior shards")
     merge_parser.add_argument("inputs", nargs="+", help="input posterior .h5 files")
@@ -147,7 +148,7 @@ def main() -> None:
             raise SystemExit(1)
     elif args.command == "summarize":
         fit = HmscFit.from_file(args.posterior)
-        print(fit.summary(args.param).to_string(index=False))
+        print(fit.summary(args.param, level=args.level).to_string(index=False))
     elif args.command == "merge":
         output = merge_hdf5_posteriors(args.inputs, args.output, expected_chains=args.expected_chains)
         print(output)

@@ -17,8 +17,8 @@ def test_hdf5_posterior_roundtrip(tmp_path):
         level.create_dataset("Eta", data=np.ones((2, 3, 2, 1)))
         level.create_dataset("Lambda", data=np.ones((2, 3, 1, 1)))
         handle.attrs["pyhmsc_metadata"] = (
-            '{"names":{"covariates":["Intercept","x"],"species":["sp1"]},'
-            '"formula":{"X":"~ x"},"distribution":"poisson"}'
+            '{"names":{"covariates":["Intercept","x"],"species":["sp1"],'
+            '"traits":["Intercept"]},"formula":{"X":"~ x"},"distribution":"poisson"}'
         )
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2]}),
@@ -32,6 +32,8 @@ def test_hdf5_posterior_roundtrip(tmp_path):
     assert list(fit.beta_mean().index) == ["Intercept", "x"]
     assert list(fit.beta_mean().columns) == ["sp1"]
     np.testing.assert_allclose(fit.gamma_mean().to_numpy(), np.ones((2, 1)) * 2)
+    assert list(fit.gamma_mean().index) == ["Intercept", "x"]
+    assert list(fit.gamma_mean().columns) == ["Intercept"]
     np.testing.assert_allclose(fit.sigma_mean().to_numpy(), [0.5])
     assert fit.eta_mean(0).shape == (2, 1)
     assert fit.lambda_mean(0).shape == (1, 1)

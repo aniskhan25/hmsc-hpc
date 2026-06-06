@@ -3,7 +3,7 @@ import pandas as pd
 
 from pyhmsc import HmscModel
 from pyhmsc.posterior import HmscFit
-from pyhmsc.validation import coefficient_sign_recovery, predictive_interval_contains_observed_mean
+from pyhmsc.validation import coefficient_sign_recovery, predictive_interval_contains_observed_mean, trait_effect_dimensions
 
 
 def test_coefficient_sign_recovery_passes_for_matching_signs():
@@ -33,3 +33,22 @@ def test_predictive_interval_validation_returns_result():
     fit = HmscFit(posterior, model=model)
     result = predictive_interval_contains_observed_mean(fit, model.X, model.Y, level=0.99)
     assert isinstance(result.passed, bool)
+
+
+def test_trait_effect_dimensions_requires_named_gamma_axes():
+    fit = HmscFit(
+        {
+            "__metadata__": {
+                "names": {
+                    "covariates": ["Intercept", "x"],
+                    "traits": ["Intercept", "body_size"],
+                }
+            },
+            "__arrays__": {"Gamma": np.ones((1, 2, 2, 2))},
+        }
+    )
+
+    result = trait_effect_dimensions(fit)
+
+    assert result.passed
+    assert result.details["shape"] == (2, 2)

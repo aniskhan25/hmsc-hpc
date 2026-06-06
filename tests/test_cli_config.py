@@ -86,6 +86,30 @@ def test_cli_predict_probit_uses_response_scale(tmp_path):
     assert abs(pred.loc["site_1", "sp1"] - 0.5) < 1e-8
 
 
+def test_cli_summarize_gamma_uses_metadata_names(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset("Gamma", data=[[[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]]])
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"covariates":["Intercept","TMG"],"traits":["Intercept","CN"]},'
+            '"formula":{"X":"~ TMG"},"distribution":"probit"}'
+        )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pyhmsc", "summarize", str(posterior), "--param", "Gamma", "--level", "0.5"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "covariate" in result.stdout
+    assert "trait" in result.stdout
+    assert "TMG" in result.stdout
+    assert "CN" in result.stdout
+
+
 def test_cli_sample_and_summarize(tmp_path):
     run_dir = tmp_path / "run"
     subprocess.run(

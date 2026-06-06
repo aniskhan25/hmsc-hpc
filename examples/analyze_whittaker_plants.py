@@ -112,26 +112,10 @@ def build_report(
 
 def _gamma_report(fit: HmscFit, level: float) -> str:
     try:
-        gamma = fit.gamma_mean()
-        gamma_ci = fit.gamma_ci(level=level)
+        gamma = fit.gamma_summary(level=level)
     except ValueError:
         return "Gamma samples unavailable."
-    names = _metadata_names(fit)
-    covariates = names.get("covariates", [f"covariate_{idx}" for idx in range(gamma.shape[0])])
-    traits = names.get("traits", [f"trait_{idx}" for idx in range(gamma.shape[1])])
-    rows = []
-    for cov_idx, covariate in enumerate(covariates):
-        for trait_idx, trait in enumerate(traits):
-            rows.append(
-                {
-                    "covariate": covariate,
-                    "trait": trait,
-                    "mean": gamma.iloc[cov_idx, trait_idx],
-                    "lower": gamma_ci["lower"].iloc[cov_idx, trait_idx],
-                    "upper": gamma_ci["upper"].iloc[cov_idx, trait_idx],
-                }
-            )
-    return pd.DataFrame(rows).to_string(index=False)
+    return gamma.to_string(index=False)
 
 
 def _endpoint_summary(samples: np.ndarray, level: float) -> dict[str, float]:
@@ -165,15 +149,6 @@ def _format_gradient(name: str, values: dict[str, float]) -> str:
             f"  P(delta < 0): {values['p_delta_negative']:.3f}",
         ]
     )
-
-
-def _metadata_names(fit: HmscFit) -> dict[str, list[str]]:
-    if not isinstance(fit.metadata, dict):
-        return {}
-    names = fit.metadata.get("names", {})
-    if not isinstance(names, dict):
-        return {}
-    return {key: [str(value) for value in values] for key, values in names.items() if isinstance(values, list)}
 
 
 if __name__ == "__main__":

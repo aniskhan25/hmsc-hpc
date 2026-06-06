@@ -68,12 +68,37 @@ def predictive_interval_contains_observed_mean(fit: Any, X: pd.DataFrame, Y: pd.
     return ValidationResult("predictive_interval_contains_observed_mean", passed, checks)
 
 
+def trait_effect_dimensions(fit: Any) -> ValidationResult:
+    try:
+        gamma = fit.gamma_mean()
+    except ValueError as exc:
+        return ValidationResult("trait_effect_dimensions", False, {"error": str(exc)})
+    unnamed_covariates = [name for name in gamma.index if str(name).startswith("covariate_")]
+    unnamed_traits = [name for name in gamma.columns if str(name).startswith("trait_")]
+    passed = gamma.ndim == 2 and gamma.shape[0] > 0 and gamma.shape[1] > 0 and not unnamed_covariates and not unnamed_traits
+    return ValidationResult(
+        "trait_effect_dimensions",
+        passed,
+        {
+            "shape": tuple(int(value) for value in gamma.shape),
+            "unnamed_covariates": unnamed_covariates,
+            "unnamed_traits": unnamed_traits,
+        },
+    )
+
+
 def validate_fit(fit: Any, X: pd.DataFrame | None = None, Y: pd.DataFrame | None = None, truth: pd.DataFrame | None = None) -> list[ValidationResult]:
     results = []
     if truth is not None:
         results.append(coefficient_sign_recovery(fit, truth))
     if X is not None and Y is not None:
         results.append(predictive_interval_contains_observed_mean(fit, X, Y))
+    try:
+        fit.gamma_samples()
+    except ValueError:
+        pass
+    else:
+        results.append(trait_effect_dimensions(fit))
     return results
 
 

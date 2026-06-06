@@ -128,6 +128,37 @@ def test_gradient_helpers_summarize_response_scale_predictions():
     assert weighted["mean"].between(10.0, 20.0).all()
 
 
+def test_gamma_summary_uses_metadata_names():
+    posterior = {
+        "__metadata__": {
+            "names": {
+                "covariates": ["Intercept", "TMG"],
+                "traits": ["Intercept", "CN"],
+            }
+        },
+        "__arrays__": {
+            "Gamma": np.array(
+                [
+                    [
+                        [[0.0, 1.0], [2.0, 3.0]],
+                        [[1.0, 2.0], [3.0, 4.0]],
+                    ]
+                ]
+            )
+        },
+    }
+    fit = HmscFit(posterior)
+
+    mean = fit.gamma_mean()
+    summary = fit.gamma_summary(level=0.5)
+
+    assert list(mean.index) == ["Intercept", "TMG"]
+    assert list(mean.columns) == ["Intercept", "CN"]
+    assert list(summary.columns) == ["covariate", "trait", "mean", "lower", "upper"]
+    assert summary.loc[(summary["covariate"] == "TMG") & (summary["trait"] == "CN"), "mean"].iloc[0] == 3.5
+    assert "CN" in fit.summary("Gamma").to_string(index=False)
+
+
 def test_known_random_effect_prediction_from_hdf5(tmp_path):
     import h5py
 

@@ -84,7 +84,7 @@ class HmscFit:
 
     def gamma_mean(self) -> pd.DataFrame:
         gamma = self.gamma_samples().mean(axis=(0, 1))
-        return pd.DataFrame(gamma)
+        return self._gamma_frame(gamma)
 
     def sigma_mean(self) -> pd.Series:
         sigma = self.sigma_samples().mean(axis=(0, 1))
@@ -111,7 +111,8 @@ class HmscFit:
         return {"lower": self._beta_frame(lo), "upper": self._beta_frame(hi)}
 
     def gamma_ci(self, level: float = 0.95) -> dict[str, pd.DataFrame]:
-        return _ci_frames(self.gamma_samples(), level)
+        lo, hi = _ci_arrays(self.gamma_samples(), level)
+        return {"lower": self._gamma_frame(lo), "upper": self._gamma_frame(hi)}
 
     def sigma_ci(self, level: float = 0.95) -> dict[str, pd.Series]:
         lo, hi = _ci_arrays(self.sigma_samples(), level)
@@ -310,18 +311,23 @@ class HmscFit:
             raise RuntimeError("Install arviz to use diagnostics") from exc
         return az.plot_trace(self.to_arviz(), var_names=[param])
 
-    def summary(self, param: str = "Beta") -> pd.DataFrame:
-        if param != "Beta":
-            samples = self._samples(param)
-            return pd.DataFrame(
-                {
-                    "mean": [float(samples.mean())],
-                    "sd": [float(samples.std(ddof=1))],
-                },
-                index=[param],
-            )
+    def summary(self, param: str = "Beta", level: float = 0.95) -> pd.DataFrame:
+        if param == "Beta":
+            return self.beta_summary(level=level)
+        if param == "Gamma":
+            return self.gamma_summary(level=level)
+        samples = self._samples(param)
+        return pd.DataFrame(
+            {
+                "mean": [float(samples.mean())],
+                "sd": [float(samples.std(ddof=1))],
+            },
+            index=[param],
+        )
+
+    def beta_summary(self, level: float = 0.95) -> pd.DataFrame:
         mean = self.beta_mean()
-        ci = self.beta_ci()
+        ci = self.beta_ci(level=level)
         rows = []
         for covariate in mean.index:
             for species in mean.columns:
@@ -332,6 +338,23 @@ class HmscFit:
                         "mean": mean.loc[covariate, species],
                         "lower": ci["lower"].loc[covariate, species],
                         "upper": ci["upper"].loc[covariate, species],
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def gamma_summary(self, level: float = 0.95) -> pd.DataFrame:
+        mean = self.gamma_mean()
+        ci = self.gamma_ci(level=level)
+        rows = []
+        for covariate in mean.index:
+            for trait in mean.columns:
+                rows.append(
+                    {
+                        "covariate": covariate,
+                        "trait": trait,
+                        "mean": mean.loc[covariate, trait],
+                        "lower": ci["lower"].loc[covariate, trait],
+                        "upper": ci["upper"].loc[covariate, trait],
                     }
                 )
         return pd.DataFrame(rows)
@@ -460,6 +483,20 @@ class HmscFit:
         covariates = _names_or_default(covariates, beta.shape[0], "covariate")
         species = _names_or_default(species, beta.shape[1], "species")
         return pd.DataFrame(beta, index=covariates, columns=species)
+
+    def _gamma_frame(self, gamma: np.ndarray) -> pd.DataFrame:
+        covariates = None
+        traits = None
+        if self.model is not None:
+            covariates = getattr(self.model, "covariate_names", None)
+        names = self._metadata_names()
+        if covariates is None or len(covariates) != gamma.shape[0]:
+            covariates = names.get("covariates")
+        if traits is None or len(traits) != gamma.shape[1]:
+            traits = names.get("traits")
+        covariates = _names_or_default(covariates, gamma.shape[0], "covariate")
+        traits = _names_or_default(traits, gamma.shape[1], "trait")
+        return pd.DataFrame(gamma, index=covariates, columns=traits)
 
     def _random_level_samples(self, param: str, level: int) -> np.ndarray:
         if "__arrays__" in self.posterior:
