@@ -267,6 +267,41 @@ class HmscFit:
             }
         )
 
+    def site_richness_posterior_predictive_summary(
+        self,
+        Y: Any,
+        X: Any,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        rng_seed: int | None = None,
+    ) -> pd.DataFrame:
+        """Summarize observed site richness against replicated posterior richness."""
+        if not 0 < level < 1:
+            raise ValueError("level must be between 0 and 1")
+        y_frame = Y if isinstance(Y, pd.DataFrame) else pd.DataFrame(Y)
+        samples = self.posterior_predictive(
+            X,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+            rng_seed=rng_seed,
+        )
+        observed = y_frame.sum(axis=1).to_numpy(dtype=float)
+        replicated_richness = samples.sum(axis=-1).reshape(-1, samples.shape[2])
+        predicted = replicated_richness.mean(axis=0)
+        lo = np.quantile(replicated_richness, (1 - level) / 2, axis=0)
+        hi = np.quantile(replicated_richness, 1 - (1 - level) / 2, axis=0)
+        return pd.DataFrame(
+            {
+                "site": [str(value) for value in y_frame.index],
+                "observed_richness": observed,
+                "replicated_richness": predicted,
+                "lower": lo,
+                "upper": hi,
+                "covered": (lo <= observed) & (observed <= hi),
+            }
+        )
+
     def ppc_summary(
         self,
         Y: Any,
@@ -277,6 +312,24 @@ class HmscFit:
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         return self.posterior_predictive_summary(
+            Y=Y,
+            X=X,
+            level=level,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+            rng_seed=rng_seed,
+        )
+
+    def richness_ppc_summary(
+        self,
+        Y: Any,
+        X: Any,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+        rng_seed: int | None = None,
+    ) -> pd.DataFrame:
+        return self.site_richness_posterior_predictive_summary(
             Y=Y,
             X=X,
             level=level,

@@ -48,6 +48,17 @@ def test_beta_mean_and_prediction_for_poisson():
     assert list(ppc.columns) == ["species", "observed_mean", "replicated_mean", "lower", "upper", "covered"]
     assert list(ppc["species"]) == ["sp1", "sp2"]
 
+    richness_ppc = fit.richness_ppc_summary(model.Y, model.X, rng_seed=7)
+    assert list(richness_ppc.columns) == [
+        "site",
+        "observed_richness",
+        "replicated_richness",
+        "lower",
+        "upper",
+        "covered",
+    ]
+    assert richness_ppc.shape[0] == len(model.Y)
+
 
 def test_gaussian_posterior_predictive_uses_sigma():
     model = HmscModel(

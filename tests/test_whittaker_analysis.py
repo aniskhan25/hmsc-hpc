@@ -11,6 +11,7 @@ def test_whittaker_analysis_script_smoke(tmp_path):
     project = tmp_path / "project"
     data = project / "data"
     data.mkdir(parents=True)
+    pd.DataFrame({"sp1": [1, 0], "sp2": [0, 1]}, index=["site_1", "site_2"]).to_csv(data / "Y_presence.csv")
     pd.DataFrame({"TMG": [-1.0, 1.0]}, index=["site_1", "site_2"]).to_csv(data / "X.csv")
     pd.DataFrame({"CN": [0.2, 1.0]}, index=["sp1", "sp2"]).to_csv(data / "traits.csv")
     with h5py.File(posterior, "w") as handle:
@@ -56,3 +57,6 @@ def test_whittaker_analysis_script_smoke(tmp_path):
     assert "community-weighted CN" in result.stdout
     assert "Diagnostics" in result.stdout
     assert "max R-hat" in result.stdout
+    assert "Posterior Predictive Checks" in result.stdout
+    assert "species occupancy covered" in result.stdout
+    assert "site richness covered" in result.stdout

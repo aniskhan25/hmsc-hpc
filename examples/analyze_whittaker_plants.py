@@ -24,7 +24,9 @@ def main() -> None:
     )
     parser.add_argument("--gradient-points", type=int, default=25)
     parser.add_argument("--level", type=float, default=0.95)
+    parser.add_argument("--ppc-seed", type=int, default=1)
     parser.add_argument("--output", help="optional path for the text report")
+    parser.add_argument("--ppc-output", help="optional path for the posterior predictive section")
     args = parser.parse_args()
 
     report = build_report(
@@ -32,7 +34,18 @@ def main() -> None:
         project=Path(args.project),
         gradient_points=args.gradient_points,
         level=args.level,
+        ppc_seed=args.ppc_seed,
     )
+    if args.ppc_output:
+        Path(args.ppc_output).write_text(
+            build_ppc_report(
+                posterior=Path(args.posterior),
+                project=Path(args.project),
+                level=args.level,
+                ppc_seed=args.ppc_seed,
+            ),
+            encoding="utf-8",
+        )
     if args.output:
         Path(args.output).write_text(report, encoding="utf-8")
     else:
@@ -44,11 +57,13 @@ def build_report(
     project: Path,
     gradient_points: int = 25,
     level: float = 0.95,
+    ppc_seed: int = 1,
 ) -> str:
     if not 0 < level < 1:
         raise ValueError("level must be between 0 and 1")
     fit = HmscFit.from_file(posterior)
     x_data = pd.read_csv(project / "data" / "X.csv", index_col=0)
+    y_data = pd.read_csv(project / "data" / "Y_presence.csv", index_col=0)
     traits = pd.read_csv(project / "data" / "traits.csv", index_col=0)
 
     beta = fit.beta_mean()
@@ -99,6 +114,10 @@ def build_report(
         "",
         _diagnostics_report(fit, "Gamma"),
         "",
+        "## Posterior Predictive Checks",
+        "",
+        _ppc_report(fit, y_data, x_data, level=level, ppc_seed=ppc_seed),
+        "",
         "## TMG Gradient",
         "",
         _format_gradient("predicted richness", richness_gradient),
@@ -116,12 +135,49 @@ def build_report(
     return "\n".join(lines) + "\n"
 
 
+def build_ppc_report(
+    posterior: Path,
+    project: Path,
+    level: float = 0.95,
+    ppc_seed: int = 1,
+) -> str:
+    if not 0 < level < 1:
+        raise ValueError("level must be between 0 and 1")
+    fit = HmscFit.from_file(posterior)
+    x_data = pd.read_csv(project / "data" / "X.csv", index_col=0)
+    y_data = pd.read_csv(project / "data" / "Y_presence.csv", index_col=0)
+    return _ppc_report(fit, y_data, x_data, level=level, ppc_seed=ppc_seed) + "\n"
+
+
 def _gamma_report(fit: HmscFit, level: float) -> str:
     try:
         gamma = fit.gamma_summary(level=level)
     except ValueError:
         return "Gamma samples unavailable."
     return gamma.to_string(index=False)
+
+
+def _ppc_report(fit: HmscFit, y_data: pd.DataFrame, x_data: pd.DataFrame, level: float, ppc_seed: int) -> str:
+    species = fit.ppc_summary(y_data, x_data, level=level, rng_seed=ppc_seed)
+    richness = fit.richness_ppc_summary(y_data, x_data, level=level, rng_seed=ppc_seed)
+    species = species.assign(abs_error=(species["observed_mean"] - species["replicated_mean"]).abs())
+    richness = richness.assign(abs_error=(richness["observed_richness"] - richness["replicated_richness"]).abs())
+    species_covered = int(species["covered"].sum())
+    richness_covered = int(richness["covered"].sum())
+    return "\n".join(
+        [
+            f"species occupancy covered: {species_covered} / {len(species)}",
+            f"site richness covered: {richness_covered} / {len(richness)}",
+            f"mean absolute species occupancy error: {species['abs_error'].mean():.6g}",
+            f"mean absolute site richness error: {richness['abs_error'].mean():.6g}",
+            "",
+            "Largest species occupancy errors:",
+            species.sort_values("abs_error", ascending=False).head(10).to_string(index=False),
+            "",
+            "Largest site richness errors:",
+            richness.sort_values("abs_error", ascending=False).head(10).to_string(index=False),
+        ]
+    )
 
 
 def _diagnostics_report(fit: HmscFit, param: str) -> str:

@@ -71,6 +71,7 @@ srun "${PYTHON}" -m pyhmsc sample \
 "${PYTHON}" examples/analyze_whittaker_plants.py \
   --posterior "${POSTERIOR}" \
   --project "${PROJECT_DIR}" \
+  --ppc-output "${RUN_ROOT}/posterior_predictive_check.txt" \
   --output "${RUN_ROOT}/whittaker_report.txt"
 
 echo "Posterior: ${POSTERIOR}"
@@ -78,4 +79,5 @@ echo "Beta summary: ${RUN_ROOT}/beta_summary.txt"
 echo "Gamma summary: ${RUN_ROOT}/gamma_summary.txt"
 echo "Beta diagnostics: ${RUN_ROOT}/beta_diagnostics.txt"
 echo "Gamma diagnostics: ${RUN_ROOT}/gamma_diagnostics.txt"
+echo "Posterior predictive check: ${RUN_ROOT}/posterior_predictive_check.txt"
 echo "Validation report: ${RUN_ROOT}/whittaker_report.txt"
