@@ -358,6 +358,88 @@ class HmscFit:
             unseen_groups=unseen_groups,
         )
 
+    def gradient(
+        self,
+        variable: str,
+        X_reference: Any,
+        values: Any | None = None,
+        n: int = 25,
+    ) -> pd.DataFrame:
+        """Construct a one-variable prediction gradient from reference covariates."""
+        x_frame = X_reference if isinstance(X_reference, pd.DataFrame) else pd.DataFrame(X_reference)
+        if variable not in x_frame.columns:
+            raise ValueError(f"X_reference is missing gradient variable {variable!r}")
+        if values is None:
+            if not pd.api.types.is_numeric_dtype(x_frame[variable]):
+                raise ValueError("values must be provided for non-numeric gradient variables")
+            values = np.linspace(float(x_frame[variable].min()), float(x_frame[variable].max()), n)
+        values = list(values)
+        if not values:
+            raise ValueError("gradient values must not be empty")
+        row: dict[str, Any] = {}
+        for column in x_frame.columns:
+            series = x_frame[column].dropna()
+            if series.empty:
+                row[column] = np.nan
+            elif pd.api.types.is_numeric_dtype(series):
+                row[column] = float(series.mean())
+            else:
+                row[column] = series.mode().iloc[0]
+        gradient = pd.DataFrame([row.copy() for _ in values])
+        gradient[variable] = values
+        return gradient
+
+    def richness_gradient(
+        self,
+        variable: str,
+        X_reference: Any,
+        values: Any | None = None,
+        n: int = 25,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+    ) -> pd.DataFrame:
+        """Summarize expected species richness along a covariate gradient."""
+        gradient = self.gradient(variable, X_reference, values=values, n=n)
+        samples = self.predict_samples(
+            gradient,
+            response=True,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        ).sum(axis=-1)
+        return _gradient_summary_frame(gradient[variable], samples, level)
+
+    def trait_weighted_gradient(
+        self,
+        variable: str,
+        traits: Any,
+        trait: str,
+        X_reference: Any,
+        values: Any | None = None,
+        n: int = 25,
+        level: float = 0.95,
+        random_effects: str = "none",
+        unseen_groups: str = "error",
+    ) -> pd.DataFrame:
+        """Summarize a response-weighted trait mean along a covariate gradient."""
+        gradient = self.gradient(variable, X_reference, values=values, n=n)
+        trait_frame = traits if isinstance(traits, pd.DataFrame) else pd.DataFrame(traits)
+        species = self.beta_mean().columns
+        missing = [name for name in species if name not in trait_frame.index]
+        if missing:
+            raise ValueError(f"traits missing species rows: {missing}")
+        if trait not in trait_frame.columns:
+            raise ValueError(f"traits is missing column {trait!r}")
+        weights = self.predict_samples(
+            gradient,
+            response=True,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
+        trait_values = trait_frame.loc[species, trait].to_numpy(dtype=float)
+        samples = (weights @ trait_values) / np.maximum(weights.sum(axis=-1), 1e-12)
+        return _gradient_summary_frame(gradient[variable], samples, level)
+
     def _beta_frame(self, beta: np.ndarray) -> pd.DataFrame:
         covariates = None
         species = None
@@ -583,6 +665,22 @@ def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarra
 def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
     lo, hi = _ci_arrays(samples, level)
     return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}
+
+
+def _gradient_summary_frame(values: pd.Series, samples: np.ndarray, level: float) -> pd.DataFrame:
+    if not 0 < level < 1:
+        raise ValueError("level must be between 0 and 1")
+    lo = np.quantile(samples, (1 - level) / 2, axis=(0, 1))
+    hi = np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1))
+    mean = samples.mean(axis=(0, 1))
+    return pd.DataFrame(
+        {
+            values.name or "gradient": values.to_numpy(),
+            "mean": mean,
+            "lower": lo,
+            "upper": hi,
+        }
+    )
 
 
 def _response_scale(values: np.ndarray, distribution: str) -> np.ndarray:

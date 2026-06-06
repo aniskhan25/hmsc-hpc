@@ -17,9 +17,11 @@
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
 | HDF5 posterior merge | Supported |
 | Posterior predictive checks | Supported |
+| Covariate gradient summaries | Supported for richness and response-weighted traits |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
+| Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
 | CLI compile/sample/summarize/predict/validate | Supported |
 | CLI init validation | Supported |
 | No-R example smoke runner | Supported |

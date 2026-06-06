@@ -61,9 +61,7 @@ def build_report(
         }
     )
 
-    gradient = pd.DataFrame(
-        {"TMG": np.linspace(float(x_data["TMG"].min()), float(x_data["TMG"].max()), gradient_points)}
-    )
+    gradient = fit.gradient("TMG", X_reference=x_data, n=gradient_points)
     prediction = fit.predict_samples(gradient, response=True)
     richness = prediction.sum(axis=-1)
     cn = traits.loc[beta.columns, "CN"].to_numpy(dtype=float)

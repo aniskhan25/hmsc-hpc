@@ -50,6 +50,7 @@ def _simple_model(spatial_method="None", dtype = np.float64):
 
     modelData["Pi"] = Pi
     modelData["Y"] = Y
+    modelData["Yo"] = tfm.logical_not(tfm.is_nan(Y))
     modelData["distr"] = distr
 
     rLHyperparams = [None] * nr

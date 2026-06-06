@@ -93,6 +93,41 @@ def test_probit_prediction_returns_probability_on_response_scale():
     np.testing.assert_allclose(fit.predict_mean(pd.DataFrame({"x": [1.0]})).to_numpy(), [[0.5]])
 
 
+def test_gradient_helpers_summarize_response_scale_predictions():
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [0, 1], "sp2": [1, 0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="probit",
+    )
+    posterior = {
+        "0": {
+            "0": {"Beta": [[0.0, 0.0], [1.0, -1.0]]},
+            "1": {"Beta": [[0.0, 0.0], [0.5, -0.5]]},
+        }
+    }
+    fit = HmscFit(posterior, model=model)
+
+    richness = fit.richness_gradient("x", model.X, values=[0.0, 1.0], level=0.5)
+    traits = pd.DataFrame({"body_size": [10.0, 20.0]}, index=["sp1", "sp2"])
+    weighted = fit.trait_weighted_gradient(
+        "x",
+        traits=traits,
+        trait="body_size",
+        X_reference=model.X,
+        values=[0.0, 1.0],
+        level=0.5,
+    )
+
+    assert list(richness.columns) == ["x", "mean", "lower", "upper"]
+    assert list(weighted.columns) == ["x", "mean", "lower", "upper"]
+    assert richness.shape == (2, 4)
+    assert weighted.shape == (2, 4)
+    np.testing.assert_allclose(richness["mean"].to_numpy(), [1.0, 1.0])
+    assert np.isfinite(weighted[["mean", "lower", "upper"]].to_numpy()).all()
+    assert weighted["mean"].between(10.0, 20.0).all()
+
+
 def test_known_random_effect_prediction_from_hdf5(tmp_path):
     import h5py
 

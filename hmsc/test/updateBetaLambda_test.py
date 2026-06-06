@@ -81,6 +81,8 @@ def _simple_model(has_phylogeny=False, dtype = np.float64):
 
     modelData["Pi"] = Pi
     modelData["T"] = T
+    modelData["Yo"] = np.ones((ny, ns), dtype=bool)
+    modelData["distr"] = np.ones((ns, 2), dtype=np.int32)
     modelData["rhoGroup"] = rhoGroup
     modelData["C"], modelData["eC"], modelData["VC"] = C, eC, VC
 

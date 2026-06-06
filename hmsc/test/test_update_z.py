@@ -113,6 +113,7 @@ def default_input_values(rng):
         Pi=Pi,
         distr=distr,
     )
+    data["Yo"] = np.ones_like(data["Y"], dtype=bool)
 
     assert data['distr'].shape == (ns, 2)
     assert data['Pi'].shape == (ny, nr)
@@ -196,6 +197,7 @@ def test_y_nan():
     Y = rng.integers(3, size=data['Y'].shape).astype(np.float64)
     Y[Y == 2] = nan
     data['Y'] = Y
+    data['Yo'] = np.logical_not(np.isnan(Y))
 
     Z = \
 [[ 2.6390101 ,  2.53617218,  1.40754338,  1.        ,  0.14450654,  2.75723293,  1.        ],
