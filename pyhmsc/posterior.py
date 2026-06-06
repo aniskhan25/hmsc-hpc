@@ -148,9 +148,7 @@ class HmscFit:
             linear = linear + self._known_random_effect_prediction(X_new, unseen_groups=unseen_groups)
         elif random_effects == "marginal":
             linear = linear + self._marginal_random_effect_prediction(linear.shape[2])
-        if response and self._distribution().lower() == "poisson":
-            linear = np.exp(linear)
-        return linear
+        return _response_scale(linear, self._distribution()) if response else linear
 
     def predict_mean(
         self,
@@ -220,13 +218,12 @@ class HmscFit:
             )
             return rng.poisson(np.clip(rate, 0.0, 1e12))
         if distribution in {"probit", "bernoulli", "binomial"}:
-            linear = self.predict_samples(
+            probability = self.predict_samples(
                 X_new,
-                response=False,
+                response=True,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
             )
-            probability = np.clip(_normal_cdf(linear), 0.0, 1.0)
             return rng.binomial(1, probability)
         raise ValueError(f"Posterior predictive checks do not support distribution {distribution!r}")
 
@@ -586,6 +583,17 @@ def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarra
 def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
     lo, hi = _ci_arrays(samples, level)
     return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}
+
+
+def _response_scale(values: np.ndarray, distribution: str) -> np.ndarray:
+    key = distribution.lower()
+    if key == "poisson":
+        return np.exp(values)
+    if key == "probit":
+        return np.clip(_normal_cdf(values), 0.0, 1.0)
+    if key in {"bernoulli", "binomial"}:
+        return np.clip(1.0 / (1.0 + np.exp(-values)), 0.0, 1.0)
+    return values
 
 
 def _normal_cdf(values: np.ndarray) -> np.ndarray:

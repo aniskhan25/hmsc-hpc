@@ -70,6 +70,29 @@ def test_gaussian_posterior_predictive_uses_sigma():
     assert np.isfinite(yrep).all()
 
 
+def test_probit_prediction_returns_probability_on_response_scale():
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [0, 1]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="probit",
+    )
+    posterior = {
+        "0": {
+            "0": {"Beta": [[0.0], [1.0]]},
+            "1": {"Beta": [[0.0], [-1.0]]},
+        }
+    }
+    fit = HmscFit(posterior, model=model)
+
+    linear = fit.predict_samples(pd.DataFrame({"x": [1.0]}), response=False)
+    probability = fit.predict_samples(pd.DataFrame({"x": [1.0]}), response=True)
+
+    np.testing.assert_allclose(linear.reshape(-1), [1.0, -1.0])
+    np.testing.assert_allclose(probability.reshape(-1), [0.84134475, 0.15865525])
+    np.testing.assert_allclose(fit.predict_mean(pd.DataFrame({"x": [1.0]})).to_numpy(), [[0.5]])
+
+
 def test_known_random_effect_prediction_from_hdf5(tmp_path):
     import h5py
 
