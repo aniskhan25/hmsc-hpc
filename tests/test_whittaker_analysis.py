@@ -60,3 +60,86 @@ def test_whittaker_analysis_script_smoke(tmp_path):
     assert "Posterior Predictive Checks" in result.stdout
     assert "species occupancy covered" in result.stdout
     assert "site richness covered" in result.stdout
+
+
+def test_whittaker_analysis_known_random_effect_ppc(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    project = tmp_path / "project"
+    data = project / "data"
+    data.mkdir(parents=True)
+    pd.DataFrame({"sp1": [1, 0], "sp2": [0, 1]}, index=["site_1", "site_2"]).to_csv(data / "Y_presence.csv")
+    pd.DataFrame({"TMG": [-1.0, 1.0]}, index=["site_1", "site_2"]).to_csv(data / "X.csv")
+    pd.DataFrame({"CN": [0.2, 1.0]}, index=["sp1", "sp2"]).to_csv(data / "traits.csv")
+    pd.DataFrame({"plot": ["site_1", "site_2"]}, index=["site_1", "site_2"]).to_csv(
+        data / "study_design.csv"
+    )
+    model_config = project / "model_iid.yaml"
+    model_config.write_text(
+        "\n".join(
+            [
+                "response: data/Y_presence.csv",
+                "covariates: data/X.csv",
+                "formula:",
+                '  X: "~ TMG"',
+                "distribution: probit",
+                "traits: data/traits.csv",
+                'trait_formula: "~ CN"',
+                "study_design: data/study_design.csv",
+                "random_levels:",
+                "  plot:",
+                "    column: plot",
+                "    type: iid",
+                "chains: 1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset(
+            "Beta",
+            data=[
+                [
+                    [[0.0, 0.0], [-1.0, 0.5]],
+                    [[0.0, 0.0], [-0.8, 0.4]],
+                ]
+            ],
+        )
+        handle.create_dataset(
+            "Gamma",
+            data=[
+                [
+                    [[-1.0, 0.5], [-0.3, 0.1]],
+                    [[-1.2, 0.6], [-0.2, 0.2]],
+                ]
+            ],
+        )
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=[[[[0.2], [-0.2]], [[0.1], [-0.1]]]])
+        level.create_dataset("Lambda", data=[[[[0.3, -0.3]], [[0.2, -0.2]]]])
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"covariates":["Intercept","TMG"],"species":["sp1","sp2"],'
+            '"traits":["Intercept","CN"]},"formula":{"X":"~ TMG"},"distribution":"probit"}'
+        )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "examples/analyze_whittaker_plants.py",
+            "--posterior",
+            str(posterior),
+            "--project",
+            str(project),
+            "--model-config",
+            str(model_config),
+            "--random-effects",
+            "known",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "Posterior Predictive Checks" in result.stdout
+    assert "random effects: known" in result.stdout

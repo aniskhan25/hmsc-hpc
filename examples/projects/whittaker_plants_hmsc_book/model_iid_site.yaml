@@ -1,0 +1,18 @@
+response: data/Y_presence.csv
+covariates: data/X.csv
+formula:
+  X: "~ TMG"
+distribution: probit
+traits: data/traits.csv
+trait_formula: "~ CN"
+phylo_cov: data/phylo_cov.csv
+study_design: data/study_design_site.csv
+random_levels:
+  plot:
+    column: plot
+    type: iid
+    nf: 1
+chains: 2
+samples: 1000
+transient: 500
+thin: 10

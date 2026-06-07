@@ -11,6 +11,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from pyhmsc.config import model_from_config
 from pyhmsc.posterior import HmscFit
 
 
@@ -25,6 +26,12 @@ def main() -> None:
     parser.add_argument("--gradient-points", type=int, default=25)
     parser.add_argument("--level", type=float, default=0.95)
     parser.add_argument("--ppc-seed", type=int, default=1)
+    parser.add_argument(
+        "--model-config",
+        help="optional model config for prediction metadata, required for known random-effect PPCs",
+    )
+    parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
+    parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
     parser.add_argument("--output", help="optional path for the text report")
     parser.add_argument("--ppc-output", help="optional path for the posterior predictive section")
     args = parser.parse_args()
@@ -35,6 +42,9 @@ def main() -> None:
         gradient_points=args.gradient_points,
         level=args.level,
         ppc_seed=args.ppc_seed,
+        model_config=Path(args.model_config) if args.model_config else None,
+        random_effects=args.random_effects,
+        unseen_groups=args.unseen_groups,
     )
     if args.ppc_output:
         Path(args.ppc_output).write_text(
@@ -43,6 +53,9 @@ def main() -> None:
                 project=Path(args.project),
                 level=args.level,
                 ppc_seed=args.ppc_seed,
+                model_config=Path(args.model_config) if args.model_config else None,
+                random_effects=args.random_effects,
+                unseen_groups=args.unseen_groups,
             ),
             encoding="utf-8",
         )
@@ -58,13 +71,18 @@ def build_report(
     gradient_points: int = 25,
     level: float = 0.95,
     ppc_seed: int = 1,
+    model_config: Path | None = None,
+    random_effects: str = "none",
+    unseen_groups: str = "error",
 ) -> str:
     if not 0 < level < 1:
         raise ValueError("level must be between 0 and 1")
-    fit = HmscFit.from_file(posterior)
+    model = _load_model(model_config)
+    fit = HmscFit.from_file(posterior, model=model)
     x_data = pd.read_csv(project / "data" / "X.csv", index_col=0)
     y_data = pd.read_csv(project / "data" / "Y_presence.csv", index_col=0)
     traits = pd.read_csv(project / "data" / "traits.csv", index_col=0)
+    ppc_x_data = _prediction_data_for_random_effects(x_data, model, random_effects)
 
     beta = fit.beta_mean()
     beta_ci = fit.beta_ci(level=level)
@@ -116,7 +134,15 @@ def build_report(
         "",
         "## Posterior Predictive Checks",
         "",
-        _ppc_report(fit, y_data, x_data, level=level, ppc_seed=ppc_seed),
+        _ppc_report(
+            fit,
+            y_data,
+            ppc_x_data,
+            level=level,
+            ppc_seed=ppc_seed,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        ),
         "",
         "## TMG Gradient",
         "",
@@ -140,13 +166,29 @@ def build_ppc_report(
     project: Path,
     level: float = 0.95,
     ppc_seed: int = 1,
+    model_config: Path | None = None,
+    random_effects: str = "none",
+    unseen_groups: str = "error",
 ) -> str:
     if not 0 < level < 1:
         raise ValueError("level must be between 0 and 1")
-    fit = HmscFit.from_file(posterior)
+    model = _load_model(model_config)
+    fit = HmscFit.from_file(posterior, model=model)
     x_data = pd.read_csv(project / "data" / "X.csv", index_col=0)
     y_data = pd.read_csv(project / "data" / "Y_presence.csv", index_col=0)
-    return _ppc_report(fit, y_data, x_data, level=level, ppc_seed=ppc_seed) + "\n"
+    ppc_x_data = _prediction_data_for_random_effects(x_data, model, random_effects)
+    return (
+        _ppc_report(
+            fit,
+            y_data,
+            ppc_x_data,
+            level=level,
+            ppc_seed=ppc_seed,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
+        + "\n"
+    )
 
 
 def _gamma_report(fit: HmscFit, level: float) -> str:
@@ -157,9 +199,31 @@ def _gamma_report(fit: HmscFit, level: float) -> str:
     return gamma.to_string(index=False)
 
 
-def _ppc_report(fit: HmscFit, y_data: pd.DataFrame, x_data: pd.DataFrame, level: float, ppc_seed: int) -> str:
-    species = fit.ppc_summary(y_data, x_data, level=level, rng_seed=ppc_seed)
-    richness = fit.richness_ppc_summary(y_data, x_data, level=level, rng_seed=ppc_seed)
+def _ppc_report(
+    fit: HmscFit,
+    y_data: pd.DataFrame,
+    x_data: pd.DataFrame,
+    level: float,
+    ppc_seed: int,
+    random_effects: str = "none",
+    unseen_groups: str = "error",
+) -> str:
+    species = fit.ppc_summary(
+        y_data,
+        x_data,
+        level=level,
+        random_effects=random_effects,
+        unseen_groups=unseen_groups,
+        rng_seed=ppc_seed,
+    )
+    richness = fit.richness_ppc_summary(
+        y_data,
+        x_data,
+        level=level,
+        random_effects=random_effects,
+        unseen_groups=unseen_groups,
+        rng_seed=ppc_seed,
+    )
     species = species.assign(abs_error=(species["observed_mean"] - species["replicated_mean"]).abs())
     richness = richness.assign(abs_error=(richness["observed_richness"] - richness["replicated_richness"]).abs())
     species_covered = int(species["covered"].sum())
@@ -168,6 +232,7 @@ def _ppc_report(fit: HmscFit, y_data: pd.DataFrame, x_data: pd.DataFrame, level:
         [
             f"species occupancy covered: {species_covered} / {len(species)}",
             f"site richness covered: {richness_covered} / {len(richness)}",
+            f"random effects: {random_effects}",
             f"mean absolute species occupancy error: {species['abs_error'].mean():.6g}",
             f"mean absolute site richness error: {richness['abs_error'].mean():.6g}",
             "",
@@ -178,6 +243,31 @@ def _ppc_report(fit: HmscFit, y_data: pd.DataFrame, x_data: pd.DataFrame, level:
             richness.sort_values("abs_error", ascending=False).head(10).to_string(index=False),
         ]
     )
+
+
+def _load_model(model_config: Path | None):
+    if model_config is None:
+        return None
+    model, _config = model_from_config(model_config)
+    return model
+
+
+def _prediction_data_for_random_effects(
+    x_data: pd.DataFrame,
+    model: object | None,
+    random_effects: str,
+) -> pd.DataFrame:
+    if random_effects != "known":
+        return x_data
+    if model is None or getattr(model, "study_design", None) is None:
+        raise ValueError("--model-config with study_design is required for known random-effect PPCs")
+    output = x_data.copy()
+    study_design = model.study_design
+    for level_name, spec in getattr(model, "random_levels", {}).items():
+        column = spec.get("column", level_name)
+        if column not in output:
+            output[column] = study_design[column].to_numpy()
+    return output
 
 
 def _diagnostics_report(fit: HmscFit, param: str) -> str:
