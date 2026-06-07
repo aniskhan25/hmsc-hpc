@@ -192,6 +192,8 @@ Random-level effects and species loadings can be summarized directly:
 ```bash
 python -m pyhmsc summarize run/posterior.h5 --param Eta --random-level 0
 python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0
+python -m pyhmsc diagnostics run/posterior.h5 --param Eta --random-level 0
+python -m pyhmsc diagnostics run/posterior.h5 --param Lambda --random-level 0
 ```
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
@@ -219,4 +221,6 @@ print(fit.ppc_summary(Y=Y, X=X))
 print(fit.species_association_summary())
 print(fit.eta_summary(level=0))
 print(fit.lambda_summary(level=0))
+print(fit.diagnostics("Eta", level=0))
+print(fit.diagnostics("Lambda", level=0))
 ```

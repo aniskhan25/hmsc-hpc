@@ -41,6 +41,7 @@ Implemented:
 - optional Newick parsing through the `phylo` extra
 - iid random intercept compilation, loading, sampling, and posterior export
 - known random-effect posterior predictive checks
+- nested `Eta` and `Lambda` R-hat/ESS diagnostics
 
 Validated real-data target:
 
@@ -55,7 +56,6 @@ Validated real-data target:
 
 Remaining hardening:
 
-- add diagnostics helpers for nested `Eta` and `Lambda` arrays
 - run occasional longer or 4-chain validation jobs before publication-grade
   inference
 
@@ -166,8 +166,9 @@ Validated LUMI run `big_spatial_real_validation_codex`:
 
 ## Recommended Next Implementation Target
 
-Add nested random-effect diagnostics for `Eta` and `Lambda`, then run optional
-longer or 4-chain spatial validation jobs before publication-grade inference.
+Run optional longer or 4-chain spatial validation jobs before publication-grade
+inference; the validation scripts now emit nested `Eta` and `Lambda`
+diagnostics for random-effect models.
 
 The deterministic simulator for this validation is available as:
 

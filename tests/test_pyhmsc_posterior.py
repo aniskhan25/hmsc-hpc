@@ -330,3 +330,78 @@ def test_lambda_summary_requires_x_index_for_random_slopes():
 
     summary = fit.lambda_summary(x_index=1)
     assert summary.shape[0] == 2
+
+
+def test_eta_and_lambda_diagnostics_use_random_level_labels():
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2], "sp2": [3, 4]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"]}),
+        random_levels={"plot": {"column": "plot", "type": "iid"}},
+    )
+    eta = np.array(
+        [
+            [
+                [[0.0, 1.0], [2.0, 3.0]],
+                [[0.1, 1.1], [2.1, 3.1]],
+                [[0.2, 1.2], [2.2, 3.2]],
+            ],
+            [
+                [[0.0, 1.0], [2.0, 3.0]],
+                [[0.1, 1.1], [2.1, 3.1]],
+                [[0.2, 1.2], [2.2, 3.2]],
+            ],
+        ]
+    )
+    lam = np.array(
+        [
+            [
+                [[0.0, 1.0], [2.0, 3.0]],
+                [[0.1, 1.1], [2.1, 3.1]],
+                [[0.2, 1.2], [2.2, 3.2]],
+            ],
+            [
+                [[0.0, 1.0], [2.0, 3.0]],
+                [[0.1, 1.1], [2.1, 3.1]],
+                [[0.2, 1.2], [2.2, 3.2]],
+            ],
+        ]
+    )
+    fit = HmscFit({"__arrays__": {"random_levels/0/Eta": eta, "random_levels/0/Lambda": lam}}, model=model)
+
+    eta_diag = fit.diagnostics("Eta")
+    lambda_diag = fit.diagnostics("Lambda")
+    overview = fit.diagnostics_overview("Lambda")
+
+    assert list(eta_diag.columns) == ["random_level", "unit", "factor", "mean", "sd", "rhat", "ess"]
+    assert list(lambda_diag.columns) == ["random_level", "factor", "species", "mean", "sd", "rhat", "ess"]
+    assert np.isfinite(
+        eta_diag.loc[(eta_diag["unit"] == "b") & (eta_diag["factor"] == "factor_1"), "rhat"].iloc[0]
+    )
+    assert lambda_diag.loc[
+        (lambda_diag["factor"] == "factor_1") & (lambda_diag["species"] == "sp2"),
+        "ess",
+    ].iloc[0] > 0
+    assert overview["random_level"] == 0
+
+
+def test_lambda_diagnostics_requires_x_index_for_random_slopes():
+    posterior = {
+        "__arrays__": {
+            "random_levels/0/Lambda": np.ones((2, 3, 1, 2, 2)),
+        },
+    }
+    fit = HmscFit(posterior)
+
+    try:
+        fit.diagnostics("Lambda")
+    except ValueError as exc:
+        assert "x_index is required" in str(exc)
+    else:
+        raise AssertionError("expected x_index validation error")
+
+    diagnostics = fit.diagnostics("Lambda", x_index=1)
+    assert "x_index" in diagnostics.columns
+    assert diagnostics["x_index"].unique().tolist() == [1]

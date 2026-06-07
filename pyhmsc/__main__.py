@@ -91,6 +91,8 @@ def main() -> None:
     diagnostics_parser = subparsers.add_parser("diagnostics", help="compute basic diagnostics")
     diagnostics_parser.add_argument("posterior")
     diagnostics_parser.add_argument("--param", default="Beta")
+    diagnostics_parser.add_argument("--random-level", type=int, default=0)
+    diagnostics_parser.add_argument("--x-index", type=int)
     diagnostics_parser.add_argument("--rhat-threshold", type=float, default=1.01)
     diagnostics_parser.add_argument("--ess-threshold", type=float, default=400.0)
     diagnostics_parser.add_argument("--output")
@@ -273,8 +275,10 @@ def main() -> None:
             args.param,
             rhat_threshold=args.rhat_threshold,
             ess_threshold=args.ess_threshold,
+            level=args.random_level,
+            x_index=args.x_index,
         )
-        diagnostics = fit.diagnostics(args.param)
+        diagnostics = fit.diagnostics(args.param, level=args.random_level, x_index=args.x_index)
         lines = [
             "diagnostics",
             *(f"{key}: {value}" for key, value in overview.items()),

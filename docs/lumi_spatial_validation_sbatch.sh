@@ -78,6 +78,10 @@ run_model() {
       > "${model_run_root}/eta_summary.txt"
     "${PYTHON}" -m pyhmsc summarize "${posterior}" --param Lambda \
       > "${model_run_root}/lambda_summary.txt"
+    "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Eta \
+      --output "${model_run_root}/eta_diagnostics.txt"
+    "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Lambda \
+      --output "${model_run_root}/lambda_diagnostics.txt"
     "${PYTHON}" -m pyhmsc associations "${posterior}" \
       > "${model_run_root}/species_associations.txt"
   fi

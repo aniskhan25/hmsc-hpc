@@ -488,19 +488,21 @@ class HmscFit:
                 pass
         return az.from_dict(posterior=posterior)
 
-    def rhat(self, param: str = "Beta") -> Any:
-        return self._diagnostic_frame(param, _rhat_array(self._samples(param)), "rhat")
+    def rhat(self, param: str = "Beta", level: int = 0, x_index: int | None = None) -> Any:
+        samples = self._diagnostic_samples(param, level=level, x_index=x_index)
+        return self._diagnostic_frame(param, _rhat_array(samples), "rhat", level=level, x_index=x_index)
 
-    def ess(self, param: str = "Beta") -> Any:
-        return self._diagnostic_frame(param, _ess_array(self._samples(param)), "ess")
+    def ess(self, param: str = "Beta", level: int = 0, x_index: int | None = None) -> Any:
+        samples = self._diagnostic_samples(param, level=level, x_index=x_index)
+        return self._diagnostic_frame(param, _ess_array(samples), "ess", level=level, x_index=x_index)
 
-    def diagnostics(self, param: str = "Beta") -> pd.DataFrame:
-        samples = self._samples(param)
+    def diagnostics(self, param: str = "Beta", level: int = 0, x_index: int | None = None) -> pd.DataFrame:
+        samples = self._diagnostic_samples(param, level=level, x_index=x_index)
         mean = samples.mean(axis=(0, 1))
         sd = samples.reshape((-1,) + samples.shape[2:]).std(axis=0, ddof=1)
         rhat = _rhat_array(samples)
         ess = _ess_array(samples)
-        labels = self._diagnostic_labels(param, mean.shape)
+        labels = self._diagnostic_labels(param, mean.shape, level=level, x_index=x_index)
         rows = []
         for flat_idx, index in enumerate(np.ndindex(mean.shape)):
             row = dict(labels[flat_idx])
@@ -520,11 +522,13 @@ class HmscFit:
         param: str = "Beta",
         rhat_threshold: float = 1.01,
         ess_threshold: float = 400.0,
+        level: int = 0,
+        x_index: int | None = None,
     ) -> dict[str, Any]:
-        diagnostics = self.diagnostics(param)
+        diagnostics = self.diagnostics(param, level=level, x_index=x_index)
         rhat = diagnostics["rhat"].replace([np.inf, -np.inf], np.nan)
         ess = diagnostics["ess"].replace([np.inf, -np.inf], np.nan)
-        return {
+        overview = {
             "param": param,
             "n_parameters": int(len(diagnostics)),
             "rhat_max": float(rhat.max(skipna=True)),
@@ -536,6 +540,11 @@ class HmscFit:
             "n_rhat_flagged": int((rhat > rhat_threshold).sum()),
             "n_ess_flagged": int((ess < ess_threshold).sum()),
         }
+        if param in {"Eta", "Lambda"}:
+            overview["random_level"] = int(level)
+        if param == "Lambda" and x_index is not None:
+            overview["x_index"] = int(x_index)
+        return overview
 
     def traceplot(self, param: str = "Beta") -> Any:
         try:
@@ -809,8 +818,22 @@ class HmscFit:
             "or chains x draws x factors x species x random_covariates"
         )
 
-    def _diagnostic_frame(self, param: str, values: np.ndarray, value_name: str) -> pd.DataFrame:
-        labels = self._diagnostic_labels(param, values.shape)
+    def _diagnostic_samples(self, param: str, level: int = 0, x_index: int | None = None) -> np.ndarray:
+        if param == "Eta":
+            return self.eta_samples(level)
+        if param == "Lambda":
+            return self._lambda_samples_for_summary(level=level, x_index=x_index)
+        return self._samples(param)
+
+    def _diagnostic_frame(
+        self,
+        param: str,
+        values: np.ndarray,
+        value_name: str,
+        level: int = 0,
+        x_index: int | None = None,
+    ) -> pd.DataFrame:
+        labels = self._diagnostic_labels(param, values.shape, level=level, x_index=x_index)
         rows = []
         for flat_idx, index in enumerate(np.ndindex(values.shape)):
             row = dict(labels[flat_idx])
@@ -818,7 +841,13 @@ class HmscFit:
             rows.append(row)
         return pd.DataFrame(rows)
 
-    def _diagnostic_labels(self, param: str, shape: tuple[int, ...]) -> list[dict[str, Any]]:
+    def _diagnostic_labels(
+        self,
+        param: str,
+        shape: tuple[int, ...],
+        level: int = 0,
+        x_index: int | None = None,
+    ) -> list[dict[str, Any]]:
         if param == "Beta" and len(shape) == 2:
             frame = self._beta_frame(np.zeros(shape))
             return [
@@ -833,6 +862,24 @@ class HmscFit:
                 for covariate in frame.index
                 for trait in frame.columns
             ]
+        if param == "Eta" and len(shape) == 2:
+            frame = self._eta_frame(np.zeros(shape), level=level)
+            return [
+                {"random_level": level, "unit": unit, "factor": factor}
+                for unit in frame.index
+                for factor in frame.columns
+            ]
+        if param == "Lambda" and len(shape) == 2:
+            frame = self._lambda_frame(np.zeros(shape))
+            labels = [
+                {"random_level": level, "factor": factor, "species": species}
+                for factor in frame.index
+                for species in frame.columns
+            ]
+            if x_index is not None:
+                for label in labels:
+                    label["x_index"] = x_index
+            return labels
         return [
             {f"dim_{axis}": int(value) for axis, value in enumerate(index)}
             for index in np.ndindex(shape)

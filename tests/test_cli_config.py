@@ -153,6 +153,91 @@ def test_cli_diagnostics_writes_named_report(tmp_path):
     assert "sp1" in text
 
 
+def test_cli_diagnostics_supports_random_level_parameters(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    eta_output = tmp_path / "eta_diagnostics.txt"
+    lambda_output = tmp_path / "lambda_diagnostics.txt"
+    eta = [
+        [
+            [[0.0, 1.0], [2.0, 3.0]],
+            [[0.1, 1.1], [2.1, 3.1]],
+            [[0.2, 1.2], [2.2, 3.2]],
+        ],
+        [
+            [[0.0, 1.0], [2.0, 3.0]],
+            [[0.1, 1.1], [2.1, 3.1]],
+            [[0.2, 1.2], [2.2, 3.2]],
+        ],
+    ]
+    lam = [
+        [
+            [[0.0, 1.0], [2.0, 3.0]],
+            [[0.1, 1.1], [2.1, 3.1]],
+            [[0.2, 1.2], [2.2, 3.2]],
+        ],
+        [
+            [[0.0, 1.0], [2.0, 3.0]],
+            [[0.1, 1.1], [2.1, 3.1]],
+            [[0.2, 1.2], [2.2, 3.2]],
+        ],
+    ]
+    with h5py.File(posterior, "w") as handle:
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=eta)
+        level.create_dataset("Lambda", data=lam)
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"species":["sp1","sp2"]},'
+            '"random_levels":[{"levels":["plot_a","plot_b"]}]}'
+        )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "diagnostics",
+            str(posterior),
+            "--param",
+            "Eta",
+            "--random-level",
+            "0",
+            "--output",
+            str(eta_output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "diagnostics",
+            str(posterior),
+            "--param",
+            "Lambda",
+            "--random-level",
+            "0",
+            "--output",
+            str(lambda_output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    eta_text = eta_output.read_text(encoding="utf-8")
+    lambda_text = lambda_output.read_text(encoding="utf-8")
+    assert "random_level: 0" in eta_text
+    assert "plot_a" in eta_text
+    assert "factor_1" in eta_text
+    assert "random_level: 0" in lambda_text
+    assert "sp2" in lambda_text
+
+
 def test_cli_associations_writes_pair_table(tmp_path):
     import h5py
 

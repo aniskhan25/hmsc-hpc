@@ -24,6 +24,7 @@
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
 | Species association summaries | Supported from random-level `Lambda` samples |
 | Random-effect posterior summaries | Supported for `Eta` and random-intercept `Lambda`; random-slope `Lambda` requires `x_index` |
+| Random-effect diagnostics | Supported for nested `Eta`/`Lambda` arrays |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
@@ -90,8 +91,7 @@ TensorFlow 2.16 and an MI250X GPU.
 
 | Feature | Next work |
 | --- | --- |
-| Random-effect diagnostics | Add R-hat/ESS report helpers for nested `Eta`/`Lambda` arrays |
-| Longer spatial diagnostics | Add nested `Eta`/`Lambda` diagnostics and optional longer/4-chain spatial validation |
+| Longer spatial diagnostics | Run optional longer/4-chain spatial validation with nested `Eta`/`Lambda` diagnostics |
 | Random slopes | Harden TensorFlow updater path, then enable strict validation |
 | GPP/NNGP spatial effects | Add native compiler and loader support for approximate spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |
