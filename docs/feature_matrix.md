@@ -23,8 +23,10 @@
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
 | Species association summaries | Supported from random-level `Lambda` samples |
+| Species association diagnostics | Supported for identifiable `Lambda.T @ Lambda` association samples |
 | Random-effect posterior summaries | Supported for `Eta` and random-intercept `Lambda`; random-slope `Lambda` requires `x_index` |
 | Random-effect diagnostics | Supported for nested `Eta`/`Lambda` arrays |
+| Latent-factor alignment | Optional post-hoc alignment for raw `Eta`/`Lambda` summaries and diagnostics |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
@@ -99,11 +101,30 @@ diagnostics were clean (`max R-hat = 1.0035`, `min ESS = 560.6`), but latent
 Use latent random-effect summaries as exploratory until longer or 4-chain runs
 improve those diagnostics.
 
+Four-chain spatial-only run `big_spatial_4chain_diag_codex` completed on LUMI
+in 20 minutes 47 seconds. Raw `Eta`/`Lambda` diagnostics remained poor, but
+identifiable association diagnostics on `Lambda.T @ Lambda` improved
+substantially (`max R-hat = 1.0493`, `median R-hat = 1.0080`, `min ESS =
+189.8`, `median ESS = 700.2`). Association diagnostics are now the preferred
+diagnostic target for residual species association inference, although this run
+still had R-hat flags (`320 / 780`) and should be extended before
+publication-grade association estimates.
+
+Longer four-chain spatial-only association run
+`big_spatial_4chain_assoc_long_codex` completed on LUMI in 24 minutes 58
+seconds with 2500 saved samples, 1000 transient iterations, and thin 10.
+Identifiable association diagnostics improved again (`max R-hat = 1.0247`,
+`median R-hat = 1.0052`, `min ESS = 242.3`, `median ESS = 782.0`; R-hat flags
+`153 / 780`, ESS flags `72 / 780`). Post-hoc latent-factor alignment reduced
+raw `Eta`/`Lambda` R-hat pathologies, but aligned latent factors still had low
+ESS, so `Associations` remains the preferred diagnostic target for residual
+species association inference.
+
 ## Main Pending Features
 
 | Feature | Next work |
 | --- | --- |
-| Longer spatial diagnostics | Run 4-chain or longer spatial validation to improve latent `Eta`/`Lambda` convergence |
+| Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
 | Random slopes | Harden TensorFlow updater path, then enable strict validation |
 | GPP/NNGP spatial effects | Add native compiler and loader support for approximate spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

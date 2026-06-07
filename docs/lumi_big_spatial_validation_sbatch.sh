@@ -84,6 +84,12 @@ run_model() {
       --output "${model_run_root}/eta_diagnostics.txt"
     "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Lambda \
       --output "${model_run_root}/lambda_diagnostics.txt"
+    "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Eta --align-factors \
+      --output "${model_run_root}/eta_aligned_diagnostics.txt"
+    "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Lambda --align-factors \
+      --output "${model_run_root}/lambda_aligned_diagnostics.txt"
+    "${PYTHON}" -m pyhmsc diagnostics "${posterior}" --param Associations \
+      --output "${model_run_root}/association_diagnostics.txt"
     "${PYTHON}" -m pyhmsc associations "${posterior}" \
       > "${model_run_root}/species_associations.txt"
   fi

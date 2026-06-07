@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from itertools import permutations
 from pathlib import Path
 from typing import Any
 
@@ -90,12 +91,14 @@ class HmscFit:
         sigma = self.sigma_samples().mean(axis=(0, 1))
         return pd.Series(sigma, index=self._species_names(len(sigma)), name="sigma")
 
-    def eta_mean(self, level: int = 0) -> pd.DataFrame:
-        eta = self.eta_samples(level).mean(axis=(0, 1))
+    def eta_mean(self, level: int = 0, align: bool = False) -> pd.DataFrame:
+        eta = self._aligned_random_level_samples(level=level)[0] if align else self.eta_samples(level)
+        eta = eta.mean(axis=(0, 1))
         return pd.DataFrame(eta, index=self._random_level_unit_names(level, eta.shape[0]), columns=_factor_names(eta.shape[1]))
 
-    def lambda_mean(self, level: int = 0) -> pd.DataFrame:
-        values = self.lambda_samples(level).mean(axis=(0, 1))
+    def lambda_mean(self, level: int = 0, align: bool = False) -> pd.DataFrame:
+        values = self._aligned_random_level_samples(level=level)[1] if align else self.lambda_samples(level)
+        values = values.mean(axis=(0, 1))
         if values.ndim != 2:
             raise ValueError("lambda_mean supports random intercept loadings only")
         return pd.DataFrame(values, index=_factor_names(values.shape[0]), columns=self._species_names(values.shape[-1]))
@@ -223,6 +226,69 @@ class HmscFit:
                 )
         return pd.DataFrame(rows)
 
+    def species_association_diagnostics(
+        self,
+        level: int = 0,
+        correlation: bool = True,
+        x_index: int | None = None,
+        include_self: bool = False,
+    ) -> pd.DataFrame:
+        """Return diagnostics for identifiable residual species associations."""
+        samples = self.species_association_samples(
+            level=level,
+            correlation=correlation,
+            x_index=x_index,
+        )
+        mean = samples.mean(axis=(0, 1))
+        sd = samples.reshape((-1,) + samples.shape[2:]).std(axis=0, ddof=1)
+        rhat = _rhat_array(samples)
+        ess = _ess_array(samples)
+        species = self._species_names(mean.shape[0])
+        rows = []
+        for left_idx, left in enumerate(species):
+            start = left_idx if include_self else left_idx + 1
+            for right_idx in range(start, len(species)):
+                row = {
+                    "random_level": level,
+                    "species_1": left,
+                    "species_2": species[right_idx],
+                    "mean": float(mean[left_idx, right_idx]),
+                    "sd": float(sd[left_idx, right_idx]),
+                    "rhat": float(rhat[left_idx, right_idx]),
+                    "ess": float(ess[left_idx, right_idx]),
+                }
+                if x_index is not None:
+                    row["x_index"] = x_index
+                rows.append(row)
+        return pd.DataFrame(rows)
+
+    def species_association_diagnostics_overview(
+        self,
+        level: int = 0,
+        correlation: bool = True,
+        x_index: int | None = None,
+        include_self: bool = False,
+        rhat_threshold: float = 1.01,
+        ess_threshold: float = 400.0,
+    ) -> dict[str, Any]:
+        diagnostics = self.species_association_diagnostics(
+            level=level,
+            correlation=correlation,
+            x_index=x_index,
+            include_self=include_self,
+        )
+        return _diagnostics_overview(
+            diagnostics,
+            param="Associations",
+            rhat_threshold=rhat_threshold,
+            ess_threshold=ess_threshold,
+            extra={
+                "random_level": int(level),
+                "association": "correlation" if correlation else "covariance",
+                **({"x_index": int(x_index)} if x_index is not None else {}),
+            },
+        )
+
     def beta_ci(self, level: float = 0.95) -> dict[str, pd.DataFrame]:
         if not 0 < level < 1:
             raise ValueError("level must be between 0 and 1")
@@ -240,16 +306,26 @@ class HmscFit:
         names = self._species_names(len(lo))
         return {"lower": pd.Series(lo, index=names), "upper": pd.Series(hi, index=names)}
 
-    def eta_ci(self, level: int = 0, cred_level: float = 0.95) -> dict[str, pd.DataFrame]:
-        samples = self.eta_samples(level)
+    def eta_ci(self, level: int = 0, cred_level: float = 0.95, align: bool = False) -> dict[str, pd.DataFrame]:
+        samples = self._aligned_random_level_samples(level=level)[0] if align else self.eta_samples(level)
         lo, hi = _ci_arrays(samples, cred_level)
         return {
             "lower": self._eta_frame(lo, level),
             "upper": self._eta_frame(hi, level),
         }
 
-    def lambda_ci(self, level: int = 0, cred_level: float = 0.95, x_index: int | None = None) -> dict[str, pd.DataFrame]:
-        samples = self._lambda_samples_for_summary(level=level, x_index=x_index)
+    def lambda_ci(
+        self,
+        level: int = 0,
+        cred_level: float = 0.95,
+        x_index: int | None = None,
+        align: bool = False,
+    ) -> dict[str, pd.DataFrame]:
+        samples = (
+            self._aligned_random_level_samples(level=level, x_index=x_index)[1]
+            if align
+            else self._lambda_samples_for_summary(level=level, x_index=x_index)
+        )
         lo, hi = _ci_arrays(samples, cred_level)
         return {
             "lower": self._lambda_frame(lo),
@@ -496,8 +572,23 @@ class HmscFit:
         samples = self._diagnostic_samples(param, level=level, x_index=x_index)
         return self._diagnostic_frame(param, _ess_array(samples), "ess", level=level, x_index=x_index)
 
-    def diagnostics(self, param: str = "Beta", level: int = 0, x_index: int | None = None) -> pd.DataFrame:
-        samples = self._diagnostic_samples(param, level=level, x_index=x_index)
+    def diagnostics(
+        self,
+        param: str = "Beta",
+        level: int = 0,
+        x_index: int | None = None,
+        correlation: bool = True,
+        include_self: bool = False,
+        align: bool = False,
+    ) -> pd.DataFrame:
+        if _is_association_param(param):
+            return self.species_association_diagnostics(
+                level=level,
+                correlation=correlation,
+                x_index=x_index,
+                include_self=include_self,
+            )
+        samples = self._diagnostic_samples(param, level=level, x_index=x_index, align=align)
         mean = samples.mean(axis=(0, 1))
         sd = samples.reshape((-1,) + samples.shape[2:]).std(axis=0, ddof=1)
         rhat = _rhat_array(samples)
@@ -524,26 +615,34 @@ class HmscFit:
         ess_threshold: float = 400.0,
         level: int = 0,
         x_index: int | None = None,
+        correlation: bool = True,
+        include_self: bool = False,
+        align: bool = False,
     ) -> dict[str, Any]:
-        diagnostics = self.diagnostics(param, level=level, x_index=x_index)
-        rhat = diagnostics["rhat"].replace([np.inf, -np.inf], np.nan)
-        ess = diagnostics["ess"].replace([np.inf, -np.inf], np.nan)
-        overview = {
-            "param": param,
-            "n_parameters": int(len(diagnostics)),
-            "rhat_max": float(rhat.max(skipna=True)),
-            "rhat_median": float(rhat.median(skipna=True)),
-            "ess_min": float(ess.min(skipna=True)),
-            "ess_median": float(ess.median(skipna=True)),
-            "rhat_threshold": float(rhat_threshold),
-            "ess_threshold": float(ess_threshold),
-            "n_rhat_flagged": int((rhat > rhat_threshold).sum()),
-            "n_ess_flagged": int((ess < ess_threshold).sum()),
-        }
+        diagnostics = self.diagnostics(
+            param,
+            level=level,
+            x_index=x_index,
+            correlation=correlation,
+            include_self=include_self,
+            align=align,
+        )
+        overview = _diagnostics_overview(
+            diagnostics,
+            param="Associations" if _is_association_param(param) else param,
+            rhat_threshold=rhat_threshold,
+            ess_threshold=ess_threshold,
+        )
         if param in {"Eta", "Lambda"}:
             overview["random_level"] = int(level)
+            overview["aligned"] = bool(align)
         if param == "Lambda" and x_index is not None:
             overview["x_index"] = int(x_index)
+        if _is_association_param(param):
+            overview["random_level"] = int(level)
+            overview["association"] = "correlation" if correlation else "covariance"
+            if x_index is not None:
+                overview["x_index"] = int(x_index)
         return overview
 
     def traceplot(self, param: str = "Beta") -> Any:
@@ -605,22 +704,23 @@ class HmscFit:
                 )
         return pd.DataFrame(rows)
 
-    def eta_summary(self, level: int = 0, cred_level: float = 0.95) -> pd.DataFrame:
-        mean = self.eta_mean(level=level)
-        ci = self.eta_ci(level=level, cred_level=cred_level)
+    def eta_summary(self, level: int = 0, cred_level: float = 0.95, align: bool = False) -> pd.DataFrame:
+        mean = self.eta_mean(level=level, align=align)
+        ci = self.eta_ci(level=level, cred_level=cred_level, align=align)
         rows = []
         for unit in mean.index:
             for factor in mean.columns:
-                rows.append(
-                    {
-                        "random_level": level,
-                        "unit": unit,
-                        "factor": factor,
-                        "mean": mean.loc[unit, factor],
-                        "lower": ci["lower"].loc[unit, factor],
-                        "upper": ci["upper"].loc[unit, factor],
-                    }
-                )
+                row = {
+                    "random_level": level,
+                    "unit": unit,
+                    "factor": factor,
+                    "mean": mean.loc[unit, factor],
+                    "lower": ci["lower"].loc[unit, factor],
+                    "upper": ci["upper"].loc[unit, factor],
+                }
+                if align:
+                    row["aligned"] = True
+                rows.append(row)
         return pd.DataFrame(rows)
 
     def lambda_summary(
@@ -628,10 +728,15 @@ class HmscFit:
         level: int = 0,
         cred_level: float = 0.95,
         x_index: int | None = None,
+        align: bool = False,
     ) -> pd.DataFrame:
-        samples = self._lambda_samples_for_summary(level=level, x_index=x_index)
+        samples = (
+            self._aligned_random_level_samples(level=level, x_index=x_index)[1]
+            if align
+            else self._lambda_samples_for_summary(level=level, x_index=x_index)
+        )
         mean = self._lambda_frame(samples.mean(axis=(0, 1)))
-        ci = self.lambda_ci(level=level, cred_level=cred_level, x_index=x_index)
+        ci = self.lambda_ci(level=level, cred_level=cred_level, x_index=x_index, align=align)
         rows = []
         for factor in mean.index:
             for species in mean.columns:
@@ -645,6 +750,8 @@ class HmscFit:
                 }
                 if x_index is not None:
                     row["x_index"] = x_index
+                if align:
+                    row["aligned"] = True
                 rows.append(row)
         return pd.DataFrame(rows)
 
@@ -818,12 +925,38 @@ class HmscFit:
             "or chains x draws x factors x species x random_covariates"
         )
 
-    def _diagnostic_samples(self, param: str, level: int = 0, x_index: int | None = None) -> np.ndarray:
+    def _diagnostic_samples(
+        self,
+        param: str,
+        level: int = 0,
+        x_index: int | None = None,
+        align: bool = False,
+    ) -> np.ndarray:
         if param == "Eta":
-            return self.eta_samples(level)
+            return self._aligned_random_level_samples(level=level, x_index=x_index)[0] if align else self.eta_samples(level)
         if param == "Lambda":
-            return self._lambda_samples_for_summary(level=level, x_index=x_index)
+            return (
+                self._aligned_random_level_samples(level=level, x_index=x_index)[1]
+                if align
+                else self._lambda_samples_for_summary(level=level, x_index=x_index)
+            )
         return self._samples(param)
+
+    def _aligned_random_level_samples(
+        self,
+        level: int = 0,
+        x_index: int | None = None,
+        max_iter: int = 2,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        eta = self.eta_samples(level)
+        lam = self._lambda_samples_for_summary(level=level, x_index=x_index)
+        if eta.ndim != 4:
+            raise ValueError("Eta alignment requires samples with shape chains x draws x units x factors")
+        if lam.ndim != 4:
+            raise ValueError("Lambda alignment requires one loading matrix per draw")
+        if eta.shape[:2] != lam.shape[:2] or eta.shape[-1] != lam.shape[2]:
+            raise ValueError("Eta and Lambda samples have incompatible factor dimensions")
+        return _align_eta_lambda_samples(eta, lam, max_iter=max_iter)
 
     def _diagnostic_frame(
         self,
@@ -1114,6 +1247,90 @@ def _ci_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarra
 def _ci_frames(samples: np.ndarray, level: float) -> dict[str, pd.DataFrame]:
     lo, hi = _ci_arrays(samples, level)
     return {"lower": pd.DataFrame(lo), "upper": pd.DataFrame(hi)}
+
+
+def _is_association_param(param: str) -> bool:
+    return param.lower() in {"association", "associations", "speciesassociation", "speciesassociations"}
+
+
+def _align_eta_lambda_samples(
+    eta: np.ndarray,
+    lam: np.ndarray,
+    max_iter: int = 2,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Post-hoc align latent factors using Lambda as the loading reference.
+
+    HMSC latent factors are invariant to factor permutation and sign flips. This
+    routine orients each posterior draw to an iterative Lambda reference and
+    applies the same transformation to Eta so Eta @ Lambda is unchanged.
+    """
+    reference = np.array(lam[0, 0], dtype=float, copy=True)
+    aligned_eta = np.array(eta, dtype=float, copy=True)
+    aligned_lam = np.array(lam, dtype=float, copy=True)
+    for _ in range(max(1, max_iter)):
+        for chain_idx in range(lam.shape[0]):
+            for draw_idx in range(lam.shape[1]):
+                order, signs = _factor_alignment(lam[chain_idx, draw_idx], reference)
+                aligned_lam[chain_idx, draw_idx] = lam[chain_idx, draw_idx][order] * signs[:, None]
+                aligned_eta[chain_idx, draw_idx] = eta[chain_idx, draw_idx][:, order] * signs[None, :]
+        new_reference = aligned_lam.mean(axis=(0, 1))
+        if np.allclose(new_reference, reference):
+            break
+        reference = new_reference
+    return aligned_eta, aligned_lam
+
+
+def _factor_alignment(loadings: np.ndarray, reference: np.ndarray) -> tuple[list[int], np.ndarray]:
+    n_factors = loadings.shape[0]
+    scores = _factor_alignment_scores(loadings, reference)
+    if n_factors <= 8:
+        best_order = max(permutations(range(n_factors)), key=lambda order: sum(scores[i, order[i]] for i in range(n_factors)))
+    else:
+        remaining = set(range(n_factors))
+        order = []
+        for ref_idx in range(n_factors):
+            chosen = max(remaining, key=lambda factor_idx: scores[ref_idx, factor_idx])
+            order.append(chosen)
+            remaining.remove(chosen)
+        best_order = tuple(order)
+    signs = []
+    for ref_idx, factor_idx in enumerate(best_order):
+        dot = float(np.dot(reference[ref_idx], loadings[factor_idx]))
+        signs.append(1.0 if dot >= 0 else -1.0)
+    return list(best_order), np.asarray(signs, dtype=float)
+
+
+def _factor_alignment_scores(loadings: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    ref_norm = np.linalg.norm(reference, axis=1)
+    load_norm = np.linalg.norm(loadings, axis=1)
+    denom = np.maximum(ref_norm[:, None] * load_norm[None, :], np.finfo(float).eps)
+    return np.abs(reference @ loadings.T) / denom
+
+
+def _diagnostics_overview(
+    diagnostics: pd.DataFrame,
+    param: str,
+    rhat_threshold: float,
+    ess_threshold: float,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    rhat = diagnostics["rhat"].replace([np.inf, -np.inf], np.nan)
+    ess = diagnostics["ess"].replace([np.inf, -np.inf], np.nan)
+    overview = {
+        "param": param,
+        "n_parameters": int(len(diagnostics)),
+        "rhat_max": float(rhat.max(skipna=True)),
+        "rhat_median": float(rhat.median(skipna=True)),
+        "ess_min": float(ess.min(skipna=True)),
+        "ess_median": float(ess.median(skipna=True)),
+        "rhat_threshold": float(rhat_threshold),
+        "ess_threshold": float(ess_threshold),
+        "n_rhat_flagged": int((rhat > rhat_threshold).sum()),
+        "n_ess_flagged": int((ess < ess_threshold).sum()),
+    }
+    if extra:
+        overview.update(extra)
+    return overview
 
 
 def _rhat_array(samples: np.ndarray) -> np.ndarray:

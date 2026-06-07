@@ -84,4 +84,56 @@ parameters:
 Interpretation: the spatial model is behaving as expected for posterior
 predictive checks and spatial residual structure, but latent random-effect
 posterior summaries should be treated as exploratory until a longer or
-4-chain validation run improves `Eta`/`Lambda` diagnostics.
+4-chain validation run improves `Eta`/`Lambda` diagnostics. Prefer
+`Associations` diagnostics for identifiable residual association summaries,
+because raw `Eta`/`Lambda` draws are sensitive to latent-factor sign and
+permutation switching.
+
+To run the spatial model only with a chain override, use:
+
+```bash
+RUN_NAME=big_spatial_4chain_diag \
+CHAINS=4 SAMPLES=2000 TRANSIENT=1000 THIN=10 \
+sbatch docs/lumi_big_spatial_4chain_diagnostics_sbatch.sh
+```
+
+This script compiles `model_spatial_full.yaml` with `pyhmsc compile --chains`
+so the YAML file does not need to be edited for diagnostic runs.
+
+The 4-chain spatial-only run `big_spatial_4chain_diag_codex` completed on
+LUMI in 20 minutes 47 seconds with 2000 saved samples, 1000 transient
+iterations, and thin 10. Raw latent diagnostics remained poor (`Eta` median
+R-hat `1.6912`, `Lambda` median R-hat `1.9494`), but identifiable residual
+association diagnostics were substantially better:
+
+| Parameter | Max R-hat | Median R-hat | Min ESS | Median ESS | Flags |
+| --- | --- | --- | --- | --- | --- |
+| Associations | `1.0493` | `1.0080` | `189.8` | `700.2` | R-hat `320 / 780`, ESS `103 / 780` |
+
+Interpretation: diagnostics on `Lambda.T @ Lambda` support the view that raw
+latent loading diagnostics are strongly affected by latent-factor
+non-identifiability. Association diagnostics are the preferred convergence
+summary for residual species association inference, but the 4-chain run still
+has enough R-hat flags to warrant longer sampling before publication-grade
+association estimates.
+
+The longer 4-chain spatial-only association run
+`big_spatial_4chain_assoc_long_codex` completed on LUMI in 24 minutes 58
+seconds with 2500 saved samples, 1000 transient iterations, and thin 10. It
+also ran post-hoc latent-factor alignment diagnostics on the completed
+posterior.
+
+| Parameter | Max R-hat | Median R-hat | Min ESS | Median ESS | Flags |
+| --- | --- | --- | --- | --- | --- |
+| Beta | `1.0684` | `1.0012` | `65.4` | `1709.8` | R-hat `22 / 200`, ESS `40 / 200` |
+| Associations | `1.0247` | `1.0052` | `242.3` | `782.0` | R-hat `153 / 780`, ESS `72 / 780` |
+| Eta, aligned | `1.0731` | `1.0064` | `41.0` | `208.3` | R-hat `591 / 1600`, ESS `1438 / 1600` |
+| Lambda, aligned | `1.0738` | `1.0125` | `38.9` | `180.5` | R-hat `92 / 160`, ESS `130 / 160` |
+
+Interpretation: extending the run improved identifiable association
+diagnostics substantially (`max R-hat` decreased from `1.0493` to `1.0247`,
+and R-hat flags decreased from `320 / 780` to `153 / 780`). Post-hoc alignment
+makes raw `Eta`/`Lambda` diagnostics much more interpretable than unaligned
+draws, but the latent factors still have low ESS. For residual species
+association inference, use the identifiable `Associations` diagnostics rather
+than raw latent-factor diagnostics.

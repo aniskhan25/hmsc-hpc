@@ -24,7 +24,11 @@ def main() -> None:
     compile_parser.add_argument("--X", help="covariate table path")
     compile_parser.add_argument("--formula", help="one-sided X formula")
     compile_parser.add_argument("--distribution", default="poisson")
-    compile_parser.add_argument("--chains", type=int, default=4)
+    compile_parser.add_argument(
+        "--chains",
+        type=int,
+        help="number of chains; overrides CONFIG chains when a config file is used",
+    )
     compile_parser.add_argument("--output", default="run")
 
     sample_parser = subparsers.add_parser("sample", help="run hmsc-hpc sampler on a compiled init file")
@@ -53,6 +57,11 @@ def main() -> None:
     summarize_parser.add_argument("--level", type=float, default=0.95)
     summarize_parser.add_argument("--random-level", type=int, default=0)
     summarize_parser.add_argument("--x-index", type=int)
+    summarize_parser.add_argument(
+        "--align-factors",
+        action="store_true",
+        help="post-hoc align latent factors for Eta/Lambda summaries",
+    )
 
     merge_parser = subparsers.add_parser("merge", help="merge HDF5 posterior shards")
     merge_parser.add_argument("inputs", nargs="+", help="input posterior .h5 files")
@@ -95,6 +104,21 @@ def main() -> None:
     diagnostics_parser.add_argument("--x-index", type=int)
     diagnostics_parser.add_argument("--rhat-threshold", type=float, default=1.01)
     diagnostics_parser.add_argument("--ess-threshold", type=float, default=400.0)
+    diagnostics_parser.add_argument(
+        "--align-factors",
+        action="store_true",
+        help="post-hoc align latent factors for Eta/Lambda diagnostics",
+    )
+    diagnostics_parser.add_argument(
+        "--covariance",
+        action="store_true",
+        help="for --param Associations, diagnose covariance instead of correlation",
+    )
+    diagnostics_parser.add_argument(
+        "--include-self",
+        action="store_true",
+        help="for --param Associations, include diagonal self-associations",
+    )
     diagnostics_parser.add_argument("--output")
 
     associations_parser = subparsers.add_parser(
@@ -129,7 +153,8 @@ def main() -> None:
     if args.command == "compile":
         if args.config:
             model, config = model_from_config(args.config)
-            compiled = model.compile(Path(args.output), chains=int(config.get("chains", args.chains)))
+            chains = args.chains if args.chains is not None else int(config.get("chains", 4))
+            compiled = model.compile(Path(args.output), chains=chains)
         else:
             missing = [name for name in ("Y", "X", "formula") if getattr(args, name) is None]
             if missing:
@@ -139,7 +164,7 @@ def main() -> None:
                 X=read_table(args.X),
                 formula=args.formula,
                 distr=args.distribution,
-                chains=args.chains,
+                chains=args.chains or 4,
                 output=Path(args.output),
             )
         print(compiled.init_json)
@@ -178,12 +203,17 @@ def main() -> None:
     elif args.command == "summarize":
         fit = HmscFit.from_file(args.posterior)
         if args.param == "Eta":
-            summary = fit.eta_summary(level=args.random_level, cred_level=args.level)
+            summary = fit.eta_summary(
+                level=args.random_level,
+                cred_level=args.level,
+                align=args.align_factors,
+            )
         elif args.param == "Lambda":
             summary = fit.lambda_summary(
                 level=args.random_level,
                 cred_level=args.level,
                 x_index=args.x_index,
+                align=args.align_factors,
             )
         else:
             summary = fit.summary(args.param, level=args.level)
@@ -277,8 +307,18 @@ def main() -> None:
             ess_threshold=args.ess_threshold,
             level=args.random_level,
             x_index=args.x_index,
+            correlation=not args.covariance,
+            include_self=args.include_self,
+            align=args.align_factors,
         )
-        diagnostics = fit.diagnostics(args.param, level=args.random_level, x_index=args.x_index)
+        diagnostics = fit.diagnostics(
+            args.param,
+            level=args.random_level,
+            x_index=args.x_index,
+            correlation=not args.covariance,
+            include_self=args.include_self,
+            align=args.align_factors,
+        )
         lines = [
             "diagnostics",
             *(f"{key}: {value}" for key, value in overview.items()),

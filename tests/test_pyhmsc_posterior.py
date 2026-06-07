@@ -245,6 +245,96 @@ def test_species_association_summaries_from_lambda():
     np.testing.assert_allclose(covariance.loc["sp1", "sp2"], 2.0)
 
 
+def test_species_association_diagnostics_are_sign_invariant():
+    posterior = {
+        "__metadata__": {"names": {"species": ["sp1", "sp2"]}},
+        "__arrays__": {
+            "random_levels/0/Lambda": np.array(
+                [
+                    [
+                        [[1.0, 2.0]],
+                        [[1.0, 2.0]],
+                    ],
+                    [
+                        [[-1.0, -2.0]],
+                        [[-1.0, -2.0]],
+                    ],
+                ]
+            )
+        },
+    }
+    fit = HmscFit(posterior)
+
+    lambda_diag = fit.diagnostics("Lambda")
+    association_diag = fit.diagnostics("Associations")
+    overview = fit.diagnostics_overview("Associations")
+
+    assert lambda_diag["rhat"].max() > 1.0
+    assert list(association_diag.columns) == [
+        "random_level",
+        "species_1",
+        "species_2",
+        "mean",
+        "sd",
+        "rhat",
+        "ess",
+    ]
+    assert association_diag.shape[0] == 1
+    assert association_diag.loc[0, "species_1"] == "sp1"
+    assert association_diag.loc[0, "species_2"] == "sp2"
+    assert association_diag.loc[0, "mean"] == 1.0
+    assert association_diag.loc[0, "rhat"] == 1.0
+    assert overview["param"] == "Associations"
+    assert overview["random_level"] == 0
+    assert overview["association"] == "correlation"
+
+
+def test_aligned_eta_lambda_diagnostics_handle_sign_switching():
+    posterior = {
+        "__metadata__": {"names": {"species": ["sp1", "sp2"], "random_levels": [{"levels": ["plot_1"]}]}},
+        "__arrays__": {
+            "random_levels/0/Eta": np.array(
+                [
+                    [
+                        [[0.5]],
+                        [[0.5]],
+                    ],
+                    [
+                        [[-0.5]],
+                        [[-0.5]],
+                    ],
+                ]
+            ),
+            "random_levels/0/Lambda": np.array(
+                [
+                    [
+                        [[1.0, 2.0]],
+                        [[1.0, 2.0]],
+                    ],
+                    [
+                        [[-1.0, -2.0]],
+                        [[-1.0, -2.0]],
+                    ],
+                ]
+            ),
+        },
+    }
+    fit = HmscFit(posterior)
+
+    raw_lambda = fit.diagnostics("Lambda")
+    aligned_lambda = fit.diagnostics("Lambda", align=True)
+    aligned_eta = fit.diagnostics("Eta", align=True)
+    aligned_summary = fit.lambda_summary(align=True)
+    overview = fit.diagnostics_overview("Lambda", align=True)
+
+    assert raw_lambda["rhat"].max() > 1.0
+    assert aligned_lambda["rhat"].tolist() == [1.0, 1.0]
+    assert aligned_eta["rhat"].tolist() == [1.0]
+    assert aligned_summary["mean"].tolist() == [1.0, 2.0]
+    assert aligned_summary["aligned"].unique().tolist() == [True]
+    assert overview["aligned"] is True
+
+
 def test_species_associations_require_x_index_for_random_slopes():
     posterior = {
         "__arrays__": {

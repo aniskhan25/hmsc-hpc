@@ -83,6 +83,12 @@ if [[ "${PPC_RANDOM_EFFECTS}" != "none" ]]; then
     --output "${RUN_ROOT}/eta_diagnostics.txt"
   "${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Lambda \
     --output "${RUN_ROOT}/lambda_diagnostics.txt"
+  "${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Eta --align-factors \
+    --output "${RUN_ROOT}/eta_aligned_diagnostics.txt"
+  "${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Lambda --align-factors \
+    --output "${RUN_ROOT}/lambda_aligned_diagnostics.txt"
+  "${PYTHON}" -m pyhmsc diagnostics "${POSTERIOR}" --param Associations \
+    --output "${RUN_ROOT}/association_diagnostics.txt"
 fi
 "${PYTHON}" examples/analyze_whittaker_plants.py \
   --posterior "${POSTERIOR}" \
@@ -100,6 +106,9 @@ echo "Gamma diagnostics: ${RUN_ROOT}/gamma_diagnostics.txt"
 if [[ "${PPC_RANDOM_EFFECTS}" != "none" ]]; then
   echo "Eta diagnostics: ${RUN_ROOT}/eta_diagnostics.txt"
   echo "Lambda diagnostics: ${RUN_ROOT}/lambda_diagnostics.txt"
+  echo "Eta aligned diagnostics: ${RUN_ROOT}/eta_aligned_diagnostics.txt"
+  echo "Lambda aligned diagnostics: ${RUN_ROOT}/lambda_aligned_diagnostics.txt"
+  echo "Association diagnostics: ${RUN_ROOT}/association_diagnostics.txt"
 fi
 echo "Posterior predictive check: ${RUN_ROOT}/posterior_predictive_check.txt"
 echo "Validation report: ${RUN_ROOT}/whittaker_report.txt"

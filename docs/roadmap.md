@@ -71,7 +71,8 @@ Remaining hardening:
 
 Species association summaries are available from sampled random-level `Lambda`.
 They can be returned as mean association matrices, credible interval matrices,
-or pairwise tables with sign probabilities.
+pairwise tables with sign probabilities, or diagnostics on identifiable
+`Lambda.T @ Lambda` association samples.
 
 Python API:
 
@@ -79,6 +80,7 @@ Python API:
 assoc = fit.species_associations(level=0)
 assoc_ci = fit.species_association_ci(level=0)
 assoc_table = fit.species_association_summary(level=0)
+assoc_diag = fit.diagnostics("Associations", level=0)
 ```
 
 CLI:
@@ -86,13 +88,17 @@ CLI:
 ```bash
 python -m pyhmsc associations run/posterior.h5 --output run/species_associations.csv
 python -m pyhmsc associations run/posterior.h5 --matrix --output run/species_association_matrix.csv
+python -m pyhmsc diagnostics run/posterior.h5 --param Associations --output run/association_diagnostics.txt
 ```
 
-Random-effect posterior summaries are available for `Eta` and `Lambda`.
+Random-effect posterior summaries are available for `Eta` and `Lambda`. Use
+`align=True` or `--align-factors` for post-hoc latent-factor sign/permutation
+alignment when inspecting raw latent factors.
 
 ```python
 fit.eta_summary(level=0)
 fit.lambda_summary(level=0)
+fit.lambda_summary(level=0, align=True)
 ```
 
 CLI:
@@ -100,6 +106,7 @@ CLI:
 ```bash
 python -m pyhmsc summarize run/posterior.h5 --param Eta --random-level 0
 python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0
+python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0 --align-factors
 ```
 
 ## Full Spatial Random-Intercept Validation
@@ -177,12 +184,36 @@ Longer LUMI diagnostic run `big_spatial_long_diag_242e08a`:
   random-effect convergence was not yet clean; fixed-effect `Beta` diagnostics
   were clean only for the fixed model
 
+Four-chain spatial-only run `big_spatial_4chain_diag_codex`:
+
+- 4 chains, 2000 saved samples, 1000 transient iterations, thin 10
+- completed in 20 minutes 47 seconds on `dev-g`
+- raw `Eta`/`Lambda` diagnostics remained poor, consistent with latent-factor
+  sign/permutation non-identifiability
+- identifiable association diagnostics on `Lambda.T @ Lambda` were much better
+  (`max R-hat = 1.0493`, `median R-hat = 1.0080`, `min ESS = 189.8`,
+  `median ESS = 700.2`), but still flagged `320 / 780` R-hats and `103 / 780`
+  ESS values
+
+Longer four-chain spatial-only association run
+`big_spatial_4chain_assoc_long_codex`:
+
+- 4 chains, 2500 saved samples, 1000 transient iterations, thin 10
+- completed in 24 minutes 58 seconds on `dev-g`
+- identifiable association diagnostics improved to `max R-hat = 1.0247`,
+  `median R-hat = 1.0052`, `min ESS = 242.3`, and `median ESS = 782.0`
+- association flags decreased to R-hat `153 / 780` and ESS `72 / 780`
+- post-hoc aligned latent diagnostics were much better than raw `Eta`/`Lambda`
+  diagnostics, but aligned factors still had low ESS
+
 ## Recommended Next Implementation Target
 
-Run a 4-chain or longer spatial validation job before publication-grade
-inference for latent random-effect summaries. The current implementation is
-validated for predictive behavior, but `Eta`/`Lambda` convergence still needs
-more sampling.
+The current implementation is validated for predictive behavior, and
+association diagnostics are the preferred identifiable target for residual
+species association inference. The next practical implementation target is
+random-slope sampling support. After that, add approximate spatial effects
+(`GPP`/`NNGP`) so large spatial models are not limited to dense full spatial
+covariance matrices.
 
 The deterministic simulator for this validation is available as:
 

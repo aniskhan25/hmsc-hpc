@@ -194,6 +194,8 @@ python -m pyhmsc summarize run/posterior.h5 --param Eta --random-level 0
 python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0
 python -m pyhmsc diagnostics run/posterior.h5 --param Eta --random-level 0
 python -m pyhmsc diagnostics run/posterior.h5 --param Lambda --random-level 0
+python -m pyhmsc diagnostics run/posterior.h5 --param Lambda --random-level 0 --align-factors
+python -m pyhmsc diagnostics run/posterior.h5 --param Associations --random-level 0
 ```
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
@@ -223,4 +225,6 @@ print(fit.eta_summary(level=0))
 print(fit.lambda_summary(level=0))
 print(fit.diagnostics("Eta", level=0))
 print(fit.diagnostics("Lambda", level=0))
+print(fit.diagnostics("Lambda", level=0, align=True))
+print(fit.diagnostics("Associations", level=0))
 ```

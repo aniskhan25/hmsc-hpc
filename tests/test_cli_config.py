@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -32,6 +33,47 @@ def test_cli_compile_yaml_config(tmp_path):
         capture_output=True,
     )
     assert "native_sampler_supported: passed" in validate.stdout
+
+
+def test_cli_compile_yaml_config_chain_override(tmp_path):
+    default_out = tmp_path / "default"
+    override_out = tmp_path / "override"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "compile",
+            "tests/fixtures/fixed_effect/model.yaml",
+            "--output",
+            str(default_out),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "compile",
+            "tests/fixtures/fixed_effect/model.yaml",
+            "--chains",
+            "4",
+            "--output",
+            str(override_out),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    default_meta = json.loads((default_out / "init.json").read_text(encoding="utf-8"))
+    override_meta = json.loads((override_out / "init.json").read_text(encoding="utf-8"))
+    assert default_meta["dimensions"]["n_chains"] == 2
+    assert override_meta["dimensions"]["n_chains"] == 4
 
 
 def test_cli_validate_init_rejects_model_yaml():
@@ -285,6 +327,107 @@ def test_cli_associations_writes_pair_table(tmp_path):
     ]
     assert table.shape[0] == 3
     assert table.loc[(table["species_1"] == "sp1") & (table["species_2"] == "sp3"), "p_negative"].iloc[0] == 1.0
+
+
+def test_cli_diagnostics_supports_species_associations(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    output = tmp_path / "association_diagnostics.txt"
+    with h5py.File(posterior, "w") as handle:
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset(
+            "Lambda",
+            data=[
+                [
+                    [[1.0, 2.0, -1.0]],
+                    [[1.0, 2.0, -1.0]],
+                ],
+                [
+                    [[-1.0, -2.0, 1.0]],
+                    [[-1.0, -2.0, 1.0]],
+                ],
+            ],
+        )
+        handle.attrs["pyhmsc_metadata"] = '{"names":{"species":["sp1","sp2","sp3"]}}'
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "diagnostics",
+            str(posterior),
+            "--param",
+            "Associations",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "param: Associations" in text
+    assert "association: correlation" in text
+    assert "sp1" in text
+    assert "sp3" in text
+    assert "n_rhat_flagged: 0" in text
+
+
+def test_cli_diagnostics_aligns_latent_factors(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    output = tmp_path / "lambda_aligned_diagnostics.txt"
+    with h5py.File(posterior, "w") as handle:
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset(
+            "Eta",
+            data=[
+                [[[0.5]], [[0.5]]],
+                [[[-0.5]], [[-0.5]]],
+            ],
+        )
+        level.create_dataset(
+            "Lambda",
+            data=[
+                [
+                    [[1.0, 2.0]],
+                    [[1.0, 2.0]],
+                ],
+                [
+                    [[-1.0, -2.0]],
+                    [[-1.0, -2.0]],
+                ],
+            ],
+        )
+        handle.attrs["pyhmsc_metadata"] = '{"names":{"species":["sp1","sp2"]}}'
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "diagnostics",
+            str(posterior),
+            "--param",
+            "Lambda",
+            "--align-factors",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "aligned: True" in text
+    assert "n_rhat_flagged: 0" in text
+    assert "sp1" in text
+    assert "sp2" in text
 
 
 def test_cli_summarize_random_level_parameters(tmp_path):
