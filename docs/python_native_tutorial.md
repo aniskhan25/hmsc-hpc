@@ -116,6 +116,23 @@ The fixed Poisson example has been verified on LUMI with 2 chains, 1000 saved
 samples, 500 transient iterations, and thin 10, writing `posterior.h5` under the
 scratch run directory.
 
+The deterministic simulated spatial validation can be run as:
+
+```bash
+RUN_NAME=spatial_validation_test sbatch docs/lumi_spatial_validation_sbatch.sh
+```
+
+This runs fixed, iid random-intercept, and full spatial random-intercept models
+for `examples/projects/simulated_spatial_validation`, then writes
+`spatial_validation_report.txt` under the scratch run directory.
+
+Validated LUMI run `spatial_validation_full_codex` completed in 7 minutes 15
+seconds on `dev-g` with TensorFlow 2.16 and an MI250X GPU. All three models
+recovered the nonzero beta signs (`4 / 4`) and covered all species and sites in
+posterior predictive checks (`5 / 5` species, `36 / 36` site richness). The
+full spatial random-intercept model had stronger Eta/truth recovery
+(`0.868592`) than the iid random-intercept model (`0.675717`).
+
 The Whittaker plant real-data validation can be run without R as:
 
 ```bash
@@ -151,6 +168,13 @@ python -m pyhmsc associations run/posterior.h5 \
   --output run/species_association_matrix.csv
 ```
 
+Random-level effects and species loadings can be summarized directly:
+
+```bash
+python -m pyhmsc summarize run/posterior.h5 --param Eta --random-level 0
+python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0
+```
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.
@@ -174,4 +198,6 @@ fit = model.sample(samples=100, transient=100, thin=1, chains=2, init="python-na
 print(fit.beta_mean())
 print(fit.ppc_summary(Y=Y, X=X))
 print(fit.species_association_summary())
+print(fit.eta_summary(level=0))
+print(fit.lambda_summary(level=0))
 ```

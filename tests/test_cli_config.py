@@ -202,6 +202,58 @@ def test_cli_associations_writes_pair_table(tmp_path):
     assert table.loc[(table["species_1"] == "sp1") & (table["species_2"] == "sp3"), "p_negative"].iloc[0] == 1.0
 
 
+def test_cli_summarize_random_level_parameters(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    with h5py.File(posterior, "w") as handle:
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=[[[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]]])
+        level.create_dataset("Lambda", data=[[[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]]])
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"species":["sp1","sp2"]},'
+            '"random_levels":[{"levels":["plot_a","plot_b"]}]}'
+        )
+
+    eta = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "summarize",
+            str(posterior),
+            "--param",
+            "Eta",
+            "--level",
+            "0.5",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    lam = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "summarize",
+            str(posterior),
+            "--param",
+            "Lambda",
+            "--level",
+            "0.5",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "plot_a" in eta.stdout
+    assert "factor_1" in eta.stdout
+    assert "sp2" in lam.stdout
+    assert "factor_1" in lam.stdout
+
+
 def test_cli_sample_and_summarize(tmp_path):
     run_dir = tmp_path / "run"
     subprocess.run(

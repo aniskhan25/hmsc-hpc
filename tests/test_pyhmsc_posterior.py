@@ -262,3 +262,71 @@ def test_species_associations_require_x_index_for_random_slopes():
 
     matrix = fit.species_associations(x_index=1)
     assert matrix.shape == (2, 2)
+
+
+def test_eta_and_lambda_summaries_use_random_level_names():
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2], "sp2": [3, 4]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"]}),
+        random_levels={"plot": {"column": "plot", "type": "iid"}},
+    )
+    posterior = {
+        "__arrays__": {
+            "random_levels/0/Eta": np.array(
+                [
+                    [
+                        [[0.0, 1.0], [2.0, 3.0]],
+                        [[1.0, 2.0], [3.0, 4.0]],
+                    ]
+                ]
+            ),
+            "random_levels/0/Lambda": np.array(
+                [
+                    [
+                        [[0.0, 1.0], [2.0, 3.0]],
+                        [[1.0, 2.0], [3.0, 4.0]],
+                    ]
+                ]
+            ),
+        }
+    }
+    fit = HmscFit(posterior, model=model)
+
+    eta_mean = fit.eta_mean()
+    lambda_mean = fit.lambda_mean()
+    eta_summary = fit.eta_summary(cred_level=0.5)
+    lambda_summary = fit.lambda_summary(cred_level=0.5)
+
+    assert list(eta_mean.index) == ["a", "b"]
+    assert list(eta_mean.columns) == ["factor_0", "factor_1"]
+    assert list(lambda_mean.index) == ["factor_0", "factor_1"]
+    assert list(lambda_mean.columns) == ["sp1", "sp2"]
+    assert list(eta_summary.columns) == ["random_level", "unit", "factor", "mean", "lower", "upper"]
+    assert list(lambda_summary.columns) == ["random_level", "factor", "species", "mean", "lower", "upper"]
+    assert eta_summary.loc[(eta_summary["unit"] == "b") & (eta_summary["factor"] == "factor_1"), "mean"].iloc[0] == 3.5
+    assert lambda_summary.loc[
+        (lambda_summary["factor"] == "factor_1") & (lambda_summary["species"] == "sp2"),
+        "mean",
+    ].iloc[0] == 3.5
+
+
+def test_lambda_summary_requires_x_index_for_random_slopes():
+    posterior = {
+        "__arrays__": {
+            "random_levels/0/Lambda": np.ones((1, 1, 1, 2, 2)),
+        },
+    }
+    fit = HmscFit(posterior)
+
+    try:
+        fit.lambda_summary()
+    except ValueError as exc:
+        assert "x_index is required" in str(exc)
+    else:
+        raise AssertionError("expected x_index validation error")
+
+    summary = fit.lambda_summary(x_index=1)
+    assert summary.shape[0] == 2

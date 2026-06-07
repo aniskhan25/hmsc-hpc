@@ -92,13 +92,13 @@ class HmscFit:
 
     def eta_mean(self, level: int = 0) -> pd.DataFrame:
         eta = self.eta_samples(level).mean(axis=(0, 1))
-        return pd.DataFrame(eta)
+        return pd.DataFrame(eta, index=self._random_level_unit_names(level, eta.shape[0]), columns=_factor_names(eta.shape[1]))
 
     def lambda_mean(self, level: int = 0) -> pd.DataFrame:
         values = self.lambda_samples(level).mean(axis=(0, 1))
         if values.ndim != 2:
             raise ValueError("lambda_mean supports random intercept loadings only")
-        return pd.DataFrame(values, columns=self._species_names(values.shape[-1]))
+        return pd.DataFrame(values, index=_factor_names(values.shape[0]), columns=self._species_names(values.shape[-1]))
 
     def rho_mean(self) -> pd.Series:
         rho = self.rho_samples().mean(axis=(0, 1))
@@ -239,6 +239,22 @@ class HmscFit:
         lo, hi = _ci_arrays(self.sigma_samples(), level)
         names = self._species_names(len(lo))
         return {"lower": pd.Series(lo, index=names), "upper": pd.Series(hi, index=names)}
+
+    def eta_ci(self, level: int = 0, cred_level: float = 0.95) -> dict[str, pd.DataFrame]:
+        samples = self.eta_samples(level)
+        lo, hi = _ci_arrays(samples, cred_level)
+        return {
+            "lower": self._eta_frame(lo, level),
+            "upper": self._eta_frame(hi, level),
+        }
+
+    def lambda_ci(self, level: int = 0, cred_level: float = 0.95, x_index: int | None = None) -> dict[str, pd.DataFrame]:
+        samples = self._lambda_samples_for_summary(level=level, x_index=x_index)
+        lo, hi = _ci_arrays(samples, cred_level)
+        return {
+            "lower": self._lambda_frame(lo),
+            "upper": self._lambda_frame(hi),
+        }
 
     def predict_samples(
         self,
@@ -533,6 +549,10 @@ class HmscFit:
             return self.beta_summary(level=level)
         if param == "Gamma":
             return self.gamma_summary(level=level)
+        if param == "Eta":
+            return self.eta_summary(cred_level=level)
+        if param == "Lambda":
+            return self.lambda_summary(cred_level=level)
         samples = self._samples(param)
         return pd.DataFrame(
             {
@@ -574,6 +594,49 @@ class HmscFit:
                         "upper": ci["upper"].loc[covariate, trait],
                     }
                 )
+        return pd.DataFrame(rows)
+
+    def eta_summary(self, level: int = 0, cred_level: float = 0.95) -> pd.DataFrame:
+        mean = self.eta_mean(level=level)
+        ci = self.eta_ci(level=level, cred_level=cred_level)
+        rows = []
+        for unit in mean.index:
+            for factor in mean.columns:
+                rows.append(
+                    {
+                        "random_level": level,
+                        "unit": unit,
+                        "factor": factor,
+                        "mean": mean.loc[unit, factor],
+                        "lower": ci["lower"].loc[unit, factor],
+                        "upper": ci["upper"].loc[unit, factor],
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def lambda_summary(
+        self,
+        level: int = 0,
+        cred_level: float = 0.95,
+        x_index: int | None = None,
+    ) -> pd.DataFrame:
+        samples = self._lambda_samples_for_summary(level=level, x_index=x_index)
+        mean = self._lambda_frame(samples.mean(axis=(0, 1)))
+        ci = self.lambda_ci(level=level, cred_level=cred_level, x_index=x_index)
+        rows = []
+        for factor in mean.index:
+            for species in mean.columns:
+                row = {
+                    "random_level": level,
+                    "factor": factor,
+                    "species": species,
+                    "mean": mean.loc[factor, species],
+                    "lower": ci["lower"].loc[factor, species],
+                    "upper": ci["upper"].loc[factor, species],
+                }
+                if x_index is not None:
+                    row["x_index"] = x_index
+                rows.append(row)
         return pd.DataFrame(rows)
 
     def predict(
@@ -715,6 +778,37 @@ class HmscFit:
         traits = _names_or_default(traits, gamma.shape[1], "trait")
         return pd.DataFrame(gamma, index=covariates, columns=traits)
 
+    def _eta_frame(self, eta: np.ndarray, level: int) -> pd.DataFrame:
+        return pd.DataFrame(
+            eta,
+            index=self._random_level_unit_names(level, eta.shape[0]),
+            columns=_factor_names(eta.shape[1]),
+        )
+
+    def _lambda_frame(self, values: np.ndarray) -> pd.DataFrame:
+        if values.ndim != 2:
+            raise ValueError("Lambda summaries support one loading matrix at a time")
+        return pd.DataFrame(
+            values,
+            index=_factor_names(values.shape[0]),
+            columns=self._species_names(values.shape[1]),
+        )
+
+    def _lambda_samples_for_summary(self, level: int = 0, x_index: int | None = None) -> np.ndarray:
+        samples = self.lambda_samples(level)
+        if samples.ndim == 4:
+            return samples
+        if samples.ndim == 5:
+            if x_index is None:
+                raise ValueError("x_index is required for random-slope Lambda summaries")
+            if not 0 <= x_index < samples.shape[-1]:
+                raise ValueError(f"x_index must be between 0 and {samples.shape[-1] - 1}")
+            return samples[..., x_index]
+        raise ValueError(
+            "Lambda samples must have shape chains x draws x factors x species "
+            "or chains x draws x factors x species x random_covariates"
+        )
+
     def _diagnostic_frame(self, param: str, values: np.ndarray, value_name: str) -> pd.DataFrame:
         labels = self._diagnostic_labels(param, values.shape)
         rows = []
@@ -764,6 +858,27 @@ class HmscFit:
         if not chains:
             raise ValueError("Posterior contains no chains")
         return np.stack(chains, axis=0)
+
+    def _random_level_unit_names(self, level: int, size: int) -> list[str]:
+        if self.model is not None and getattr(self.model, "random_levels", None):
+            try:
+                level_name, spec = list(self.model.random_levels.items())[level]
+            except IndexError:
+                pass
+            else:
+                column = spec.get("column", level_name)
+                if self.model.study_design is not None and column in self.model.study_design:
+                    _, levels = pd.factorize(self.model.study_design[column], sort=True)
+                    names = [str(value) for value in levels]
+                    if len(names) == size:
+                        return names
+        metadata = self.metadata if isinstance(self.metadata, dict) else {}
+        random_levels = metadata.get("random_levels", [])
+        if isinstance(random_levels, list) and 0 <= level < len(random_levels):
+            names = random_levels[level].get("levels")
+            if isinstance(names, list) and len(names) == size:
+                return [str(value) for value in names]
+        return [f"unit_{idx}" for idx in range(size)]
 
     def _known_random_effect_prediction(self, X_new: pd.DataFrame, unseen_groups: str = "error") -> np.ndarray:
         if unseen_groups not in {"error", "zero", "sample", "nearest"}:
@@ -875,6 +990,10 @@ def _names_or_default(names: list[str] | None, size: int, prefix: str) -> list[s
     if names and len(names) == size:
         return names
     return [f"{prefix}_{idx}" for idx in range(size)]
+
+
+def _factor_names(size: int) -> list[str]:
+    return [f"factor_{idx}" for idx in range(size)]
 
 
 def _read_hdf5_posterior(path: Path) -> dict[str, Any]:

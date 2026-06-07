@@ -1,6 +1,6 @@
 import numpy as np
 
-from pyhmsc.simulate import simulate_fixed_effect_data
+from pyhmsc.simulate import simulate_fixed_effect_data, simulate_spatial_effect_data
 
 
 def test_simulate_fixed_effect_data_shapes_and_truth():
@@ -10,3 +10,41 @@ def test_simulate_fixed_effect_data_shapes_and_truth():
     assert X.shape == (12, 1)
     assert truth.loc["x", "sp1"] > 0
     assert truth.loc["x", "sp2"] < 0
+
+
+def test_simulate_spatial_effect_data_is_deterministic_and_named():
+    left = simulate_spatial_effect_data(n_sites=16, n_species=4, seed=42)
+    right = simulate_spatial_effect_data(n_sites=16, n_species=4, seed=42)
+
+    for left_frame, right_frame in zip(left[:3], right[:3]):
+        assert left_frame.equals(right_frame)
+    for key in left[3]:
+        assert left[3][key].equals(right[3][key])
+
+    Y, X, study_design, truth = left
+    assert Y.shape == (16, 4)
+    assert X.shape == (16, 1)
+    assert list(X.columns) == ["env"]
+    assert list(study_design.columns) == ["plot", "xcoord", "ycoord"]
+    assert truth["beta"].shape == (2, 4)
+    assert truth["site_effect"].shape == (16, 1)
+    assert truth["lambda"].shape == (1, 4)
+    assert truth["linear_predictor"].shape == (16, 4)
+    assert truth["beta"].loc["env", "sp1"] > 0
+    assert truth["beta"].loc["env", "sp4"] < 0
+    assert truth["lambda"].loc["factor_0", "sp1"] > 0
+    assert truth["lambda"].loc["factor_0", "sp4"] < 0
+
+
+def test_simulate_spatial_effect_data_has_spatially_structured_truth():
+    _Y, _X, study_design, truth = simulate_spatial_effect_data(n_sites=36, n_species=3, seed=7)
+    coords = study_design[["xcoord", "ycoord"]].to_numpy()
+    eta = truth["site_effect"]["eta"].to_numpy()
+    distances = np.sqrt(np.sum((coords[:, None, :] - coords[None, :, :]) ** 2, axis=-1))
+    np.fill_diagonal(distances, np.inf)
+    nearest = np.argmin(distances, axis=1)
+    random_partner = (np.arange(len(eta)) + len(eta) // 2) % len(eta)
+    nearest_difference = np.mean(np.abs(eta - eta[nearest]))
+    far_difference = np.mean(np.abs(eta - eta[random_partner]))
+
+    assert nearest_difference < far_difference

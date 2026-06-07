@@ -1,0 +1,15 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ env"
+distribution: probit
+study_design: data/study_design.csv
+random_levels:
+  plot:
+    column: plot
+    type: iid
+    nf: 1
+chains: 2
+samples: 1000
+transient: 500
+thin: 10

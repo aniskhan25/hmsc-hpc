@@ -23,9 +23,13 @@
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
 | Species association summaries | Supported from random-level `Lambda` samples |
+| Random-effect posterior summaries | Supported for `Eta` and random-intercept `Lambda`; random-slope `Lambda` requires `x_index` |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
+| Deterministic spatial validation simulator | Supported via `simulate_spatial_effect_data` |
+| Simulated spatial validation project | Added with fixed, iid, and full-spatial configs |
+| Simulated spatial validation analyzer | Supported; fixed/iid/spatial LUMI validation completed |
 | Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
 | CLI compile/sample/summarize/predict/validate | Supported |
 | CLI init validation | Supported |
@@ -49,12 +53,27 @@ community-weighted CN increases along TMG. Gamma diagnostics were clean
 (`max R-hat = 1.00136`, `min ESS = 468.10`). Beta diagnostics were near-clean
 with 2 R-hat flags and 2 ESS flags out of 150 coefficients.
 
+## Validated Simulated Runs
+
+The deterministic spatial validation project in
+`examples/projects/simulated_spatial_validation` has been run on LUMI without R.
+
+| Model | Run | Result |
+| --- | --- | --- |
+| Fixed-effect probit | `spatial_validation_full_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36` |
+| iid random-intercept probit | `spatial_validation_full_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.675717` |
+| full spatial random-intercept probit | `spatial_validation_full_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.868592` |
+
+The run used 2 chains, 1000 saved samples, 500 transient iterations, and thin
+10. The full Slurm job completed in 7 minutes 15 seconds on `dev-g` with
+TensorFlow 2.16 and an MI250X GPU.
+
 ## Main Pending Features
 
 | Feature | Next work |
 | --- | --- |
-| Random-effect posterior summaries | Add user-facing `Eta`/`Lambda` summary tables and diagnostics |
-| Spatial validation | Run real or simulation validation for full spatial random intercepts |
+| Random-effect diagnostics | Add R-hat/ESS report helpers for nested `Eta`/`Lambda` arrays |
+| Spatial real-data validation | Validate full spatial random intercepts on a real ecological dataset |
 | Random slopes | Harden TensorFlow updater path, then enable strict validation |
 | GPP/NNGP spatial effects | Add native compiler and loader support for approximate spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

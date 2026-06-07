@@ -55,7 +55,7 @@ Validated real-data target:
 
 Remaining hardening:
 
-- add richer user-facing summaries for `Eta` and `Lambda`
+- add diagnostics helpers for nested `Eta` and `Lambda` arrays
 - run occasional longer or 4-chain validation jobs before publication-grade
   inference
 
@@ -88,14 +88,77 @@ python -m pyhmsc associations run/posterior.h5 --output run/species_associations
 python -m pyhmsc associations run/posterior.h5 --matrix --output run/species_association_matrix.csv
 ```
 
-## Recommended Next Implementation Target
-
-Add random-effect summaries:
+Random-effect posterior summaries are available for `Eta` and `Lambda`.
 
 ```python
 fit.eta_summary(level=0)
 fit.lambda_summary(level=0)
 ```
 
-Then validate full spatial random intercepts with the same fixed vs random vs
-PPC workflow used for the Whittaker iid validation.
+CLI:
+
+```bash
+python -m pyhmsc summarize run/posterior.h5 --param Eta --random-level 0
+python -m pyhmsc summarize run/posterior.h5 --param Lambda --random-level 0
+```
+
+## Full Spatial Random-Intercept Validation
+
+The fixed vs iid vs full-spatial validation workflow has been implemented and
+run on LUMI without R.
+
+Validated LUMI run `spatial_validation_full_codex`:
+
+- 2 chains, 1000 saved samples, 500 transient iterations, thin 10
+- completed in 7 minutes 15 seconds on `dev-g`
+- TensorFlow 2.16 with an MI250X GPU
+- fixed, iid, and full-spatial models all recovered nonzero beta signs `4 / 4`
+- fixed, iid, and full-spatial PPC coverage was `5 / 5` species and `36 / 36`
+  site richness
+- Eta/truth correlation was `0.675717` for iid and `0.868592` for full spatial
+
+## Recommended Next Implementation Target
+
+Add nested random-effect diagnostics for `Eta` and `Lambda`, then validate full
+spatial random intercepts on a real ecological dataset.
+
+The deterministic simulator for this validation is available as:
+
+```python
+from pyhmsc import simulate_spatial_effect_data
+
+Y, X, study_design, truth = simulate_spatial_effect_data(seed=1)
+```
+
+It returns one environmental covariate, site coordinates, an iid plot column,
+and truth tables for beta coefficients, site effects, species loadings, and the
+linear predictor.
+
+The corresponding example project is:
+
+```text
+examples/projects/simulated_spatial_validation/
+  model_fixed.yaml
+  model_iid.yaml
+  model_spatial_full.yaml
+  data/
+    Y.csv
+    X.csv
+    study_design.csv
+    truth_beta.csv
+    truth_site_effect.csv
+    truth_lambda.csv
+```
+
+The comparison analyzer is:
+
+```bash
+python examples/analyze_spatial_validation.py \
+  --fixed-posterior run/fixed/posterior.h5 \
+  --iid-posterior run/iid/posterior.h5 \
+  --spatial-posterior run/spatial/posterior.h5
+```
+
+It reports beta sign recovery, species and site richness PPC summaries,
+nearest-neighbor residual correlation, and Eta-to-truth correlation for random
+effect models.
