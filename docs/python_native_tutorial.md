@@ -116,6 +116,25 @@ The fixed Poisson example has been verified on LUMI with 2 chains, 1000 saved
 samples, 500 transient iterations, and thin 10, writing `posterior.h5` under the
 scratch run directory.
 
+The Whittaker plant real-data validation can be run without R as:
+
+```bash
+RUN_NAME=whittaker_iid_long \
+MODEL_CONFIG=examples/projects/whittaker_plants_hmsc_book/model_iid_site.yaml \
+SAMPLES=3000 \
+TRANSIENT=1000 \
+THIN=10 \
+VERBOSE=500 \
+sbatch docs/lumi_whittaker_real_data_sbatch.sh
+```
+
+This uses a probit model with TMG, species CN traits, phylogenetic covariance,
+and an iid site-level random intercept. The validated LUMI run completed in
+under 10 minutes on `dev-g` with TensorFlow 2.16 and an MI250X GPU. It produced
+species occupancy PPC coverage `75 / 75` and site richness PPC coverage
+`52 / 52`, improving the fixed-effect Whittaker baseline site richness coverage
+of `40 / 52`.
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.

@@ -18,7 +18,7 @@ This milestone still requires R plus the R packages `Hmsc` and `jsonify`.
 - Use `docs/hmsc_hpc_input_schema.md` as the working schema reference.
 - Use `pyhmsc compile` / `HmscModel.compile()` to create the Python-native
   `init.json` + `init_arrays.h5` artifact for fixed-effect models.
-- `hmsc.run_gibbs_sampler --input run/init.json --output run/posterior.json`
+- `hmsc.run_gibbs_sampler --input run/init.json --output run/posterior.h5`
   now loads the Python-native fixed-effect artifact directly.
 - Validate the path with pure-Python schema tests and sampler smoke tests for
   Gaussian, Poisson, and Probit models.
@@ -31,11 +31,59 @@ This milestone still requires R plus the R packages `Hmsc` and `jsonify`.
   predictive checks.
 - Add JSON/HDF5 posterior storage for larger fixed-effect runs, then Zarr.
 
+## Milestone 4: Native traits, phylogeny, and iid random effects
+
+Implemented:
+
+- species traits with Patsy formula expansion
+- `Gamma` posterior summaries and diagnostics
+- phylogenetic covariance matrix input
+- optional Newick parsing through the `phylo` extra
+- iid random intercept compilation, loading, sampling, and posterior export
+- known random-effect posterior predictive checks
+
+Validated real-data target:
+
+- Whittaker plant probit model with TMG, species CN traits, phylogenetic
+  covariance, and iid site-level random intercepts
+- LUMI run `whittaker_iid_long`: 2 chains, 3000 saved samples, 1000 transient
+  iterations, thin 10
+- PPC improved from fixed-effect site richness coverage `40 / 52` to iid
+  random-effect coverage `52 / 52`
+- ecological signal remained stable: richness decreases along TMG and
+  community-weighted CN increases along TMG
+
+Remaining hardening:
+
+- add richer user-facing summaries for `Eta` and `Lambda`
+- add species association summaries from `Lambda`
+- run occasional longer or 4-chain validation jobs before publication-grade
+  inference
+
 ## Later milestones
 
-- Newick tree parsing for phylogeny
 - GPP and NNGP spatial random levels
 - Random slopes
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
 - Harden optional Zarr posterior output on large runs
 - More robust simulation recovery tests with longer optional `slow` runs
+
+## Recommended Next Implementation Target
+
+Species association summaries are the next highest-value feature. The iid
+random-effect path already samples `Lambda`, so the Python API can expose
+residual species association tables without changing the sampler.
+
+Suggested API:
+
+```python
+assoc = fit.species_associations(level=0)
+assoc_ci = fit.species_association_ci(level=0)
+```
+
+After that, add random-effect summaries:
+
+```python
+fit.eta_summary(level=0)
+fit.lambda_summary(level=0)
+```
