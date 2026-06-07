@@ -164,11 +164,25 @@ Validated LUMI run `big_spatial_real_validation_codex`:
 - nearest-neighbor residual correlation declined from `0.427027` fixed and
   `0.299458` iid to `-0.291249` full spatial
 
+Longer LUMI diagnostic run `big_spatial_long_diag_242e08a`:
+
+- 2 chains, 2000 saved samples, 1000 transient iterations, thin 10
+- completed in 17 minutes 7 seconds on `dev-g`
+- species PPC coverage stayed at `40 / 40` for all models
+- site richness PPC improved from `311 / 400` fixed to `400 / 400` for iid and
+  full spatial models
+- nearest-neighbor residual correlation declined from `0.427262` fixed and
+  `0.292859` iid to `-0.290284` full spatial
+- nested `Eta`/`Lambda` diagnostics were emitted successfully, but latent
+  random-effect convergence was not yet clean; fixed-effect `Beta` diagnostics
+  were clean only for the fixed model
+
 ## Recommended Next Implementation Target
 
-Run optional longer or 4-chain spatial validation jobs before publication-grade
-inference; the validation scripts now emit nested `Eta` and `Lambda`
-diagnostics for random-effect models.
+Run a 4-chain or longer spatial validation job before publication-grade
+inference for latent random-effect summaries. The current implementation is
+validated for predictive behavior, but `Eta`/`Lambda` convergence still needs
+more sampling.
 
 The deterministic simulator for this validation is available as:
 

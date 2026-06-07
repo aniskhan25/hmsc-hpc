@@ -87,11 +87,23 @@ The run used 2 chains, 1000 saved samples, 500 transient iterations, and thin
 10. The full Slurm job completed in 9 minutes 43 seconds on `dev-g` with
 TensorFlow 2.16 and an MI250X GPU.
 
+Longer diagnostic run `big_spatial_long_diag_242e08a` completed on LUMI with
+2 chains, 2000 saved samples, 1000 transient iterations, and thin 10. It
+preserved the predictive pattern: species PPC covered `40 / 40` for all
+models, site richness PPC improved from `311 / 400` fixed to `400 / 400` for
+iid and spatial random effects, and nearest-neighbor residual correlation
+declined from `0.427262` fixed and `0.292859` iid to `-0.290284` full spatial.
+The new nested diagnostics were emitted successfully. Fixed-effect `Beta`
+diagnostics were clean (`max R-hat = 1.0035`, `min ESS = 560.6`), but latent
+`Eta`/`Lambda` diagnostics were not yet clean for iid or full-spatial models.
+Use latent random-effect summaries as exploratory until longer or 4-chain runs
+improve those diagnostics.
+
 ## Main Pending Features
 
 | Feature | Next work |
 | --- | --- |
-| Longer spatial diagnostics | Run optional longer/4-chain spatial validation with nested `Eta`/`Lambda` diagnostics |
+| Longer spatial diagnostics | Run 4-chain or longer spatial validation to improve latent `Eta`/`Lambda` convergence |
 | Random slopes | Harden TensorFlow updater path, then enable strict validation |
 | GPP/NNGP spatial effects | Add native compiler and loader support for approximate spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |
