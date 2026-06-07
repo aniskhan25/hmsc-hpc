@@ -33,8 +33,19 @@ def covariate_names_from_formula(formula: str, data: pd.DataFrame) -> list[str]:
     elif rhs == ".":
         terms = data.columns
     else:
-        cleaned = rhs.replace("- 1", "").replace("+ 0", "").replace("0 +", "")
-        terms = [term.strip() for term in cleaned.split("+")]
+        parsed_terms = []
+        for raw_term in rhs.split("+"):
+            term = raw_term.strip()
+            if term == "0":
+                include_intercept = False
+                continue
+            without_intercept_marker = re.sub(r"\s*-\s*1\s*$", "", term).strip()
+            if without_intercept_marker != term:
+                include_intercept = False
+                term = without_intercept_marker
+            if term:
+                parsed_terms.append(term)
+        terms = parsed_terms
 
     names = ["Intercept"] if include_intercept else []
     for term in terms:

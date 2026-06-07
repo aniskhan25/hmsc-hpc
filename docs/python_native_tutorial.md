@@ -133,6 +133,25 @@ posterior predictive checks (`5 / 5` species, `36 / 36` site richness). The
 full spatial random-intercept model had stronger Eta/truth recovery
 (`0.868592`) than the iid random-intercept model (`0.675717`).
 
+The compact real-data big-spatial plant validation can be run as:
+
+```bash
+RUN_NAME=big_spatial_real_validation sbatch docs/lumi_big_spatial_validation_sbatch.sh
+```
+
+This uses `examples/projects/big_spatial_plants_validation`, a 400-site,
+40-species subset derived from `examples/big_spatial`, and compares fixed, iid
+site-level, and full spatial site-level random-intercept models. The analyzer
+reports posterior predictive coverage/errors and nearest-neighbor residual
+correlation.
+
+Validated LUMI run `big_spatial_real_validation_codex` completed in 9 minutes
+43 seconds on `dev-g` with TensorFlow 2.16 and an MI250X GPU. The fixed model
+covered site richness for `309 / 400` sites with nearest-neighbor residual
+correlation `0.427027`; the iid model covered `400 / 400` sites with residual
+correlation `0.299458`; the full spatial model covered `400 / 400` sites and
+reduced residual correlation to `-0.291249`.
+
 The Whittaker plant real-data validation can be run without R as:
 
 ```bash

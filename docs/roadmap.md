@@ -117,10 +117,57 @@ Validated LUMI run `spatial_validation_full_codex`:
   site richness
 - Eta/truth correlation was `0.675717` for iid and `0.868592` for full spatial
 
+## Real-Data Spatial Validation
+
+The real-data spatial validation project is now available as:
+
+```text
+examples/projects/big_spatial_plants_validation/
+  model_fixed.yaml
+  model_iid.yaml
+  model_spatial_full.yaml
+  data/
+    Y_presence.csv
+    X.csv
+    study_design.csv
+    taxonomy.csv
+```
+
+It uses 400 sites and the 40 most prevalent species in that subset from the
+existing `examples/big_spatial` plant community data. The corresponding LUMI
+script is:
+
+```bash
+RUN_NAME=big_spatial_real_validation sbatch docs/lumi_big_spatial_validation_sbatch.sh
+```
+
+The analyzer is:
+
+```bash
+python examples/analyze_big_spatial_plants.py \
+  --fixed-posterior run/fixed/posterior.h5 \
+  --iid-posterior run/iid/posterior.h5 \
+  --spatial-posterior run/spatial/posterior.h5
+```
+
+It reports species and site richness PPC summaries plus nearest-neighbor
+residual correlation.
+
+Validated LUMI run `big_spatial_real_validation_codex`:
+
+- 2 chains, 1000 saved samples, 500 transient iterations, thin 10
+- completed in 9 minutes 43 seconds on `dev-g`
+- TensorFlow 2.16 with an MI250X GPU
+- species PPC coverage was `40 / 40` for fixed, iid, and full spatial models
+- site richness PPC coverage improved from `309 / 400` fixed to `400 / 400`
+  for iid and full spatial models
+- nearest-neighbor residual correlation declined from `0.427027` fixed and
+  `0.299458` iid to `-0.291249` full spatial
+
 ## Recommended Next Implementation Target
 
-Add nested random-effect diagnostics for `Eta` and `Lambda`, then validate full
-spatial random intercepts on a real ecological dataset.
+Add nested random-effect diagnostics for `Eta` and `Lambda`, then run optional
+longer or 4-chain spatial validation jobs before publication-grade inference.
 
 The deterministic simulator for this validation is available as:
 

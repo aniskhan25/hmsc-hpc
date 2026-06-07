@@ -1,0 +1,9 @@
+response: data/Y_presence.csv
+covariates: data/X.csv
+formula:
+  X: "~ Hillshading270_40 + HA_All_rivers_normalised + Thorium_mosaic_GWR2 + Max_temp_smooth"
+distribution: probit
+chains: 2
+samples: 1000
+transient: 500
+thin: 10
