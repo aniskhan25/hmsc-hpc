@@ -153,6 +153,55 @@ def test_cli_diagnostics_writes_named_report(tmp_path):
     assert "sp1" in text
 
 
+def test_cli_associations_writes_pair_table(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    output = tmp_path / "associations.csv"
+    with h5py.File(posterior, "w") as handle:
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset(
+            "Lambda",
+            data=[
+                [
+                    [[1.0, 2.0, -1.0]],
+                    [[2.0, 1.0, -2.0]],
+                ]
+            ],
+        )
+        handle.attrs["pyhmsc_metadata"] = '{"names":{"species":["sp1","sp2","sp3"]}}'
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "associations",
+            str(posterior),
+            "--level",
+            "0.5",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    table = pd.read_csv(output)
+    assert list(table.columns) == [
+        "species_1",
+        "species_2",
+        "mean",
+        "lower",
+        "upper",
+        "p_positive",
+        "p_negative",
+    ]
+    assert table.shape[0] == 3
+    assert table.loc[(table["species_1"] == "sp1") & (table["species_2"] == "sp3"), "p_negative"].iloc[0] == 1.0
+
+
 def test_cli_sample_and_summarize(tmp_path):
     run_dir = tmp_path / "run"
     subprocess.run(

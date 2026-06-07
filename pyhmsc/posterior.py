@@ -96,11 +96,132 @@ class HmscFit:
 
     def lambda_mean(self, level: int = 0) -> pd.DataFrame:
         values = self.lambda_samples(level).mean(axis=(0, 1))
+        if values.ndim != 2:
+            raise ValueError("lambda_mean supports random intercept loadings only")
         return pd.DataFrame(values, columns=self._species_names(values.shape[-1]))
 
     def rho_mean(self) -> pd.Series:
         rho = self.rho_samples().mean(axis=(0, 1))
         return pd.Series(rho, index=[f"rho_{idx}" for idx in range(len(rho))], name="rho")
+
+    def species_association_samples(
+        self,
+        level: int = 0,
+        correlation: bool = True,
+        x_index: int | None = None,
+    ) -> np.ndarray:
+        """Return residual species association samples from random-level loadings.
+
+        The returned array has shape ``chains x draws x species x species``.
+        For ordinary iid/spatial random intercepts, associations are computed as
+        ``Lambda.T @ Lambda`` for each posterior draw. For random-slope loadings,
+        pass ``x_index`` to select the random-slope covariate dimension.
+        """
+        loadings = self.lambda_samples(level)
+        if loadings.ndim == 4:
+            selected = loadings
+        elif loadings.ndim == 5:
+            if x_index is None:
+                raise ValueError("x_index is required for random-slope Lambda samples")
+            if not 0 <= x_index < loadings.shape[-1]:
+                raise ValueError(f"x_index must be between 0 and {loadings.shape[-1] - 1}")
+            selected = loadings[..., x_index]
+        else:
+            raise ValueError(
+                "Lambda samples must have shape chains x draws x factors x species "
+                "or chains x draws x factors x species x random_covariates"
+            )
+        covariance = np.einsum("cdfi,cdfj->cdij", selected, selected)
+        if not correlation:
+            return covariance
+        diagonal = np.diagonal(covariance, axis1=-2, axis2=-1)
+        scale = np.sqrt(np.maximum(diagonal[..., :, None] * diagonal[..., None, :], np.finfo(float).eps))
+        correlation_samples = covariance / scale
+        species_count = correlation_samples.shape[-1]
+        diag_idx = np.arange(species_count)
+        correlation_samples[..., diag_idx, diag_idx] = 1.0
+        return correlation_samples
+
+    def species_associations(
+        self,
+        level: int = 0,
+        correlation: bool = True,
+        x_index: int | None = None,
+    ) -> pd.DataFrame:
+        """Return mean residual species association matrix."""
+        samples = self.species_association_samples(
+            level=level,
+            correlation=correlation,
+            x_index=x_index,
+        )
+        mean = samples.mean(axis=(0, 1))
+        species = self._species_names(mean.shape[0])
+        return pd.DataFrame(mean, index=species, columns=species)
+
+    def species_association_ci(
+        self,
+        level: int = 0,
+        cred_level: float = 0.95,
+        correlation: bool = True,
+        x_index: int | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Return credible interval matrices for residual species associations."""
+        if not 0 < cred_level < 1:
+            raise ValueError("cred_level must be between 0 and 1")
+        samples = self.species_association_samples(
+            level=level,
+            correlation=correlation,
+            x_index=x_index,
+        )
+        alpha = (1 - cred_level) / 2
+        lo = np.quantile(samples, alpha, axis=(0, 1))
+        hi = np.quantile(samples, 1 - alpha, axis=(0, 1))
+        species = self._species_names(lo.shape[0])
+        return {
+            "lower": pd.DataFrame(lo, index=species, columns=species),
+            "upper": pd.DataFrame(hi, index=species, columns=species),
+        }
+
+    def species_association_summary(
+        self,
+        level: int = 0,
+        cred_level: float = 0.95,
+        correlation: bool = True,
+        x_index: int | None = None,
+        include_self: bool = False,
+    ) -> pd.DataFrame:
+        """Return pairwise residual species associations with intervals."""
+        if not 0 < cred_level < 1:
+            raise ValueError("cred_level must be between 0 and 1")
+        samples = self.species_association_samples(
+            level=level,
+            correlation=correlation,
+            x_index=x_index,
+        )
+        flattened = samples.reshape((-1,) + samples.shape[2:])
+        mean = flattened.mean(axis=0)
+        alpha = (1 - cred_level) / 2
+        lo = np.quantile(flattened, alpha, axis=0)
+        hi = np.quantile(flattened, 1 - alpha, axis=0)
+        p_positive = (flattened > 0).mean(axis=0)
+        p_negative = (flattened < 0).mean(axis=0)
+        species = self._species_names(mean.shape[0])
+        rows = []
+        for left_idx, left in enumerate(species):
+            start = left_idx if include_self else left_idx + 1
+            for right_idx in range(start, len(species)):
+                rows.append(
+                    {
+                        "species_1": left,
+                        "species_2": species[right_idx],
+                        "mean": float(mean[left_idx, right_idx]),
+                        "lower": float(lo[left_idx, right_idx]),
+                        "upper": float(hi[left_idx, right_idx]),
+                        "p_positive": float(p_positive[left_idx, right_idx]),
+                        "p_negative": float(p_negative[left_idx, right_idx]),
+                    }
+                )
+        return pd.DataFrame(rows)
 
     def beta_ci(self, level: float = 0.95) -> dict[str, pd.DataFrame]:
         if not 0 < level < 1:

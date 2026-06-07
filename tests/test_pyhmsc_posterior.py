@@ -200,3 +200,65 @@ def test_known_random_effect_prediction_from_hdf5(tmp_path):
 
     marginal = fit.predict(pd.DataFrame({"x": [0.0], "plot": ["new"]}), random_effects="marginal")
     np.testing.assert_allclose(marginal.to_numpy(), [[0.35]])
+
+
+def test_species_association_summaries_from_lambda():
+    posterior = {
+        "__metadata__": {"names": {"species": ["sp1", "sp2", "sp3"]}},
+        "__arrays__": {
+            "random_levels/0/Lambda": np.array(
+                [
+                    [
+                        [[1.0, 2.0, -1.0]],
+                        [[2.0, 1.0, -2.0]],
+                    ]
+                ]
+            )
+        },
+    }
+    fit = HmscFit(posterior)
+
+    matrix = fit.species_associations()
+    ci = fit.species_association_ci(cred_level=0.5)
+    summary = fit.species_association_summary(cred_level=0.5)
+    covariance = fit.species_associations(correlation=False)
+
+    assert list(matrix.index) == ["sp1", "sp2", "sp3"]
+    assert list(matrix.columns) == ["sp1", "sp2", "sp3"]
+    np.testing.assert_allclose(np.diag(matrix), [1.0, 1.0, 1.0])
+    assert matrix.loc["sp1", "sp2"] == 1.0
+    assert matrix.loc["sp1", "sp3"] == -1.0
+    assert ci["lower"].loc["sp1", "sp2"] == 1.0
+    assert ci["upper"].loc["sp1", "sp3"] == -1.0
+    assert list(summary.columns) == [
+        "species_1",
+        "species_2",
+        "mean",
+        "lower",
+        "upper",
+        "p_positive",
+        "p_negative",
+    ]
+    assert summary.shape[0] == 3
+    sp1_sp3 = summary[(summary["species_1"] == "sp1") & (summary["species_2"] == "sp3")].iloc[0]
+    assert sp1_sp3["p_negative"] == 1.0
+    np.testing.assert_allclose(covariance.loc["sp1", "sp2"], 2.0)
+
+
+def test_species_associations_require_x_index_for_random_slopes():
+    posterior = {
+        "__arrays__": {
+            "random_levels/0/Lambda": np.ones((1, 1, 1, 2, 2)),
+        },
+    }
+    fit = HmscFit(posterior)
+
+    try:
+        fit.species_associations()
+    except ValueError as exc:
+        assert "x_index is required" in str(exc)
+    else:
+        raise AssertionError("expected x_index validation error")
+
+    matrix = fit.species_associations(x_index=1)
+    assert matrix.shape == (2, 2)

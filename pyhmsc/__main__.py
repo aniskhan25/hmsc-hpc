@@ -93,6 +93,27 @@ def main() -> None:
     diagnostics_parser.add_argument("--ess-threshold", type=float, default=400.0)
     diagnostics_parser.add_argument("--output")
 
+    associations_parser = subparsers.add_parser(
+        "associations",
+        help="summarize residual species associations from Lambda samples",
+    )
+    associations_parser.add_argument("posterior")
+    associations_parser.add_argument("--random-level", type=int, default=0)
+    associations_parser.add_argument("--level", type=float, default=0.95)
+    associations_parser.add_argument("--x-index", type=int)
+    associations_parser.add_argument(
+        "--covariance",
+        action="store_true",
+        help="summarize covariance instead of correlation",
+    )
+    associations_parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="write/print the mean association matrix instead of a pair table",
+    )
+    associations_parser.add_argument("--include-self", action="store_true")
+    associations_parser.add_argument("--output")
+
     validate_parser = subparsers.add_parser("validate", help="run simple validation checks")
     validate_parser.add_argument("posterior")
     validate_parser.add_argument("--X")
@@ -253,6 +274,30 @@ def main() -> None:
             Path(args.output).write_text(text, encoding="utf-8")
         else:
             print(text, end="")
+    elif args.command == "associations":
+        fit = HmscFit.from_file(args.posterior)
+        if args.matrix:
+            summary = fit.species_associations(
+                level=args.random_level,
+                correlation=not args.covariance,
+                x_index=args.x_index,
+            )
+            if args.output:
+                summary.to_csv(args.output)
+            else:
+                print(summary.to_string())
+        else:
+            summary = fit.species_association_summary(
+                level=args.random_level,
+                cred_level=args.level,
+                correlation=not args.covariance,
+                x_index=args.x_index,
+                include_self=args.include_self,
+            )
+            if args.output:
+                summary.to_csv(args.output, index=False)
+            else:
+                print(summary.to_string(index=False))
     elif args.command == "validate":
         from pyhmsc.model import HmscModel
 

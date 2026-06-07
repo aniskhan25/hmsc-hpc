@@ -56,7 +56,6 @@ Validated real-data target:
 Remaining hardening:
 
 - add richer user-facing summaries for `Eta` and `Lambda`
-- add species association summaries from `Lambda`
 - run occasional longer or 4-chain validation jobs before publication-grade
   inference
 
@@ -68,22 +67,35 @@ Remaining hardening:
 - Harden optional Zarr posterior output on large runs
 - More robust simulation recovery tests with longer optional `slow` runs
 
-## Recommended Next Implementation Target
+## Implemented After Milestone 4
 
-Species association summaries are the next highest-value feature. The iid
-random-effect path already samples `Lambda`, so the Python API can expose
-residual species association tables without changing the sampler.
+Species association summaries are available from sampled random-level `Lambda`.
+They can be returned as mean association matrices, credible interval matrices,
+or pairwise tables with sign probabilities.
 
-Suggested API:
+Python API:
 
 ```python
 assoc = fit.species_associations(level=0)
 assoc_ci = fit.species_association_ci(level=0)
+assoc_table = fit.species_association_summary(level=0)
 ```
 
-After that, add random-effect summaries:
+CLI:
+
+```bash
+python -m pyhmsc associations run/posterior.h5 --output run/species_associations.csv
+python -m pyhmsc associations run/posterior.h5 --matrix --output run/species_association_matrix.csv
+```
+
+## Recommended Next Implementation Target
+
+Add random-effect summaries:
 
 ```python
 fit.eta_summary(level=0)
 fit.lambda_summary(level=0)
 ```
+
+Then validate full spatial random intercepts with the same fixed vs random vs
+PPC workflow used for the Whittaker iid validation.

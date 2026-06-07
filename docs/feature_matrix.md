@@ -22,6 +22,7 @@
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
+| Species association summaries | Supported from random-level `Lambda` samples |
 | LUMI Slurm array workflow | Compile/sample-array/merge templates included |
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
@@ -52,7 +53,6 @@ with 2 R-hat flags and 2 ESS flags out of 150 coefficients.
 
 | Feature | Next work |
 | --- | --- |
-| Species association summaries | Derive association/correlation summaries from sampled `Lambda` |
 | Random-effect posterior summaries | Add user-facing `Eta`/`Lambda` summary tables and diagnostics |
 | Spatial validation | Run real or simulation validation for full spatial random intercepts |
 | Random slopes | Harden TensorFlow updater path, then enable strict validation |

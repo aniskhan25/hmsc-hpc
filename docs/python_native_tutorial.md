@@ -135,6 +135,22 @@ species occupancy PPC coverage `75 / 75` and site richness PPC coverage
 `52 / 52`, improving the fixed-effect Whittaker baseline site richness coverage
 of `40 / 52`.
 
+For models with random-level `Lambda` samples, export residual species
+associations as a pair table:
+
+```bash
+python -m pyhmsc associations run/posterior.h5 \
+  --output run/species_associations.csv
+```
+
+Or export the mean association matrix:
+
+```bash
+python -m pyhmsc associations run/posterior.h5 \
+  --matrix \
+  --output run/species_association_matrix.csv
+```
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.
@@ -157,4 +173,5 @@ model = HmscModel(Y=Y, X=X, x_formula="~ forest_cover + elevation", distr="poiss
 fit = model.sample(samples=100, transient=100, thin=1, chains=2, init="python-native")
 print(fit.beta_mean())
 print(fit.ppc_summary(Y=Y, X=X))
+print(fit.species_association_summary())
 ```
