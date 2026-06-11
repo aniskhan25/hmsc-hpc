@@ -137,8 +137,10 @@ def _compile_random_levels(
     arrays: dict[str, np.ndarray] = {}
     for idx, (name, spec) in enumerate(random_levels.items()):
         level_type = spec.get("type", "iid")
-        if level_type not in {"iid", "spatial_full"}:
-            raise NotImplementedError("Only iid and spatial_full random intercepts are currently supported")
+        if level_type not in {"iid", "spatial_full", "spatial_gpp", "gpp"}:
+            raise NotImplementedError("Only iid, spatial_full, and spatial_gpp random levels are currently supported")
+        if level_type == "gpp":
+            level_type = "spatial_gpp"
         column = spec.get("column", name)
         if column not in design:
             raise ValueError(f"study_design is missing random level column {column!r}")
@@ -175,12 +177,12 @@ def _compile_random_levels(
                 "b2": float(spec.get("b2", 1.0)),
                 "nfMin": int(spec.get("nfMin", nf)),
                 "nfMax": int(spec.get("nfMax", max(nf, 4))),
-                "spatial": level_type == "spatial_full",
+                "spatial": level_type in {"spatial_full", "spatial_gpp"},
             }
-        if level_type == "spatial_full":
+        if level_type in {"spatial_full", "spatial_gpp"}:
             coord_cols = spec.get("coords", ["x", "y"])
             if len(coord_cols) != 2 or any(col not in design for col in coord_cols):
-                raise ValueError("spatial_full random levels require coordinate columns via coords")
+                raise ValueError(f"{level_type} random levels require coordinate columns via coords")
             coords = (
                 design.assign(__code=codes)
                 .groupby("__code", sort=True)[coord_cols]
@@ -188,9 +190,16 @@ def _compile_random_levels(
                 .to_numpy(dtype=float)
             )
             dist = _pairwise_distances(coords)
-            arrays[f"{prefix}_distMat"] = dist
             scale = float(spec.get("alpha", np.median(dist[dist > 0]) if np.any(dist > 0) else 1.0))
             level_meta["alphapw"] = [[scale, 1.0]]
+            if level_type == "spatial_full":
+                arrays[f"{prefix}_distMat"] = dist
+            else:
+                n_knots = int(spec.get("n_knots", spec.get("nKnots", min(max(2, int(np.sqrt(n_levels))), n_levels))))
+                knots = _select_gpp_knots(coords, n_knots)
+                arrays[f"{prefix}_distMat12"] = _cross_distances(coords, knots)
+                arrays[f"{prefix}_distMat22"] = _pairwise_distances(knots)
+                level_meta["nKnots"] = int(knots.shape[0])
         meta.append(level_meta)
     arrays["Pi"] = np.column_stack(pi_columns).astype(int)
     return meta, arrays
@@ -258,3 +267,24 @@ def _phylo_cov_from_newick(phylo_tree: str | Path, Y: pd.DataFrame) -> np.ndarra
 def _pairwise_distances(coords: np.ndarray) -> np.ndarray:
     delta = coords[:, None, :] - coords[None, :, :]
     return np.sqrt(np.sum(delta * delta, axis=-1))
+
+
+def _cross_distances(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    delta = left[:, None, :] - right[None, :, :]
+    return np.sqrt(np.sum(delta * delta, axis=-1))
+
+
+def _select_gpp_knots(coords: np.ndarray, n_knots: int) -> np.ndarray:
+    if n_knots <= 0:
+        raise ValueError("spatial_gpp n_knots must be positive")
+    if n_knots >= coords.shape[0]:
+        return coords.copy()
+    center = coords.mean(axis=0)
+    first = int(np.argmin(np.sum((coords - center) ** 2, axis=1)))
+    selected = [first]
+    min_dist = np.sum((coords - coords[first]) ** 2, axis=1)
+    while len(selected) < n_knots:
+        next_idx = int(np.argmax(min_dist))
+        selected.append(next_idx)
+        min_dist = np.minimum(min_dist, np.sum((coords - coords[next_idx]) ** 2, axis=1))
+    return coords[selected]

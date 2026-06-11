@@ -43,25 +43,30 @@ def updateEta(params, modelDims, data, rLHyperparams, dtype=np.float64):
     else:
       LFix = tf.einsum("jik,kj->ij", X, Beta)
     LRanLevelList = [None] * nr
-    for r, (Eta, Lambda) in enumerate(zip(EtaList, LambdaList)):
-        LRanLevelList[r] = tf.matmul(tf.gather(Eta, Pi[:,r]), Lambda)
+    for r, (Eta, Lambda, rLPar) in enumerate(zip(EtaList, LambdaList, rLHyperparams)):
+        LRanLevelList[r] = _random_level_linear_predictor(Eta, Lambda, rLPar, Pi[:, r])
 
     EtaListNew = [None] * nr
     for r, (Eta, Lambda, AlphaInd, rLPar) in enumerate(zip(EtaList, LambdaList, AlphaIndList, rLHyperparams)):
-        nf = tf.cast(tf.shape(Lambda)[-2], tf.int64)
+        nf = tf.cast(tf.shape(Lambda)[0], tf.int64)
         if nf > 0:
             S = Z - LFix - sum([LRanLevelList[rInd] for rInd in np.setdiff1d(np.arange(nr), r)])
-            mu0 = tf.scatter_nd(Pi[:,r,None], tf.matmul(iD * S, Lambda, transpose_b=True), [npVec[r],nf], name="mu0")
+            lambda_eff = _effective_lambda_by_unit(Lambda, rLPar, npVec[r], dtype)
+            mu0_site = tf.einsum("ij,ihj->ih", iD * S, tf.gather(lambda_eff, Pi[:, r]), name="mu0_site")
+            mu0 = tf.scatter_nd(Pi[:,r,None], mu0_site, [npVec[r],nf], name="mu0")
             # LamInvSigLam = tf.scatter_nd(Pi[:,r,None], tf.einsum("hj,ij,kj->ihk", Lambda, iD, Lambda), [npVec[r],nf,nf])
             #TODO bottleneck for non-spatial model
             # Pi_iD = tf.scatter_nd(Pi[:,r,None], iD, [npVec[r],ns], name="Pi_iD")
             piMat = tfs.SparseTensor(tf.stack([Pi[:,r], tf.range(ny,dtype=tf.int64)], axis=-1), tf.ones([ny],dtype), [npVec[r],ny])
             Pi_iD = tfs.sparse_dense_matmul(piMat, iD, name="Pi_iD")
             commonFlag = tf.reduce_all(Pi_iD == Pi_iD[0,:])
-            if commonFlag:
+            if rLPar.get("xDim", 0) > 0:
+              LamInvSigLam = tf.einsum("ihj,ij,ikj->ihk", lambda_eff, Pi_iD, lambda_eff, name="LamInvSigLam")
+              commonFlag = False
+            elif commonFlag:
               LamInvSigLam = tf.einsum("hj,j,kj->hk", Lambda, Pi_iD[0,:], Lambda, name="LamInvSigLam")
             else:
-              LamInvSigLam = tf.einsum("hj,ij,kj->ihk", Lambda, Pi_iD, Lambda, name="LamInvSigLam")
+              LamInvSigLam = tf.einsum("ihj,ij,ikj->ihk", lambda_eff, Pi_iD, lambda_eff, name="LamInvSigLam")
 
             if rLPar["sDim"] == 0:
                 if commonFlag:
@@ -82,12 +87,29 @@ def updateEta(params, modelDims, data, rLHyperparams, dtype=np.float64):
                     Eta = tf.numpy_function(modelSpatialNNGP_local, [LamInvSigLam, mu0, AlphaInd, nf], dtype)
                     EtaListNew[r] = tf.ensure_shape(Eta, [npVec[r], None])              
             
-            LRanLevelList[r] = tf.matmul(tf.gather(EtaListNew[r], Pi[:,r]), Lambda)
+            LRanLevelList[r] = _random_level_linear_predictor(EtaListNew[r], Lambda, rLPar, Pi[:, r])
         else:
             EtaListNew[r] = Eta
         EtaListNew[r] = tf.ensure_shape(EtaListNew[r], [npVec[r],None])
 
     return EtaListNew
+
+
+def _effective_lambda_by_unit(Lambda, rLPar, n_units, dtype):
+    xMat = rLPar.get("xMat")
+    if xMat is None:
+        return tf.repeat(tf.expand_dims(Lambda, 0), repeats=n_units, axis=0)
+    xMat = tf.convert_to_tensor(xMat, dtype=dtype)
+    return tf.einsum("ik,hjk->ihj", xMat, Lambda)
+
+
+def _random_level_linear_predictor(Eta, Lambda, rLPar, Pi):
+    xMat = rLPar.get("xMat")
+    if xMat is None:
+        return tf.matmul(tf.gather(Eta, Pi), Lambda)
+    xMat = tf.convert_to_tensor(xMat, dtype=Eta.dtype)
+    LRan = tf.einsum("ih,ik,hjk->ij", Eta, xMat, Lambda)
+    return tf.gather(LRan, Pi)
 
 
 def modelNonSpatialCommon(LamInvSigLam, mu0, np, nf, dtype=np.float64):

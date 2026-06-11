@@ -203,9 +203,9 @@ raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.
 
 Supported no-R sampler inputs are fixed effects, traits, phylogenetic covariance
-or Newick-derived covariance, iid random intercepts, and full spatial random
-intercepts. Random-slope metadata can be compiled for schema work, but
-`validate-init --strict` marks it as not sampler-ready.
+or Newick-derived covariance, iid random intercepts, iid random slopes, full
+spatial random intercepts, and GPP spatial random intercepts. Spatial random
+slopes and NNGP spatial effects are still guarded.
 
 From Python:
 

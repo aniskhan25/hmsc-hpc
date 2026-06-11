@@ -71,6 +71,39 @@ def test_python_native_iid_random_intercept_sampler_smoke(tmp_path):
     assert np.isfinite(fit.beta_mean().to_numpy()).all()
 
 
+def test_python_native_iid_random_slope_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 2], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "a", "b"],
+            "elevation": [10.0, 20.0, 10.0, 20.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={"plot": {"column": "plot", "type": "iid", "x_formula": "~ elevation"}},
+    )
+
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "iid-slope",
+    )
+
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.lambda_samples(level=0).shape[-2:] == (2, 2)
+    assert np.isfinite(fit.lambda_samples(level=0)).all()
+
+
 def test_python_native_traits_sampler_smoke(tmp_path):
     Y = pd.DataFrame({"sp1": [1, 2, 0], "sp2": [0, 1, 3]})
     X = pd.DataFrame({"x": [0.0, 1.0, 2.0]})
@@ -136,3 +169,41 @@ def test_python_native_spatial_full_sampler_smoke(tmp_path):
         workdir=tmp_path / "spatial",
     )
     assert fit.beta_mean().shape == (2, 2)
+
+
+def test_python_native_spatial_gpp_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "c", "d"],
+            "xcoord": [0.0, 1.0, 0.0, 1.0],
+            "ycoord": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_gpp",
+                "coords": ["xcoord", "ycoord"],
+                "n_knots": 2,
+            }
+        },
+    )
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "spatial-gpp",
+    )
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.eta_samples(level=0).shape[-2:] == (4, 1)

@@ -40,6 +40,9 @@ Implemented:
 - phylogenetic covariance matrix input
 - optional Newick parsing through the `phylo` extra
 - iid random intercept compilation, loading, sampling, and posterior export
+- iid random-slope compilation, loading, sampling, and posterior export
+- full spatial and GPP spatial random-intercept compilation, loading,
+  sampling, and posterior export
 - known random-effect posterior predictive checks
 - nested `Eta` and `Lambda` R-hat/ESS diagnostics
 
@@ -61,8 +64,8 @@ Remaining hardening:
 
 ## Later milestones
 
-- GPP and NNGP spatial random levels
-- Random slopes
+- NNGP spatial random levels
+- spatial random slopes
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
 - Harden optional Zarr posterior output on large runs
 - More robust simulation recovery tests with longer optional `slow` runs
@@ -210,10 +213,10 @@ Longer four-chain spatial-only association run
 
 The current implementation is validated for predictive behavior, and
 association diagnostics are the preferred identifiable target for residual
-species association inference. The next practical implementation target is
-random-slope sampling support. After that, add approximate spatial effects
-(`GPP`/`NNGP`) so large spatial models are not limited to dense full spatial
-covariance matrices.
+species association inference. The next practical implementation target is a
+small validation project for iid random slopes and GPP spatial random
+intercepts. After that, add NNGP support so large spatial models are not
+limited to dense full spatial covariance or knot-based GPP approximations.
 
 The deterministic simulator for this validation is available as:
 

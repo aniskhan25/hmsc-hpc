@@ -65,6 +65,12 @@ class GibbsSampler(tf.Module):
         ncNRRR = self.modelDims["ncNRRR"]
         ncORRR = self.modelDims["ncORRR"]
         npVec = self.modelDims["np"]
+        lambdaShapeInvariants = [
+            tf.TensorShape([None, ns, self.rLHyperparams[r]["xDim"]])
+            if int(self.rLHyperparams[r].get("xDim", 0)) > 0
+            else tf.TensorShape([None, ns])
+            for r in range(nr)
+        ]
         params = paramsInput.copy() #TODO due to tf.function requiring not to change its Tensor input
         #TODO potentially move next two lines to somewhere more approriate
         # params["iD"] = tf.cast(tfm.logical_not(tfm.is_nan(self.modelData["Y"])), params["Z"].dtype) * params["sigma"]**-2
@@ -106,8 +112,8 @@ class GibbsSampler(tf.Module):
             tf.autograph.experimental.set_loop_options(
                 shape_invariants=[
                     (params["Eta"], [tf.TensorShape([npVec[r], None]) for r in range(nr)]),
-                    (params["Lambda"], [tf.TensorShape([None, ns])] * nr),
-                    (params["Psi"], [tf.TensorShape([None, ns])] * nr),
+                    (params["Lambda"], lambdaShapeInvariants),
+                    (params["Psi"], lambdaShapeInvariants),
                     (params["Delta"], [tf.TensorShape([None, 1])] * nr),
                     (params["AlphaInd"], [tf.TensorShape(None)] * nr),
                 ]
@@ -149,7 +155,13 @@ class GibbsSampler(tf.Module):
               tf.print("Z", tf.reduce_sum(tf.cast(tfm.is_nan(params["Z"]), tf.int32)))
               tf.print("iD", tf.reduce_sum(tf.cast(tfm.is_nan(params["iD"]), tf.int32)))
             
-            params["Beta"], params["Lambda"] = updateBetaLambda(params, self.modelData, self.priorHyperparams, dtype)
+            params["Beta"], params["Lambda"] = updateBetaLambda(
+                params,
+                self.modelData,
+                self.priorHyperparams,
+                self.rLHyperparams,
+                dtype,
+            )
             if print_debug_flag:
               tf.print("Beta", tf.reduce_sum(tf.cast(tfm.is_nan(params["Beta"]) | (tf.abs(params["Beta"]) > 1e9), tf.int32)))
               tf.print("Lambda", [tf.reduce_sum(tf.cast(tfm.is_nan(par), tf.int32)) for par in params["Lambda"]])
@@ -189,7 +201,14 @@ class GibbsSampler(tf.Module):
             params["AlphaInd"] = updateAlpha(params, self.rLHyperparams, dtype)
             
             # if z_marginalize_iter_flag == False:
-            params["sigma"] = updateSigma(params, self.modelDims, self.modelData, self.priorHyperparams, dtype)
+            params["sigma"] = updateSigma(
+                params,
+                self.modelDims,
+                self.modelData,
+                self.priorHyperparams,
+                self.rLHyperparams,
+                dtype,
+            )
             if print_debug_flag:
               tf.print("sigma", tf.reduce_sum(tf.cast(tfm.is_nan(params["sigma"]), tf.int32)))
 

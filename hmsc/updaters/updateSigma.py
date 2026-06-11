@@ -6,7 +6,7 @@ tfm = tf.math
 tfd = tfp.distributions
 
 @tf_named_func("sigma")
-def updateSigma(params, modelDims, data, priorHyperparameters, dtype=np.float64):
+def updateSigma(params, modelDims, data, priorHyperparameters, rLHyperparams=None, dtype=np.float64):
     """Update prior(s) for whole model:
     sigma - residual variance.
 
@@ -35,6 +35,8 @@ def updateSigma(params, modelDims, data, priorHyperparameters, dtype=np.float64)
     LambdaList = params["Lambda"]
     sigma = params["sigma"]
     X = params["Xeff"]
+    if rLHyperparams is None:
+        rLHyperparams = [{"xDim": 0} for _ in EtaList]
 
     Y = data["Y"]
     Yo = tf.cast(data["Yo"], dtype)
@@ -51,8 +53,13 @@ def updateSigma(params, modelDims, data, priorHyperparameters, dtype=np.float64)
     else:
       LFix = tf.einsum("jik,kj->ij", X, Beta)
     LRanLevelList = [None] * nr
-    for r, (Eta, Lambda) in enumerate(zip(EtaList, LambdaList)):
-        LRanLevelList[r] = tf.matmul(tf.gather(Eta, Pi[:, r]), Lambda)
+    for r, (Eta, Lambda, rLPar) in enumerate(zip(EtaList, LambdaList, rLHyperparams)):
+        xMat = rLPar.get("xMat")
+        if xMat is None:
+            LRanLevelList[r] = tf.matmul(tf.gather(Eta, Pi[:, r]), Lambda)
+        else:
+            LRan = tf.einsum("ih,ik,hjk->ij", Eta, tf.convert_to_tensor(xMat, dtype=Eta.dtype), Lambda)
+            LRanLevelList[r] = tf.gather(LRan, Pi[:, r])
 
     L = LFix + sum(LRanLevelList)
     Eps = Z - L
@@ -63,4 +70,3 @@ def updateSigma(params, modelDims, data, priorHyperparameters, dtype=np.float64)
     sigmaNew = tf.where(indVarSigma, tfm.rsqrt(isigma2), sigma)
 
     return tf.ensure_shape(sigmaNew, [ns])
-

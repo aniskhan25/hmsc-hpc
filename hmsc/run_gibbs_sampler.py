@@ -53,14 +53,17 @@ def validate_sampler_supported_params(rLHyperparams):
     """Fail early for native artifacts that compile but are not sampler-ready."""
     unsupported = []
     for idx, params in enumerate(rLHyperparams):
-        if int(params.get("xDim", 0)) > 0:
-            unsupported.append(f"random level {idx} has xDim={int(params['xDim'])}")
+        if int(params.get("xDim", 0)) > 0 and int(params.get("sDim", 0)) > 0:
+            unsupported.append(f"random level {idx} combines xDim={int(params['xDim'])} with spatial random slopes")
     if unsupported:
         raise NotImplementedError(
-            "Native random-slope inputs are compiled and loadable, but this "
-            "TensorFlow sampler path currently supports random intercepts only: "
+            "Native random-slope sampling currently supports iid random levels only: "
             + ", ".join(unsupported)
         )
+
+
+def has_random_slopes(rLHyperparams):
+    return any(int(params.get("xDim", 0)) > 0 for params in rLHyperparams)
 
 
 def run_gibbs_sampler(
@@ -91,6 +94,12 @@ def run_gibbs_sampler(
     ) = load_params(init_obj_file_path, dtype)
     if os.path.splitext(init_obj_file_path)[1].lower() == ".json":
         validate_sampler_supported_params(rLHyperparams)
+    if has_random_slopes(rLHyperparams):
+        if hmc_thin > 0:
+            raise NotImplementedError("HMC updates are not enabled for native random-slope models")
+        if flag_update_beta_eta:
+            print("Disabling updateBetaEta for native random-slope model")
+            flag_update_beta_eta = False
     gibbs = GibbsSampler(modelDims, modelData, priorHyperparams, rLHyperparams)
     
     if chainIndList is None:

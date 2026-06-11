@@ -25,15 +25,20 @@ random_levels:
     column: plot
     type: spatial_full
     coords: [xcoord, ycoord]
+  gpp_site:
+    column: site
+    type: spatial_gpp
+    coords: [xcoord, ycoord]
+    n_knots: 25
   site:
     column: site
     type: iid
     x_formula: "~ elevation"
 ```
 
-Supported random-level types are `iid` and `spatial_full`.
-Random-slope `x_formula` is compiled and loaded but native TensorFlow sampling is
-currently guarded until the random-slope updater path is hardened.
+Supported random-level types are `iid`, `spatial_full`, and `spatial_gpp`.
+Random-slope `x_formula` is sampler-ready for `iid` random levels. Spatial
+random slopes are still guarded.
 
 Before sampling a compiled Python-native model, run:
 

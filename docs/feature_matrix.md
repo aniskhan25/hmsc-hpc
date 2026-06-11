@@ -11,8 +11,9 @@
 | iid random intercepts | Supported |
 | iid random-intercept real-data validation | Supported; Whittaker plant iid site-level run validated on LUMI |
 | Full spatial random intercepts | Supported |
-| Random slopes | Compile/load support; sampler guarded |
-| GPP/NNGP spatial effects | Not yet |
+| iid random slopes | Supported for native TensorFlow sampling; spatial random slopes remain guarded |
+| GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
+| NNGP spatial effects | Not yet |
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
@@ -125,6 +126,6 @@ species association inference.
 | Feature | Next work |
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
-| Random slopes | Harden TensorFlow updater path, then enable strict validation |
-| GPP/NNGP spatial effects | Add native compiler and loader support for approximate spatial effects |
+| Random slopes | Add validation runs beyond smoke tests; spatial random slopes remain future work |
+| NNGP spatial effects | Add native compiler and loader support for nearest-neighbor sparse spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

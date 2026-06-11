@@ -144,12 +144,12 @@ def _check_required_dimensions(metadata: dict[str, Any]) -> ValidationResult:
 def _check_sampler_supported(metadata: dict[str, Any]) -> ValidationResult:
     unsupported = []
     for level in metadata.get("random_levels", []):
-        if int(level.get("xDim", 0)) > 0:
+        if int(level.get("xDim", 0)) > 0 and level.get("type") != "iid":
             unsupported.append(
                 {
                     "feature": "random_slopes",
                     "random_level": level.get("name"),
-                    "reason": "compiled and loadable, but native TensorFlow sampling is not enabled",
+                    "reason": "native random-slope sampling currently supports iid random levels only",
                 }
             )
     return ValidationResult(

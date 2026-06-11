@@ -52,15 +52,20 @@ def updateNf(params, rLHyperparams, it, dtype=np.float64):
 
         if tfr.uniform([], dtype=dtype) < prob:
             nf = tf.shape(Lambda)[0]
-            _, ns = Lambda.shape
+            ns = Lambda.shape[1] if len(Lambda.shape.as_list()) == 3 else Lambda.shape[-1]
             np = tf.shape(Eta)[0]
-            smallLoadingProp = tf.reduce_mean(tf.cast(tfm.abs(Lambda) < epsilon, dtype=dtype), 1)
+            smallLoadingProp = tf.reduce_mean(tf.cast(tfm.abs(Lambda) < epsilon, dtype=dtype), axis=tf.range(1, tf.rank(Lambda)))
             indRedundant = smallLoadingProp >= prop
             numRedundant = tf.reduce_sum(tf.cast(indRedundant, dtype=tf.int32))
 
             if nf < nfMin or (nf < nfMax and it > 20 and numRedundant == 0 and tf.reduce_all(smallLoadingProp < 0.995)):
-                LambdaNew[r] = tf.concat([Lambda, tf.zeros([1,ns], dtype=dtype)], 0)
-                PsiNew[r] = tf.concat([Psi, tfr.gamma([1,ns], nu/2, nu/2, dtype=dtype)], 0)
+                if len(Lambda.shape.as_list()) == 3:
+                    x_dim = Lambda.shape[2]
+                    LambdaNew[r] = tf.concat([Lambda, tf.zeros([1, ns, x_dim], dtype=dtype)], 0)
+                    PsiNew[r] = tf.concat([Psi, tfr.gamma([1, ns, x_dim], nu/2, nu/2, dtype=dtype)], 0)
+                else:
+                    LambdaNew[r] = tf.concat([Lambda, tf.zeros([1,ns], dtype=dtype)], 0)
+                    PsiNew[r] = tf.concat([Psi, tfr.gamma([1,ns], nu/2, nu/2, dtype=dtype)], 0)
                 DeltaNew[r] = tf.concat([Delta, tfr.gamma([1,1], a2, b2, dtype=dtype)], 0)
                 EtaNew[r] = tf.concat([Eta, tfr.normal([np,1], dtype=dtype)], 1)
                 AlphaIndNew[r] = tf.concat([AlphaInd, tf.zeros([1], tf.int32)], 0)

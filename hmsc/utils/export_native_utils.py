@@ -224,7 +224,15 @@ def _validate_fixed_effect_schema(metadata, arrays):
             if missing:
                 raise ValueError(f"Native random-level input missing arrays: {missing}")
             if level.get("type") == "spatial_full" and f"{prefix}_distMat" not in arrays:
-                raise ValueError("Native spatial random level missing distMat array")
+                raise ValueError("Native full spatial random level missing distMat array")
+            if level.get("type") in {"spatial_gpp", "gpp"}:
+                missing_gpp = [
+                    name
+                    for name in [f"{prefix}_distMat12", f"{prefix}_distMat22"]
+                    if name not in arrays
+                ]
+                if missing_gpp:
+                    raise ValueError(f"Native GPP spatial random level missing arrays: {missing_gpp}")
             if int(level.get("xDim", 0)) > 0 and f"{prefix}_xMat" not in arrays:
                 raise ValueError("Native random-slope input missing xMat array")
 
@@ -281,6 +289,11 @@ def _random_level_hyperparams(level, arrays, dtype):
                 "detWg": np.asarray(detWg, dtype=dtype),
             }
         )
+    elif level.get("type") in {"spatial_gpp", "gpp"}:
+        alphapw = np.asarray(level.get("alphapw", [[1.0, 1.0]]), dtype=dtype)
+        dist12 = np.asarray(arrays[f"{level['array_prefix']}_distMat12"], dtype=dtype)
+        dist22 = np.asarray(arrays[f"{level['array_prefix']}_distMat22"], dtype=dtype)
+        params.update(_spatial_gpp_params(dist12, dist22, alphapw, dtype))
     return params
 
 
@@ -292,3 +305,46 @@ def _spatial_full_W(dist, alphapw, dtype):
         scale = alpha if alpha > 0 else 1.0
         W.append(np.exp(-dist / scale))
     return np.stack(W, axis=0).astype(dtype)
+
+
+def _spatial_gpp_params(dist12, dist22, alphapw, dtype):
+    g_count = alphapw.shape[0]
+    n_knots = dist22.shape[0]
+    w12 = []
+    w22 = []
+    for alpha in alphapw[:, 0]:
+        scale = alpha if alpha > 0 else 1.0
+        w12.append(np.exp(-dist12 / scale))
+        w22.append(np.exp(-dist22 / scale))
+    W12 = np.stack(w12, axis=0).astype(dtype)
+    W22 = np.stack(w22, axis=0).astype(dtype)
+    idD = []
+    idDW12 = []
+    F = []
+    iF = []
+    detD = []
+    for g in range(g_count):
+        W22_g = W22[g] + np.eye(n_knots, dtype=dtype) * dtype(1e-8)
+        LW22 = np.linalg.cholesky(W22_g)
+        iW22 = np.linalg.solve(LW22.T, np.linalg.solve(LW22, np.eye(n_knots, dtype=dtype)))
+        dD = 1 - np.einsum("ik,kh,ih->i", W12[g], iW22, W12[g])
+        dD = np.maximum(dD, np.finfo(dtype).eps)
+        idD_g = dD ** -1
+        F_g = W22_g + np.einsum("ik,i,ih->kh", W12[g], idD_g, W12[g])
+        LF = np.linalg.cholesky(F_g + np.eye(n_knots, dtype=dtype) * dtype(1e-8))
+        idD.append(idD_g)
+        idDW12.append(idD_g[:, None] * W12[g])
+        F.append(F_g)
+        iF.append(np.linalg.solve(LF.T, np.linalg.solve(LF, np.eye(n_knots, dtype=dtype))))
+        detD.append(np.sum(np.log(dD)) - 2 * np.sum(np.log(np.diag(LW22))) + 2 * np.sum(np.log(np.diag(LF))))
+    return {
+        "sDim": 2,
+        "spatialMethod": "GPP",
+        "alphapw": alphapw,
+        "nK": int(n_knots),
+        "idDg": np.stack(idD, axis=0).astype(dtype),
+        "idDW12g": np.stack(idDW12, axis=0).astype(dtype),
+        "Fg": np.stack(F, axis=0).astype(dtype),
+        "iFg": np.stack(iF, axis=0).astype(dtype),
+        "detDg": np.asarray(detD, dtype=dtype),
+    }

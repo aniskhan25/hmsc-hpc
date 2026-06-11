@@ -4,7 +4,7 @@ from hmsc.utils.tf_named_func import tf_named_func
 tfm, tfla, tfr, tfs = tf.math, tf.linalg, tf.random, tf.sparse
 
 @tf_named_func("betaLambda")
-def updateBetaLambda(params, data, priorHyperparams, dtype=np.float64):
+def updateBetaLambda(params, data, priorHyperparams, rLHyperparams=None, dtype=np.float64):
     """Update conditional updater(s):
     Beta - species niches, and
     Lambda - species loadings.
@@ -35,6 +35,8 @@ def updateBetaLambda(params, data, priorHyperparams, dtype=np.float64):
     PsiList = params["Psi"]
     DeltaList = params["Delta"]
     X = params["Xeff"]
+    if rLHyperparams is None:
+        rLHyperparams = [{"xDim": 0} for _ in EtaList]
 
     Yo = data["Yo"]
     distr = data["distr"]
@@ -48,12 +50,18 @@ def updateBetaLambda(params, data, priorHyperparams, dtype=np.float64):
     _, ns = Z.shape
     nr = len(EtaList)
     nfVec = tf.stack([tf.shape(Eta)[-1] for Eta in EtaList])
-    nfSum = tf.cast(tf.reduce_sum(nfVec), tf.int32)
-    na = nc + nfSum
+    nLambdaVec = tf.stack(
+        [
+            tf.shape(Eta)[-1] * tf.cast(rLPar.get("xDim", 0) if rLPar.get("xDim", 0) > 0 else 1, tf.int32)
+            for Eta, rLPar in zip(EtaList, rLHyperparams)
+        ]
+    ) if nr > 0 else tf.zeros([0], dtype=tf.int32)
+    nLambdaSum = tf.cast(tf.reduce_sum(nLambdaVec), tf.int32)
+    na = nc + nLambdaSum
 
     PiEtaList = [None] * nr
     for r, Eta in enumerate(EtaList):
-      PiEtaList[r] = tf.gather(Eta, Pi[:, r])
+      PiEtaList[r] = _random_level_predictors(Eta, rLHyperparams[r], Pi[:, r])
     
     # print(["rank", X.shape, len(X.shape.as_list()), tf.rank(X)])
     if len(X.shape.as_list()) == 2:
@@ -67,9 +75,13 @@ def updateBetaLambda(params, data, priorHyperparams, dtype=np.float64):
     
 
     GammaT = tf.matmul(Gamma, T, transpose_b=True)
-    Mu = tf.concat([GammaT, tf.zeros([nfSum, ns], dtype)], axis=0)
+    Mu = tf.concat([GammaT, tf.zeros([nLambdaSum, ns], dtype)], axis=0)
     if nr > 0:
-      LambdaPriorPrec = tf.concat([Psi * tfm.cumprod(Delta, -2) for Psi, Delta in zip(PsiList, DeltaList)], axis=-2)
+      LambdaPriorPrec = tf.concat(
+          [_flatten_random_slope_loadings(Psi) * tf.repeat(tfm.cumprod(Delta, -2), _lambda_x_dim(Psi), axis=-2)
+           for Psi, Delta in zip(PsiList, DeltaList)],
+          axis=-2,
+      )
       
     if C is None:
       if nr > 0:
@@ -128,10 +140,45 @@ def updateBetaLambda(params, data, priorHyperparams, dtype=np.float64):
       BetaLambda = tf.reshape(m + tfla.triangular_solve(LiU, tfr.normal(shape=[na*ns,1], dtype=dtype), adjoint=True), [na,ns])
     
     if nr > 0:
-      BetaLambdaList = tf.split(BetaLambda, tf.concat([tf.constant([nc], tf.int32), nfVec], -1), axis=-2)
-      BetaNew, LambdaListNew = tf.ensure_shape(BetaLambdaList[0], [nc,ns]), BetaLambdaList[1:]
+      BetaLambdaList = tf.split(BetaLambda, tf.concat([tf.constant([nc], tf.int32), nLambdaVec], -1), axis=-2)
+      BetaNew = tf.ensure_shape(BetaLambdaList[0], [nc,ns])
+      LambdaListNew = [
+          _restore_random_slope_loadings(LambdaFlat, LambdaOld, rLPar)
+          for LambdaFlat, LambdaOld, rLPar in zip(BetaLambdaList[1:], params["Lambda"], rLHyperparams)
+      ]
     else:
       BetaNew, LambdaListNew = tf.ensure_shape(BetaLambda, [nc,ns]), []
 
     # tf.print(BetaNew)
     return BetaNew, LambdaListNew
+
+
+def _random_level_predictors(Eta, rLPar, Pi):
+    xMat = rLPar.get("xMat")
+    PiEta = tf.gather(Eta, Pi)
+    if xMat is None:
+        return PiEta
+    PiX = tf.gather(tf.convert_to_tensor(xMat, dtype=Eta.dtype), Pi)
+    return tf.reshape(tf.einsum("ih,ik->ihk", PiEta, PiX), [tf.shape(PiEta)[0], -1])
+
+
+def _flatten_random_slope_loadings(values):
+    if len(values.shape.as_list()) == 2:
+        return values
+    return tf.reshape(tf.transpose(values, [0, 2, 1]), [tf.shape(values)[0] * tf.shape(values)[2], tf.shape(values)[1]])
+
+
+def _restore_random_slope_loadings(values, like, rLPar):
+    if int(rLPar.get("xDim", 0)) == 0:
+        return tf.ensure_shape(values, [None, like.shape[-1]])
+    nf = tf.shape(like)[0]
+    ns = tf.shape(like)[1]
+    x_dim = tf.shape(like)[2]
+    restored = tf.transpose(tf.reshape(values, [nf, x_dim, ns]), [0, 2, 1])
+    return tf.ensure_shape(restored, [None, like.shape[1], like.shape[2]])
+
+
+def _lambda_x_dim(values):
+    if len(values.shape.as_list()) == 2:
+        return 1
+    return tf.shape(values)[2]
