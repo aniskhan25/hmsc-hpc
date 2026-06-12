@@ -105,6 +105,73 @@ def simulate_spatial_effect_data(
     return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
 
 
+def simulate_random_slope_effect_data(
+    n_groups: int = 12,
+    sites_per_group: int = 4,
+    n_species: int = 5,
+    beta: np.ndarray | None = None,
+    random_sd: float = 0.9,
+    distr: str = "probit",
+    seed: int = 31,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Simulate a small iid random-slope validation dataset."""
+    if n_groups <= 1:
+        raise ValueError("n_groups must be greater than 1")
+    if sites_per_group <= 0:
+        raise ValueError("sites_per_group must be positive")
+    if n_species <= 0:
+        raise ValueError("n_species must be positive")
+    rng = np.random.default_rng(seed)
+    n_sites = n_groups * sites_per_group
+    groups = np.repeat(np.arange(n_groups), sites_per_group)
+    env = rng.normal(size=n_sites)
+    group_slope_env = np.linspace(-1.0, 1.0, n_groups)
+    group_slope_env = group_slope_env + rng.normal(scale=0.05, size=n_groups)
+    slope_env = group_slope_env[groups]
+    beta = np.asarray(beta if beta is not None else _default_spatial_beta(n_species), dtype=float)
+    if beta.shape != (2, n_species):
+        raise ValueError(f"beta must have shape {(2, n_species)}")
+    eta = rng.normal(scale=random_sd, size=n_groups)
+    lambda_intercept = np.linspace(0.7, -0.7, n_species)
+    lambda_slope = np.linspace(-0.9, 0.9, n_species)
+    design = np.column_stack([np.ones(n_sites), env])
+    random_effect = eta[groups, None] * (
+        lambda_intercept[None, :] + slope_env[:, None] * lambda_slope[None, :]
+    )
+    linear = design @ beta + random_effect
+    key = distr.lower()
+    if key in {"normal", "gaussian"}:
+        Y = linear + rng.normal(scale=0.15, size=linear.shape)
+    elif key == "poisson":
+        Y = rng.poisson(np.exp(np.clip(linear, -6, 6)))
+    elif key in {"probit", "bernoulli", "binomial"}:
+        Y = rng.binomial(1, _normal_cdf(linear))
+    else:
+        raise ValueError(f"Unsupported distribution {distr!r}")
+    site_names = [f"site_{idx + 1:03d}" for idx in range(n_sites)]
+    plot_names = [f"plot_{idx + 1:02d}" for idx in groups]
+    species = [f"sp{idx + 1}" for idx in range(n_species)]
+    X = pd.DataFrame({"env": env}, index=site_names)
+    study_design = pd.DataFrame(
+        {
+            "plot": plot_names,
+            "slope_env": slope_env,
+        },
+        index=site_names,
+    )
+    truth = {
+        "beta": pd.DataFrame(beta, index=["Intercept", "env"], columns=species),
+        "site_effect": pd.DataFrame({"eta": eta}, index=[f"plot_{idx + 1:02d}" for idx in range(n_groups)]),
+        "lambda": pd.DataFrame(
+            [lambda_intercept, lambda_slope],
+            index=["Intercept", "slope_env"],
+            columns=species,
+        ),
+        "linear_predictor": pd.DataFrame(linear, index=site_names, columns=species),
+    }
+    return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
+
+
 def _unit_square_grid(n_sites: int, rng: np.random.Generator) -> np.ndarray:
     side = int(np.ceil(np.sqrt(n_sites)))
     grid = np.array([(x, y) for y in np.linspace(0, 1, side) for x in np.linspace(0, 1, side)], dtype=float)

@@ -1,0 +1,10 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ env"
+distribution: probit
+chains: 2
+samples: 1000
+transient: 500
+thin: 10
+

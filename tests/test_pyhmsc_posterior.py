@@ -422,6 +422,46 @@ def test_lambda_summary_requires_x_index_for_random_slopes():
     assert summary.shape[0] == 2
 
 
+def test_aligned_eta_diagnostics_default_to_intercept_for_random_slopes():
+    posterior = {
+        "__arrays__": {
+            "random_levels/0/Eta": np.array(
+                [
+                    [
+                        [[0.5]],
+                        [[0.5]],
+                    ],
+                    [
+                        [[-0.5]],
+                        [[-0.5]],
+                    ],
+                ]
+            ),
+            "random_levels/0/Lambda": np.array(
+                [
+                    [
+                        [[[1.0, 0.2], [2.0, 0.4]]],
+                        [[[1.0, 0.2], [2.0, 0.4]]],
+                    ],
+                    [
+                        [[[-1.0, -0.2], [-2.0, -0.4]]],
+                        [[[-1.0, -0.2], [-2.0, -0.4]]],
+                    ],
+                ]
+            ),
+        },
+    }
+    fit = HmscFit(posterior)
+
+    eta_diagnostics = fit.diagnostics("Eta", align=True)
+    eta_overview = fit.diagnostics_overview("Eta", align=True)
+    lambda_diagnostics = fit.diagnostics("Lambda", align=True)
+
+    assert eta_diagnostics["rhat"].tolist() == [1.0]
+    assert eta_overview["aligned"] is True
+    assert lambda_diagnostics["mean"].tolist() == [1.0, 2.0]
+
+
 def test_eta_and_lambda_diagnostics_use_random_level_labels():
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2], "sp2": [3, 4]}),

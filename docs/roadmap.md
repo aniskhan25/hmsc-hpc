@@ -211,12 +211,29 @@ Longer four-chain spatial-only association run
 
 ## Recommended Next Implementation Target
 
-The current implementation is validated for predictive behavior, and
-association diagnostics are the preferred identifiable target for residual
-species association inference. The next practical implementation target is a
-small validation project for iid random slopes and GPP spatial random
-intercepts. After that, add NNGP support so large spatial models are not
-limited to dense full spatial covariance or knot-based GPP approximations.
+The current implementation is validated for predictive behavior, iid random
+slopes, full spatial random intercepts, and GPP spatial random intercepts.
+Association diagnostics are the preferred identifiable target for residual
+species association inference.
+
+Validated LUMI run `new_features_validation_fixed2_codex`:
+
+- 2 chains, 1000 saved samples, 500 transient iterations, thin 10
+- completed in 8 minutes 50 seconds on `dev-g`
+- iid random-slope model recovered beta signs `4 / 4`, species PPC `5 / 5`,
+  and site richness PPC `48 / 48`
+- full spatial and GPP models both covered species PPC `5 / 5` and site
+  richness PPC `36 / 36`
+- GPP latent recovery was close to full spatial
+  (`Eta/truth = 0.819624`, `Lambda/truth = 0.929552`)
+- GPP recovered `3 / 4` nonzero beta signs, so the current validation supports
+  runtime compatibility and qualitative behavior, not strict coefficient
+  recovery
+
+The next practical implementation target is NNGP support so large spatial
+models are not limited to dense full spatial covariance or knot-based GPP
+approximations. Spatial random slopes should remain behind that unless a real
+analysis requires them first.
 
 The deterministic simulator for this validation is available as:
 

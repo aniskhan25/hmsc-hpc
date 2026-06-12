@@ -949,6 +949,8 @@ class HmscFit:
         max_iter: int = 2,
     ) -> tuple[np.ndarray, np.ndarray]:
         eta = self.eta_samples(level)
+        if x_index is None and self.lambda_samples(level).ndim == 5:
+            x_index = 0
         lam = self._lambda_samples_for_summary(level=level, x_index=x_index)
         if eta.ndim != 4:
             raise ValueError("Eta alignment requires samples with shape chains x draws x units x factors")
@@ -1086,7 +1088,11 @@ class HmscFit:
                 codes.append(code)
             eta = self.eta_samples(level_idx)[:, :, codes, :]
             lam = self.lambda_samples(level_idx)
-            effect = np.einsum("cdnf,cdfs->cdns", eta, lam)
+            if lam.ndim == 5:
+                x_mat = self._random_slope_design_for_groups(spec, X_new, codes)
+                effect = np.einsum("cdnf,nk,cdfsk->cdns", eta, x_mat, lam)
+            else:
+                effect = np.einsum("cdnf,cdfs->cdns", eta, lam)
             if any(zero_mask):
                 effect[:, :, zero_mask, :] = 0
             total = total + effect
@@ -1118,12 +1124,35 @@ class HmscFit:
         if self.model is None or not getattr(self.model, "random_levels", None):
             return 0
         total = 0
-        for level_idx, _item in enumerate(self.model.random_levels.items()):
+        for level_idx, (_level_name, spec) in enumerate(self.model.random_levels.items()):
             eta = self.eta_samples(level_idx).mean(axis=2, keepdims=True)
             eta = np.repeat(eta, n_new, axis=2)
             lam = self.lambda_samples(level_idx)
-            total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)
+            if lam.ndim == 5:
+                x_mat = self._random_slope_design_for_marginal(spec, n_new)
+                total = total + np.einsum("cdnf,nk,cdfsk->cdns", eta, x_mat, lam)
+            else:
+                total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)
         return total
+
+    def _random_slope_design_for_groups(self, spec: dict[str, Any], X_new: pd.DataFrame, codes: list[int]) -> np.ndarray:
+        x_formula = spec.get("x_formula")
+        if not x_formula:
+            raise ValueError("Random-slope Lambda samples require random_levels.*.x_formula")
+        if self.model is None or self.model.study_design is None:
+            raise ValueError("Random-slope prediction requires model.study_design")
+        column = spec.get("column", "plot")
+        matrix = build_design_matrix(x_formula, self.model.study_design)
+        unit_matrix = matrix.groupby(self.model.study_design[column], sort=True).mean().to_numpy(dtype=float)
+        return unit_matrix[np.asarray(codes, dtype=int)]
+
+    def _random_slope_design_for_marginal(self, spec: dict[str, Any], n_new: int) -> np.ndarray:
+        if self.model is None or self.model.study_design is None:
+            raise ValueError("Random-slope prediction requires model.study_design")
+        column = spec.get("column", "plot")
+        matrix = build_design_matrix(spec.get("x_formula"), self.model.study_design)
+        averaged = matrix.groupby(self.model.study_design[column], sort=True).mean().mean(axis=0).to_numpy(dtype=float)
+        return np.repeat(averaged[None, :], n_new, axis=0)
 
     def _species_names(self, size: int) -> list[str]:
         if self.model is not None and getattr(self.model, "species_names", None):

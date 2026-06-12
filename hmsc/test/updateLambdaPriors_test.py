@@ -149,3 +149,29 @@ def test_updateLambdaPriors_shape():
         assert tf.shape(PsiList[r])[1] == modelDims["ns"]
 
         assert tf.shape(DeltaList[r])[0] == rLHyperparams[r]["nu"] + r
+
+
+def test_updateLambdaPriors_random_slope_shape():
+    dtype = np.float64
+    params = {
+        "Lambda": [tf.ones([2, 3, 2], dtype=dtype)],
+        "Psi": [tf.ones([2, 3, 2], dtype=dtype)],
+        "Delta": [tf.ones([2, 1], dtype=dtype)],
+    }
+    rLHyperparams = [
+        {
+            "xDim": 2,
+            "nu": 3,
+            "a1": 2,
+            "b1": 1,
+            "a2": 3,
+            "b2": 1,
+        }
+    ]
+
+    PsiList, DeltaList = updateLambdaPriors(params, rLHyperparams, dtype=dtype)
+
+    assert PsiList[0].shape == (2, 3, 2)
+    assert DeltaList[0].shape == (2, 1)
+    assert np.isfinite(PsiList[0].numpy()).all()
+    assert np.isfinite(DeltaList[0].numpy()).all()

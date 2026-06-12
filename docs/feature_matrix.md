@@ -34,6 +34,7 @@
 | Deterministic spatial validation simulator | Supported via `simulate_spatial_effect_data` |
 | Simulated spatial validation project | Added with fixed, iid, and full-spatial configs |
 | Simulated spatial validation analyzer | Supported; fixed/iid/spatial LUMI validation completed |
+| Simulated random-slope/GPP validation project | Supported; fixed/random-slope/full-spatial/GPP LUMI validation completed |
 | Big spatial real-data validation project | Added with fixed, iid, and full-spatial configs |
 | Big spatial real-data analyzer | Supported; fixed/iid/spatial LUMI validation completed |
 | Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
@@ -121,11 +122,28 @@ raw `Eta`/`Lambda` R-hat pathologies, but aligned latent factors still had low
 ESS, so `Associations` remains the preferred diagnostic target for residual
 species association inference.
 
+The deterministic random-slope/GPP validation project in
+`examples/projects/simulated_new_features_validation` has been run on LUMI
+without R.
+
+| Model | Run | Result |
+| --- | --- | --- |
+| Fixed-effect probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `46 / 48` |
+| iid random-slope probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `48 / 48`, Eta/truth correlation `0.434882`, slope Lambda/truth correlation `0.561890` |
+| full spatial random-intercept probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.827719`, Lambda/truth correlation `0.921528` |
+| GPP spatial random-intercept probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `3 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.819624`, Lambda/truth correlation `0.929552` |
+
+The run used 2 chains, 1000 saved samples, 500 transient iterations, and thin
+10. It completed in 8 minutes 50 seconds on `dev-g` with TensorFlow 2.16 and
+an MI250X GPU. The GPP result closely matched full-spatial latent recovery but
+missed one coefficient sign, so this validation supports runtime compatibility
+and qualitative behavior rather than strict coefficient recovery.
+
 ## Main Pending Features
 
 | Feature | Next work |
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
-| Random slopes | Add validation runs beyond smoke tests; spatial random slopes remain future work |
+| Random slopes | iid random slopes are validated; spatial random slopes remain future work |
 | NNGP spatial effects | Add native compiler and loader support for nearest-neighbor sparse spatial effects |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

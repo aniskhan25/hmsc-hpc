@@ -44,7 +44,8 @@ def updateLambdaPriors(params, rLHyperparams, dtype=np.float64):
             Lambda2 = Lambda**2
             Tau = tfm.cumprod(Delta, 0)
             aPsi = nu/2 + 0.5
-            bPsi = nu/2 + 0.5 * Lambda2 * Tau
+            TauForLambda = tf.reshape(Tau, [nf] + [1] * (len(Lambda.shape.as_list()) - 1))
+            bPsi = nu/2 + 0.5 * Lambda2 * TauForLambda
             PsiNew[r] = tf.squeeze(tfr.gamma([1], aPsi, bPsi, dtype=dtype), 0)
             M = PsiNew[r] * Lambda2
             rowSumM = tf.reduce_sum(M, axis=tf.range(1, tf.rank(M)))
