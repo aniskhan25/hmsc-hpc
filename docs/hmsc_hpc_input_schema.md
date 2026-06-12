@@ -199,8 +199,8 @@ Supported native feature scope:
 - Phylogeny: optional Newick input via the `phylo` extra
 - Random effects: iid random intercepts
 - Random slopes: iid random slopes from `random_levels.*.x_formula`
-- Spatial effects: full spatial and GPP spatial random intercepts from
-  per-level coordinates
+- Spatial effects: full spatial, GPP spatial, and NNGP spatial random
+  intercepts from per-level coordinates
 
 CLI workflow:
 
@@ -212,8 +212,11 @@ python -m pyhmsc predict run/posterior.h5 --X data/X_new.csv --formula "~ forest
 python -m pyhmsc validate run/posterior.h5 --X data/X.csv --Y data/Y.csv --formula "~ forest_cover + elevation"
 ```
 
+NNGP random levels use deterministic previous-nearest-neighbor selection in the
+compiled random-level order. Configure them as `type: spatial_nngp` or
+`type: nngp` with coordinate columns and optional `n_neighbors`.
+
 Not yet supported:
 
-- NNGP spatial approximations
 - Spatial random slopes
 - Trait/phylogeny/spatial model diagnostics beyond core posterior samples

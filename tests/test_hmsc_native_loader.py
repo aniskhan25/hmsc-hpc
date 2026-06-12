@@ -158,6 +158,48 @@ def test_native_loader_builds_spatial_gpp_random_level_state(tmp_path):
     assert init_list[0]["Eta"][0].shape == (4, 1)
 
 
+def test_native_loader_builds_spatial_nngp_random_level_state(tmp_path):
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 3, 1, 2]}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]}),
+        x_formula="~ x",
+        distr="poisson",
+        study_design=pd.DataFrame(
+            {
+                "plot": ["a", "b", "c", "d"],
+                "xcoord": [0.0, 1.0, 0.0, 1.0],
+                "ycoord": [0.0, 0.0, 1.0, 1.0],
+            }
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+                "n_neighbors": 2,
+            }
+        },
+    )
+    compiled = model.compile(tmp_path / "spatial-nngp", chains=1)
+    dims, data, _priors, _model_hyper, random_hyper, init_list, _n_chains = load_native_params(
+        compiled.init_json
+    )
+    assert dims["nr"] == 1
+    assert data["Pi"].tolist() == [[0], [1], [2], [3]]
+    assert random_hyper[0]["sDim"] == 2
+    assert random_hyper[0]["spatialMethod"] == "NNGP"
+    assert len(random_hyper[0]["iWList_csr"]) == 1
+    assert random_hyper[0]["iWList_csr"][0].shape == (4, 4)
+    assert len(random_hyper[0]["RiWList"]) == 1
+    assert random_hyper[0]["detWg"].shape == (1,)
+    assert init_list[0]["Eta"][0].shape == (4, 1)
+
+    results = validate_compiled_native_model(compiled.init_json)
+    by_name = {result.name: result for result in results}
+    assert by_name["native_sampler_supported"].passed
+    validate_sampler_supported_params(random_hyper)
+
+
 def test_native_loader_builds_random_slope_state(tmp_path):
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2, 0], "sp2": [0, 3, 1]}),

@@ -204,8 +204,20 @@ and parameter initialization outside the TensorFlow Gibbs sampler.
 
 Supported no-R sampler inputs are fixed effects, traits, phylogenetic covariance
 or Newick-derived covariance, iid random intercepts, iid random slopes, full
-spatial random intercepts, and GPP spatial random intercepts. Spatial random
-slopes and NNGP spatial effects are still guarded.
+spatial random intercepts, GPP spatial random intercepts, and NNGP spatial
+random intercepts. Spatial random slopes are still guarded.
+
+NNGP random levels use deterministic previous-nearest-neighbor selection in the
+compiled random-level order:
+
+```yaml
+random_levels:
+  plot:
+    column: plot
+    type: spatial_nngp
+    coords: [xcoord, ycoord]
+    n_neighbors: 10
+```
 
 From Python:
 

@@ -13,7 +13,7 @@
 | Full spatial random intercepts | Supported |
 | iid random slopes | Supported for native TensorFlow sampling; spatial random slopes remain guarded |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
-| NNGP spatial effects | Not yet |
+| NNGP spatial effects | Supported for native TensorFlow sampling; smoke-tested locally, LUMI validation pending |
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
@@ -145,5 +145,5 @@ and qualitative behavior rather than strict coefficient recovery.
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
 | Random slopes | iid random slopes are validated; spatial random slopes remain future work |
-| NNGP spatial effects | Add native compiler and loader support for nearest-neighbor sparse spatial effects |
+| NNGP spatial effects | Add deterministic validation project and LUMI comparison against full spatial and GPP |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

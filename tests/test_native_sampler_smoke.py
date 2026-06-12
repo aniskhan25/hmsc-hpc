@@ -207,3 +207,41 @@ def test_python_native_spatial_gpp_sampler_smoke(tmp_path):
     )
     assert fit.beta_mean().shape == (2, 2)
     assert fit.eta_samples(level=0).shape[-2:] == (4, 1)
+
+
+def test_python_native_spatial_nngp_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "c", "d"],
+            "xcoord": [0.0, 1.0, 0.0, 1.0],
+            "ycoord": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+                "n_neighbors": 2,
+            }
+        },
+    )
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "spatial-nngp",
+    )
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.eta_samples(level=0).shape[-2:] == (4, 1)

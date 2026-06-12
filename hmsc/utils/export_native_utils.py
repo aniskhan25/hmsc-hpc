@@ -12,8 +12,9 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+from scipy import sparse
 
-tfla = tf.linalg
+tfla, tfs = tf.linalg, tf.sparse
 
 
 _DISTR_CODES = {
@@ -233,6 +234,14 @@ def _validate_fixed_effect_schema(metadata, arrays):
                 ]
                 if missing_gpp:
                     raise ValueError(f"Native GPP spatial random level missing arrays: {missing_gpp}")
+            if level.get("type") in {"spatial_nngp", "nngp"}:
+                missing_nngp = [
+                    name
+                    for name in [f"{prefix}_nngp_indices", f"{prefix}_nngp_distances"]
+                    if name not in arrays
+                ]
+                if missing_nngp:
+                    raise ValueError(f"Native NNGP spatial random level missing arrays: {missing_nngp}")
             if int(level.get("xDim", 0)) > 0 and f"{prefix}_xMat" not in arrays:
                 raise ValueError("Native random-slope input missing xMat array")
 
@@ -294,6 +303,11 @@ def _random_level_hyperparams(level, arrays, dtype):
         dist12 = np.asarray(arrays[f"{level['array_prefix']}_distMat12"], dtype=dtype)
         dist22 = np.asarray(arrays[f"{level['array_prefix']}_distMat22"], dtype=dtype)
         params.update(_spatial_gpp_params(dist12, dist22, alphapw, dtype))
+    elif level.get("type") in {"spatial_nngp", "nngp"}:
+        alphapw = np.asarray(level.get("alphapw", [[1.0, 1.0]]), dtype=dtype)
+        indices = np.asarray(arrays[f"{level['array_prefix']}_nngp_indices"], dtype=int)
+        distances = np.asarray(arrays[f"{level['array_prefix']}_nngp_distances"], dtype=dtype)
+        params.update(_spatial_nngp_params(indices, distances, alphapw, dtype))
     return params
 
 
@@ -347,4 +361,56 @@ def _spatial_gpp_params(dist12, dist22, alphapw, dtype):
         "Fg": np.stack(F, axis=0).astype(dtype),
         "iFg": np.stack(iF, axis=0).astype(dtype),
         "detDg": np.asarray(detD, dtype=dtype),
+    }
+
+
+def _spatial_nngp_params(indices, distances, alphapw, dtype):
+    n_units = indices.shape[0]
+    iWList_csr = []
+    RiWList = []
+    detW = []
+    for alpha in alphapw[:, 0]:
+        if alpha == 0:
+            precision = sparse.eye(n_units, dtype=dtype, format="csr")
+            residual = sparse.eye(n_units, dtype=dtype, format="csr")
+            detW.append(dtype(0))
+        else:
+            residual_variance = np.ones(n_units, dtype=dtype)
+            rows = []
+            cols = []
+            data = []
+            for unit in range(1, n_units):
+                neighbors = indices[unit]
+                neighbors = neighbors[neighbors >= 0]
+                if len(neighbors) == 0:
+                    continue
+                block = distances[unit, : len(neighbors) + 1, : len(neighbors) + 1]
+                covariance = np.exp(-block / alpha).astype(dtype)
+                coefficients = np.linalg.solve(covariance[:-1, :-1], covariance[:-1, -1])
+                residual_variance[unit] = covariance[-1, -1] - np.matmul(covariance[:-1, -1], coefficients)
+                residual_variance[unit] = max(residual_variance[unit], np.finfo(dtype).eps)
+                rows.extend([unit] * len(neighbors))
+                cols.extend(neighbors.tolist())
+                data.extend(coefficients.tolist())
+            A = sparse.csr_array((np.asarray(data, dtype=dtype), (rows, cols)), shape=(n_units, n_units), dtype=dtype)
+            B = sparse.eye(n_units, dtype=dtype, format="csr") - A
+            iD05 = sparse.diags(residual_variance ** dtype(-0.5), format="csr", dtype=dtype)
+            residual = iD05 @ B
+            precision = residual.T @ residual
+            detW.append(np.sum(np.log(residual_variance)))
+        iWList_csr.append(precision)
+        coo = residual.tocoo()
+        sparse_tensor = tfs.SparseTensor(
+            np.stack([coo.row, coo.col], axis=1).astype(np.int64),
+            coo.data.astype(dtype),
+            [n_units, n_units],
+        )
+        RiWList.append(tfs.reorder(sparse_tensor))
+    return {
+        "sDim": 2,
+        "spatialMethod": "NNGP",
+        "alphapw": alphapw,
+        "iWList_csr": iWList_csr,
+        "RiWList": RiWList,
+        "detWg": np.asarray(detW, dtype=dtype),
     }

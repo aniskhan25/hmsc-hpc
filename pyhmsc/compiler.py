@@ -137,10 +137,14 @@ def _compile_random_levels(
     arrays: dict[str, np.ndarray] = {}
     for idx, (name, spec) in enumerate(random_levels.items()):
         level_type = spec.get("type", "iid")
-        if level_type not in {"iid", "spatial_full", "spatial_gpp", "gpp"}:
-            raise NotImplementedError("Only iid, spatial_full, and spatial_gpp random levels are currently supported")
+        if level_type not in {"iid", "spatial_full", "spatial_gpp", "gpp", "spatial_nngp", "nngp"}:
+            raise NotImplementedError(
+                "Only iid, spatial_full, spatial_gpp, and spatial_nngp random levels are currently supported"
+            )
         if level_type == "gpp":
             level_type = "spatial_gpp"
+        if level_type == "nngp":
+            level_type = "spatial_nngp"
         column = spec.get("column", name)
         if column not in design:
             raise ValueError(f"study_design is missing random level column {column!r}")
@@ -177,9 +181,9 @@ def _compile_random_levels(
                 "b2": float(spec.get("b2", 1.0)),
                 "nfMin": int(spec.get("nfMin", nf)),
                 "nfMax": int(spec.get("nfMax", max(nf, 4))),
-                "spatial": level_type in {"spatial_full", "spatial_gpp"},
+                "spatial": level_type in {"spatial_full", "spatial_gpp", "spatial_nngp"},
             }
-        if level_type in {"spatial_full", "spatial_gpp"}:
+        if level_type in {"spatial_full", "spatial_gpp", "spatial_nngp"}:
             coord_cols = spec.get("coords", ["x", "y"])
             if len(coord_cols) != 2 or any(col not in design for col in coord_cols):
                 raise ValueError(f"{level_type} random levels require coordinate columns via coords")
@@ -194,12 +198,18 @@ def _compile_random_levels(
             level_meta["alphapw"] = [[scale, 1.0]]
             if level_type == "spatial_full":
                 arrays[f"{prefix}_distMat"] = dist
-            else:
+            elif level_type == "spatial_gpp":
                 n_knots = int(spec.get("n_knots", spec.get("nKnots", min(max(2, int(np.sqrt(n_levels))), n_levels))))
                 knots = _select_gpp_knots(coords, n_knots)
                 arrays[f"{prefix}_distMat12"] = _cross_distances(coords, knots)
                 arrays[f"{prefix}_distMat22"] = _pairwise_distances(knots)
                 level_meta["nKnots"] = int(knots.shape[0])
+            else:
+                n_neighbors = int(spec.get("n_neighbors", spec.get("nNeighbors", min(10, max(1, n_levels - 1)))))
+                indices, local_dists = _nngp_neighbors(dist, n_neighbors)
+                arrays[f"{prefix}_nngp_indices"] = indices
+                arrays[f"{prefix}_nngp_distances"] = local_dists
+                level_meta["nNeighbors"] = int(indices.shape[1])
         meta.append(level_meta)
     arrays["Pi"] = np.column_stack(pi_columns).astype(int)
     return meta, arrays
@@ -288,3 +298,21 @@ def _select_gpp_knots(coords: np.ndarray, n_knots: int) -> np.ndarray:
         selected.append(next_idx)
         min_dist = np.minimum(min_dist, np.sum((coords - coords[next_idx]) ** 2, axis=1))
     return coords[selected]
+
+
+def _nngp_neighbors(dist: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+    if n_neighbors <= 0:
+        raise ValueError("spatial_nngp n_neighbors must be positive")
+    n_units = dist.shape[0]
+    max_neighbors = min(n_neighbors, max(0, n_units - 1))
+    indices = np.full((n_units, max_neighbors), -1, dtype=int)
+    local_dists = np.zeros((n_units, max_neighbors + 1, max_neighbors + 1), dtype=float)
+    for unit in range(1, n_units):
+        candidates = np.arange(unit)
+        order = np.argsort(dist[unit, candidates], kind="mergesort")
+        selected = candidates[order[: min(max_neighbors, len(order))]]
+        indices[unit, : len(selected)] = selected
+        local_index = np.concatenate([selected, [unit]])
+        block = dist[np.ix_(local_index, local_index)]
+        local_dists[unit, : block.shape[0], : block.shape[1]] = block
+    return indices, local_dists

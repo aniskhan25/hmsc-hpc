@@ -41,7 +41,7 @@ Implemented:
 - optional Newick parsing through the `phylo` extra
 - iid random intercept compilation, loading, sampling, and posterior export
 - iid random-slope compilation, loading, sampling, and posterior export
-- full spatial and GPP spatial random-intercept compilation, loading,
+- full spatial, GPP spatial, and NNGP spatial random-intercept compilation, loading,
   sampling, and posterior export
 - known random-effect posterior predictive checks
 - nested `Eta` and `Lambda` R-hat/ESS diagnostics
@@ -64,7 +64,6 @@ Remaining hardening:
 
 ## Later milestones
 
-- NNGP spatial random levels
 - spatial random slopes
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
 - Harden optional Zarr posterior output on large runs
@@ -230,10 +229,10 @@ Validated LUMI run `new_features_validation_fixed2_codex`:
   runtime compatibility and qualitative behavior, not strict coefficient
   recovery
 
-The next practical implementation target is NNGP support so large spatial
-models are not limited to dense full spatial covariance or knot-based GPP
-approximations. Spatial random slopes should remain behind that unless a real
-analysis requires them first.
+NNGP spatial random-intercept support is implemented and locally smoke-tested.
+The next practical target is deterministic NNGP validation on LUMI against full
+spatial and GPP fits. Spatial random slopes should remain behind that unless a
+real analysis requires them first.
 
 The deterministic simulator for this validation is available as:
 
