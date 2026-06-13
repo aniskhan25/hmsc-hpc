@@ -28,7 +28,7 @@ def test_python_native_sampler_smoke(tmp_path, distr, Y):
 
     fit = model.sample(
         samples=1,
-        transient=0,
+        transient=1,
         thin=1,
         chains=1,
         init="python-native",
@@ -59,7 +59,7 @@ def test_python_native_iid_random_intercept_sampler_smoke(tmp_path):
 
     fit = model.sample(
         samples=1,
-        transient=0,
+        transient=1,
         thin=1,
         chains=1,
         init="python-native",
@@ -91,7 +91,7 @@ def test_python_native_iid_random_slope_sampler_smoke(tmp_path):
 
     fit = model.sample(
         samples=1,
-        transient=0,
+        transient=1,
         thin=1,
         chains=1,
         init="python-native",
@@ -169,6 +169,128 @@ def test_python_native_spatial_full_sampler_smoke(tmp_path):
         workdir=tmp_path / "spatial",
     )
     assert fit.beta_mean().shape == (2, 2)
+
+
+def test_python_native_spatial_full_random_slope_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "c", "d"],
+            "elevation": [10.0, 20.0, 10.0, 30.0],
+            "xcoord": [0.0, 1.0, 0.0, 1.0],
+            "ycoord": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_full",
+                "coords": ["xcoord", "ycoord"],
+                "x_formula": "~ elevation",
+            }
+        },
+    )
+    fit = model.sample(
+        samples=1,
+        transient=0,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "spatial-full-random-slope",
+    )
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.eta_samples(level=0).shape[-2:] == (4, 1)
+    assert fit.lambda_samples(level=0).shape[-3:] == (1, 2, 2)
+
+
+def test_python_native_spatial_gpp_random_slope_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "c", "d"],
+            "elevation": [10.0, 20.0, 10.0, 30.0],
+            "xcoord": [0.0, 1.0, 0.0, 1.0],
+            "ycoord": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_gpp",
+                "coords": ["xcoord", "ycoord"],
+                "n_knots": 2,
+                "x_formula": "~ elevation",
+            }
+        },
+    )
+    fit = model.sample(
+        samples=1,
+        transient=1,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "spatial-gpp-random-slope",
+    )
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.eta_samples(level=0).shape[-2:] == (4, 1)
+    assert fit.lambda_samples(level=0).shape[-3:] == (1, 2, 2)
+
+
+def test_python_native_spatial_nngp_random_slope_sampler_smoke(tmp_path):
+    Y = pd.DataFrame({"sp1": [1, 2, 0, 1], "sp2": [0, 1, 3, 1]})
+    X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    study_design = pd.DataFrame(
+        {
+            "plot": ["a", "b", "c", "d"],
+            "elevation": [10.0, 20.0, 10.0, 30.0],
+            "xcoord": [0.0, 1.0, 0.0, 1.0],
+            "ycoord": [0.0, 0.0, 1.0, 1.0],
+        }
+    )
+    model = HmscModel(
+        Y=Y,
+        X=X,
+        x_formula="~ x",
+        distr="poisson",
+        study_design=study_design,
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+                "n_neighbors": 2,
+                "x_formula": "~ elevation",
+            }
+        },
+    )
+    fit = model.sample(
+        samples=1,
+        transient=1,
+        thin=1,
+        chains=1,
+        init="python-native",
+        verbose=1,
+        workdir=tmp_path / "spatial-nngp-random-slope",
+    )
+    assert fit.beta_mean().shape == (2, 2)
+    assert fit.eta_samples(level=0).shape[-2:] == (4, 1)
+    assert fit.lambda_samples(level=0).shape[-3:] == (1, 2, 2)
 
 
 def test_python_native_spatial_gpp_sampler_smoke(tmp_path):

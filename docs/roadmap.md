@@ -41,6 +41,8 @@ Implemented:
 - optional Newick parsing through the `phylo` extra
 - iid random intercept compilation, loading, sampling, and posterior export
 - iid random-slope compilation, loading, sampling, and posterior export
+- full spatial, GPP spatial, and NNGP spatial random-slope compilation,
+  loading, sampling, and posterior export; locally smoke-tested
 - full spatial, GPP spatial, and NNGP spatial random-intercept compilation, loading,
   sampling, and posterior export
 - known random-effect posterior predictive checks
@@ -63,8 +65,6 @@ Remaining hardening:
   inference
 
 ## Later milestones
-
-- spatial random slopes
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
 - Harden optional Zarr posterior output on large runs
 - More robust simulation recovery tests with longer optional `slow` runs
@@ -240,10 +240,9 @@ NNGP validation against full spatial and GPP fits:
 - NNGP latent recovery was weak on the small 36-site dataset
   (`Eta/truth = 0.030639`, `Lambda/truth = 0.228298`)
 
-The next practical target is a larger or replicated NNGP validation run to
+The next practical target is deterministic full/GPP/NNGP spatial random-slope
+validation on LUMI. After that, run a larger or replicated NNGP validation to
 separate expected approximation behavior from small-dataset instability.
-Spatial random slopes should remain behind that unless a real analysis requires
-them first.
 
 The deterministic simulator for this validation is available as:
 

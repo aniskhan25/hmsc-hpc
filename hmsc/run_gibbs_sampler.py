@@ -54,10 +54,15 @@ def validate_sampler_supported_params(rLHyperparams):
     unsupported = []
     for idx, params in enumerate(rLHyperparams):
         if int(params.get("xDim", 0)) > 0 and int(params.get("sDim", 0)) > 0:
-            unsupported.append(f"random level {idx} combines xDim={int(params['xDim'])} with spatial random slopes")
+            spatial_method = params.get("spatialMethod")
+            if spatial_method not in {"Full", "GPP", "NNGP"}:
+                unsupported.append(
+                    f"random level {idx} combines xDim={int(params['xDim'])} with "
+                    f"{spatial_method} spatial random slopes"
+                )
     if unsupported:
         raise NotImplementedError(
-            "Native random-slope sampling currently supports iid random levels only: "
+            "Native random-slope sampling currently supports iid and spatial random levels: "
             + ", ".join(unsupported)
         )
 

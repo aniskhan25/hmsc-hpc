@@ -224,7 +224,7 @@ def test_native_loader_builds_random_slope_state(tmp_path):
     validate_sampler_supported_params(random_hyper)
 
 
-def test_spatial_random_slope_sampling_is_guarded(tmp_path):
+def test_native_loader_builds_full_spatial_random_slope_state(tmp_path):
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2, 0]}),
         X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
@@ -251,5 +251,84 @@ def test_spatial_random_slope_sampling_is_guarded(tmp_path):
     _dims, _data, _priors, _model_hyper, random_hyper, _init_list, _n_chains = load_native_params(
         compiled.init_json
     )
-    with pytest.raises(NotImplementedError, match="iid random levels only"):
-        validate_sampler_supported_params(random_hyper)
+    assert random_hyper[0]["spatialMethod"] == "Full"
+    assert random_hyper[0]["xDim"] == 2
+    assert random_hyper[0]["xMat"].shape == (3, 2)
+    results = validate_compiled_native_model(compiled.init_json)
+    by_name = {result.name: result for result in results}
+    assert by_name["native_sampler_supported"].passed
+    validate_sampler_supported_params(random_hyper)
+
+
+def test_native_loader_builds_gpp_spatial_random_slope_state(tmp_path):
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2, 0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
+        x_formula="~ x",
+        distr="poisson",
+        study_design=pd.DataFrame(
+            {
+                "plot": ["a", "b", "c"],
+                "elevation": [10.0, 20.0, 30.0],
+                "xcoord": [0.0, 1.0, 0.0],
+                "ycoord": [0.0, 0.0, 1.0],
+            }
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_gpp",
+                "coords": ["xcoord", "ycoord"],
+                "n_knots": 2,
+                "x_formula": "~ elevation",
+            }
+        },
+    )
+    compiled = model.compile(tmp_path / "gpp-spatial-random-slope", chains=1)
+    _dims, _data, _priors, _model_hyper, random_hyper, _init_list, _n_chains = load_native_params(
+        compiled.init_json
+    )
+    assert random_hyper[0]["spatialMethod"] == "GPP"
+    assert random_hyper[0]["xDim"] == 2
+    assert random_hyper[0]["xMat"].shape == (3, 2)
+    results = validate_compiled_native_model(compiled.init_json)
+    by_name = {result.name: result for result in results}
+    assert by_name["native_sampler_supported"].passed
+    validate_sampler_supported_params(random_hyper)
+
+
+def test_native_loader_builds_nngp_spatial_random_slope_state(tmp_path):
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2, 0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
+        x_formula="~ x",
+        distr="poisson",
+        study_design=pd.DataFrame(
+            {
+                "plot": ["a", "b", "c"],
+                "elevation": [10.0, 20.0, 30.0],
+                "xcoord": [0.0, 1.0, 0.0],
+                "ycoord": [0.0, 0.0, 1.0],
+            }
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+                "n_neighbors": 2,
+                "x_formula": "~ elevation",
+            }
+        },
+    )
+    compiled = model.compile(tmp_path / "nngp-spatial-random-slope", chains=1)
+    _dims, _data, _priors, _model_hyper, random_hyper, _init_list, _n_chains = load_native_params(
+        compiled.init_json
+    )
+    assert random_hyper[0]["spatialMethod"] == "NNGP"
+    assert random_hyper[0]["xDim"] == 2
+    assert random_hyper[0]["xMat"].shape == (3, 2)
+    results = validate_compiled_native_model(compiled.init_json)
+    by_name = {result.name: result for result in results}
+    assert by_name["native_sampler_supported"].passed
+    validate_sampler_supported_params(random_hyper)

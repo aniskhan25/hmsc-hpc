@@ -144,12 +144,19 @@ def _check_required_dimensions(metadata: dict[str, Any]) -> ValidationResult:
 def _check_sampler_supported(metadata: dict[str, Any]) -> ValidationResult:
     unsupported = []
     for level in metadata.get("random_levels", []):
-        if int(level.get("xDim", 0)) > 0 and level.get("type") != "iid":
+        if int(level.get("xDim", 0)) > 0 and level.get("type") not in {
+            "iid",
+            "spatial_full",
+            "spatial_gpp",
+            "gpp",
+            "spatial_nngp",
+            "nngp",
+        }:
             unsupported.append(
                 {
                     "feature": "random_slopes",
                     "random_level": level.get("name"),
-                    "reason": "native random-slope sampling currently supports iid random levels only",
+                    "reason": "native random-slope sampling currently supports iid and spatial random levels",
                 }
             )
     return ValidationResult(

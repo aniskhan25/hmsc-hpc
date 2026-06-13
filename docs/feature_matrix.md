@@ -11,7 +11,10 @@
 | iid random intercepts | Supported |
 | iid random-intercept real-data validation | Supported; Whittaker plant iid site-level run validated on LUMI |
 | Full spatial random intercepts | Supported |
-| iid random slopes | Supported for native TensorFlow sampling; spatial random slopes remain guarded |
+| iid random slopes | Supported for native TensorFlow sampling |
+| Full spatial random slopes | Supported for native TensorFlow sampling; smoke-tested locally, LUMI validation pending |
+| GPP spatial random slopes | Supported for native TensorFlow sampling; smoke-tested locally, LUMI validation pending |
+| NNGP spatial random slopes | Supported for native TensorFlow sampling; smoke-tested locally, LUMI validation pending |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
 | NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent recovery needs more validation |
 | HDF5 posterior output | Supported |
@@ -151,6 +154,6 @@ a larger or replicated spatial validation run is completed.
 | Feature | Next work |
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
-| Random slopes | iid random slopes are validated; spatial random slopes remain future work |
+| Random slopes | Add deterministic full/GPP/NNGP spatial random-slope validation |
 | NNGP spatial effects | Add larger or replicated validation to assess latent recovery beyond runtime/PPC behavior |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

@@ -198,7 +198,8 @@ Supported native feature scope:
 - Phylogeny: user-provided species covariance matrix
 - Phylogeny: optional Newick input via the `phylo` extra
 - Random effects: iid random intercepts
-- Random slopes: iid random slopes from `random_levels.*.x_formula`
+- Random slopes: iid, full spatial, GPP spatial, and NNGP spatial random
+  slopes from `random_levels.*.x_formula`
 - Spatial effects: full spatial, GPP spatial, and NNGP spatial random
   intercepts from per-level coordinates
 
@@ -218,5 +219,4 @@ compiled random-level order. Configure them as `type: spatial_nngp` or
 
 Not yet supported:
 
-- Spatial random slopes
 - Trait/phylogeny/spatial model diagnostics beyond core posterior samples

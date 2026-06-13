@@ -25,6 +25,7 @@ random_levels:
     column: plot
     type: spatial_full
     coords: [xcoord, ycoord]
+    x_formula: "~ elevation"
   gpp_site:
     column: site
     type: spatial_gpp
@@ -36,9 +37,9 @@ random_levels:
     x_formula: "~ elevation"
 ```
 
-Supported random-level types are `iid`, `spatial_full`, and `spatial_gpp`.
-Random-slope `x_formula` is sampler-ready for `iid` random levels. Spatial
-random slopes are still guarded.
+Supported random-level types are `iid`, `spatial_full`, `spatial_gpp`, and
+`spatial_nngp`. Random-slope `x_formula` is sampler-ready for `iid`,
+`spatial_full`, `spatial_gpp`, and `spatial_nngp` random levels.
 
 Before sampling a compiled Python-native model, run:
 

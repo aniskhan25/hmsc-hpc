@@ -111,12 +111,13 @@ class HmscModel:
         if init == "python-native" and self.random_levels:
             unsupported = [
                 name for name, spec in self.random_levels.items()
-                if spec.get("x_formula") and spec.get("type", "iid") != "iid"
+                if spec.get("x_formula")
+                and spec.get("type", "iid") not in {"iid", "spatial_full", "spatial_gpp", "gpp", "spatial_nngp", "nngp"}
             ]
             if unsupported:
                 raise NotImplementedError(
                     "Native TensorFlow sampling for random slopes currently supports "
-                    f"iid random levels only: {unsupported}"
+                    f"iid and spatial random levels: {unsupported}"
                 )
         if workdir is not None:
             run_dir = Path(workdir)
