@@ -1,4 +1,4 @@
-# Simulated Random-Slope and GPP Validation
+# Simulated Random-Slope, GPP, and NNGP Validation
 
 Deterministic no-R validation project for the native TensorFlow paths added
 after fixed, iid, and full-spatial support.
@@ -14,8 +14,9 @@ Validation targets:
 
 - iid random-slope model samples without R and improves known random-effect PPC
   relative to fixed effects.
-- GPP spatial random intercept samples without R and has behavior comparable to
-  the full spatial random intercept model on the same deterministic dataset.
+- GPP and NNGP spatial random intercepts sample without R and have behavior
+  comparable to the full spatial random intercept model on the same
+  deterministic dataset.
 
 Run on LUMI with:
 
@@ -42,3 +43,19 @@ Validated LUMI run `new_features_validation_fixed2_codex`:
 The GPP run recovered `3 / 4` nonzero beta signs while matching full-spatial
 latent recovery closely. Treat this project as a runtime and qualitative
 behavior validation, not as a publication-grade coefficient recovery benchmark.
+
+Validated LUMI run `new_features_nngp_validation_codex`:
+
+- 2 chains, 1000 saved samples, 500 transient iterations, thin 10
+- completed in 13 minutes 5 seconds on `dev-g`
+- TensorFlow 2.16 with an MI250X GPU
+- NNGP compiled, validated, sampled, summarized, and analyzed without R
+- NNGP recovered beta signs `4 / 4`, species PPC `5 / 5`, and site richness
+  PPC `36 / 36`
+- NNGP species MAE was `0.013050` and site richness MAE was `0.570472`
+- NNGP latent recovery was weak on this small setup: Eta/truth correlation
+  `0.030639`, Lambda/truth correlation `0.228298`
+
+This NNGP run validates runtime compatibility and predictive behavior for the
+native path. It does not yet show latent-effect recovery comparable to full
+spatial or GPP on the 36-site validation dataset.

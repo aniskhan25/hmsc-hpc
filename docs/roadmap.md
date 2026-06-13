@@ -230,9 +230,20 @@ Validated LUMI run `new_features_validation_fixed2_codex`:
   recovery
 
 NNGP spatial random-intercept support is implemented and locally smoke-tested.
-The next practical target is deterministic NNGP validation on LUMI against full
-spatial and GPP fits. Spatial random slopes should remain behind that unless a
-real analysis requires them first.
+LUMI run `new_features_nngp_validation_codex` completed the first deterministic
+NNGP validation against full spatial and GPP fits:
+
+- 2 chains, 1000 saved samples, 500 transient iterations, thin 10
+- completed in 13 minutes 5 seconds on `dev-g`
+- NNGP recovered beta signs `4 / 4`, species PPC `5 / 5`, and site richness
+  PPC `36 / 36`
+- NNGP latent recovery was weak on the small 36-site dataset
+  (`Eta/truth = 0.030639`, `Lambda/truth = 0.228298`)
+
+The next practical target is a larger or replicated NNGP validation run to
+separate expected approximation behavior from small-dataset instability.
+Spatial random slopes should remain behind that unless a real analysis requires
+them first.
 
 The deterministic simulator for this validation is available as:
 

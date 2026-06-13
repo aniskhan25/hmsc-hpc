@@ -26,6 +26,7 @@ def test_simulated_new_features_project_structure():
         "random_slope/data/truth_lambda.csv",
         "spatial_gpp/model_spatial_full.yaml",
         "spatial_gpp/model_spatial_gpp.yaml",
+        "spatial_gpp/model_spatial_nngp.yaml",
         "spatial_gpp/data/Y.csv",
         "spatial_gpp/data/X.csv",
         "spatial_gpp/data/study_design.csv",
@@ -57,6 +58,7 @@ def test_new_feature_model_configs_compile_and_validate(tmp_path):
         PROJECT / "random_slope" / "model_random_slope.yaml",
         PROJECT / "spatial_gpp" / "model_spatial_full.yaml",
         PROJECT / "spatial_gpp" / "model_spatial_gpp.yaml",
+        PROJECT / "spatial_gpp" / "model_spatial_nngp.yaml",
     ]
     for config_path in configs:
         model, config = model_from_config(config_path)
@@ -68,10 +70,13 @@ def test_new_feature_model_configs_compile_and_validate(tmp_path):
 def test_new_feature_configs_define_expected_features():
     random_slope = load_model_config(PROJECT / "random_slope" / "model_random_slope.yaml")
     spatial_gpp = load_model_config(PROJECT / "spatial_gpp" / "model_spatial_gpp.yaml")
+    spatial_nngp = load_model_config(PROJECT / "spatial_gpp" / "model_spatial_nngp.yaml")
     assert random_slope["random_levels"]["plot"]["x_formula"] == "~ slope_env"
     assert random_slope["random_levels"]["plot"]["type"] == "iid"
     assert spatial_gpp["random_levels"]["plot"]["type"] == "spatial_gpp"
     assert spatial_gpp["random_levels"]["plot"]["n_knots"] == 9
+    assert spatial_nngp["random_levels"]["plot"]["type"] == "spatial_nngp"
+    assert spatial_nngp["random_levels"]["plot"]["n_neighbors"] == 8
 
 
 def test_new_features_analyzer_smoke(tmp_path):
@@ -90,6 +95,8 @@ def test_new_features_analyzer_smoke(tmp_path):
             str(posteriors["spatial_full"]),
             "--spatial-gpp-posterior",
             str(posteriors["spatial_gpp"]),
+            "--spatial-nngp-posterior",
+            str(posteriors["spatial_nngp"]),
         ],
         check=True,
         text=True,
@@ -97,7 +104,8 @@ def test_new_features_analyzer_smoke(tmp_path):
     )
     assert "Simulated New-Feature Validation Report" in result.stdout
     assert "Random Slope" in result.stdout
-    assert "Spatial GPP" in result.stdout
+    assert "Spatial GPP / NNGP" in result.stdout
+    assert "spatial_nngp" in result.stdout
     assert "lambda_slope_truth_corr" in result.stdout
 
 
@@ -113,10 +121,10 @@ def test_new_features_analyzer_metrics(tmp_path):
     assert random_metrics.loc[1, "eta_truth_corr"] == pytest.approx(1.0)
     assert random_metrics.loc[1, "lambda_slope_truth_corr"] == pytest.approx(1.0)
 
-    assert list(spatial_metrics["model"]) == ["spatial_full", "spatial_gpp"]
-    assert spatial_metrics["beta_sign_recovered"].tolist() == ["4 / 4", "4 / 4"]
-    assert spatial_metrics["eta_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0, 1.0])
-    assert spatial_metrics["lambda_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0, 1.0])
+    assert list(spatial_metrics["model"]) == ["spatial_full", "spatial_gpp", "spatial_nngp"]
+    assert spatial_metrics["beta_sign_recovered"].tolist() == ["4 / 4", "4 / 4", "4 / 4"]
+    assert spatial_metrics["eta_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0, 1.0, 1.0])
+    assert spatial_metrics["lambda_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0, 1.0, 1.0])
 
 
 def _make_posteriors(tmp_path):
@@ -125,11 +133,13 @@ def _make_posteriors(tmp_path):
         "random_slope": tmp_path / "random_slope.h5",
         "spatial_full": tmp_path / "spatial_full.h5",
         "spatial_gpp": tmp_path / "spatial_gpp.h5",
+        "spatial_nngp": tmp_path / "spatial_nngp.h5",
     }
     _write_fixed_posterior(PROJECT / "random_slope", posteriors["random_fixed"])
     _write_random_slope_posterior(PROJECT / "random_slope", posteriors["random_slope"])
     _write_spatial_posterior(PROJECT / "spatial_gpp", posteriors["spatial_full"])
     _write_spatial_posterior(PROJECT / "spatial_gpp", posteriors["spatial_gpp"])
+    _write_spatial_posterior(PROJECT / "spatial_gpp", posteriors["spatial_nngp"])
     return posteriors
 
 
@@ -187,4 +197,3 @@ def _write_hdf5(path, beta, species, eta=None, lam=None):
             + repr(species).replace("'", '"')
             + '},"formula":{"X":"~ env"},"distribution":"probit"}'
         )
-

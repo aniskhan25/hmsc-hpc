@@ -26,6 +26,7 @@ def main() -> None:
     parser.add_argument("--random-slope-posterior", required=True)
     parser.add_argument("--spatial-full-posterior", required=True)
     parser.add_argument("--spatial-gpp-posterior", required=True)
+    parser.add_argument("--spatial-nngp-posterior")
     parser.add_argument("--level", type=float, default=0.95)
     parser.add_argument("--ppc-seed", type=int, default=1)
     parser.add_argument("--output")
@@ -38,6 +39,7 @@ def main() -> None:
             "random_slope": Path(args.random_slope_posterior),
             "spatial_full": Path(args.spatial_full_posterior),
             "spatial_gpp": Path(args.spatial_gpp_posterior),
+            **({"spatial_nngp": Path(args.spatial_nngp_posterior)} if args.spatial_nngp_posterior else {}),
         },
         level=args.level,
         ppc_seed=args.ppc_seed,
@@ -65,7 +67,7 @@ def build_report(
         "",
         random_metrics.to_string(index=False),
         "",
-        "## Spatial GPP",
+        "## Spatial GPP / NNGP",
         "",
         spatial_metrics.to_string(index=False),
     ]
@@ -110,6 +112,11 @@ def build_spatial_gpp_metrics(
     for model_name, config_name, posterior_key in [
         ("spatial_full", "model_spatial_full.yaml", "spatial_full"),
         ("spatial_gpp", "model_spatial_gpp.yaml", "spatial_gpp"),
+        *(
+            [("spatial_nngp", "model_spatial_nngp.yaml", "spatial_nngp")]
+            if posteriors.get("spatial_nngp") is not None
+            else []
+        ),
     ]:
         fit, model = _load_fit(project, config_name, posteriors[posterior_key])
         X = _prediction_data(data["X"], model, random_effects="known")
@@ -236,4 +243,3 @@ def _safe_abs_corr(left: np.ndarray, right: np.ndarray) -> float:
 
 if __name__ == "__main__":
     main()
-

@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-# End-to-end iid random-slope and GPP spatial validation run. Submit from the
-# hmsc-hpc repository root:
+# End-to-end iid random-slope, GPP spatial, and NNGP spatial validation run.
+# Submit from the hmsc-hpc repository root:
 #
 #   RUN_NAME=new_features_validation sbatch docs/lumi_new_features_validation_sbatch.sh
 #
@@ -109,6 +109,7 @@ run_model "random_fixed" "${PROJECT_DIR}/random_slope/model_fixed.yaml"
 run_model "random_slope" "${PROJECT_DIR}/random_slope/model_random_slope.yaml"
 run_model "spatial_full" "${PROJECT_DIR}/spatial_gpp/model_spatial_full.yaml"
 run_model "spatial_gpp" "${PROJECT_DIR}/spatial_gpp/model_spatial_gpp.yaml"
+run_model "spatial_nngp" "${PROJECT_DIR}/spatial_gpp/model_spatial_nngp.yaml"
 
 "${PYTHON}" examples/analyze_new_features_validation.py \
   --project "${PROJECT_DIR}" \
@@ -116,6 +117,7 @@ run_model "spatial_gpp" "${PROJECT_DIR}/spatial_gpp/model_spatial_gpp.yaml"
   --random-slope-posterior "${RUN_ROOT}/random_slope/posterior.h5" \
   --spatial-full-posterior "${RUN_ROOT}/spatial_full/posterior.h5" \
   --spatial-gpp-posterior "${RUN_ROOT}/spatial_gpp/posterior.h5" \
+  --spatial-nngp-posterior "${RUN_ROOT}/spatial_nngp/posterior.h5" \
   --output "${RUN_ROOT}/new_features_validation_report.txt"
 
 echo
@@ -123,5 +125,5 @@ echo "Random fixed posterior: ${RUN_ROOT}/random_fixed/posterior.h5"
 echo "Random slope posterior: ${RUN_ROOT}/random_slope/posterior.h5"
 echo "Spatial full posterior: ${RUN_ROOT}/spatial_full/posterior.h5"
 echo "Spatial GPP posterior: ${RUN_ROOT}/spatial_gpp/posterior.h5"
+echo "Spatial NNGP posterior: ${RUN_ROOT}/spatial_nngp/posterior.h5"
 echo "Validation report: ${RUN_ROOT}/new_features_validation_report.txt"
-

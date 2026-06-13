@@ -13,7 +13,7 @@
 | Full spatial random intercepts | Supported |
 | iid random slopes | Supported for native TensorFlow sampling; spatial random slopes remain guarded |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
-| NNGP spatial effects | Supported for native TensorFlow sampling; smoke-tested locally, LUMI validation pending |
+| NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent recovery needs more validation |
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
@@ -132,6 +132,7 @@ without R.
 | iid random-slope probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `48 / 48`, Eta/truth correlation `0.434882`, slope Lambda/truth correlation `0.561890` |
 | full spatial random-intercept probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.827719`, Lambda/truth correlation `0.921528` |
 | GPP spatial random-intercept probit | `new_features_validation_fixed2_codex` | Completed on LUMI; beta signs recovered `3 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.819624`, Lambda/truth correlation `0.929552` |
+| NNGP spatial random-intercept probit | `new_features_nngp_validation_codex` | Completed on LUMI; beta signs recovered `4 / 4`, species PPC covered `5 / 5`, site richness PPC covered `36 / 36`, Eta/truth correlation `0.030639`, Lambda/truth correlation `0.228298` |
 
 The run used 2 chains, 1000 saved samples, 500 transient iterations, and thin
 10. It completed in 8 minutes 50 seconds on `dev-g` with TensorFlow 2.16 and
@@ -139,11 +140,17 @@ an MI250X GPU. The GPP result closely matched full-spatial latent recovery but
 missed one coefficient sign, so this validation supports runtime compatibility
 and qualitative behavior rather than strict coefficient recovery.
 
+Follow-up run `new_features_nngp_validation_codex` added NNGP to the same
+workflow. It completed in 13 minutes 5 seconds on `dev-g` and validated NNGP
+runtime compatibility and PPC behavior, but latent recovery was weak on the
+small 36-site dataset. Treat NNGP latent-effect summaries as provisional until
+a larger or replicated spatial validation run is completed.
+
 ## Main Pending Features
 
 | Feature | Next work |
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
 | Random slopes | iid random slopes are validated; spatial random slopes remain future work |
-| NNGP spatial effects | Add deterministic validation project and LUMI comparison against full spatial and GPP |
+| NNGP spatial effects | Add larger or replicated validation to assess latent recovery beyond runtime/PPC behavior |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |
