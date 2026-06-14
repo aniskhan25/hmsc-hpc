@@ -7,6 +7,7 @@ from pyhmsc.simulate import (
     simulate_fixed_effect_data,
     simulate_random_slope_effect_data,
     simulate_spatial_effect_data,
+    simulate_spatial_random_slope_effect_data,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "simulate_fixed_effect_data",
     "simulate_random_slope_effect_data",
     "simulate_spatial_effect_data",
+    "simulate_spatial_random_slope_effect_data",
 ]

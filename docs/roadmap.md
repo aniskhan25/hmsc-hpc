@@ -240,9 +240,10 @@ NNGP validation against full spatial and GPP fits:
 - NNGP latent recovery was weak on the small 36-site dataset
   (`Eta/truth = 0.030639`, `Lambda/truth = 0.228298`)
 
-The next practical target is deterministic full/GPP/NNGP spatial random-slope
-validation on LUMI. After that, run a larger or replicated NNGP validation to
-separate expected approximation behavior from small-dataset instability.
+The deterministic full/GPP/NNGP spatial random-slope validation workflow is now
+implemented locally. The next practical target is running it on LUMI. After
+that, run a larger or replicated NNGP validation to separate expected
+approximation behavior from small-dataset instability.
 
 The deterministic simulator for this validation is available as:
 
@@ -284,3 +285,42 @@ python examples/analyze_spatial_validation.py \
 It reports beta sign recovery, species and site richness PPC summaries,
 nearest-neighbor residual correlation, and Eta-to-truth correlation for random
 effect models.
+
+The deterministic simulator for the spatial random-slope validation is:
+
+```python
+from pyhmsc import simulate_spatial_random_slope_effect_data
+
+Y, X, study_design, truth = simulate_spatial_random_slope_effect_data(seed=41)
+```
+
+The corresponding example project is:
+
+```text
+examples/projects/simulated_spatial_random_slope_validation/
+  model_spatial_full.yaml
+  model_spatial_gpp.yaml
+  model_spatial_nngp.yaml
+  data/
+    Y.csv
+    X.csv
+    study_design.csv
+    truth_beta.csv
+    truth_eta.csv
+    truth_lambda.csv
+```
+
+The LUMI job script is:
+
+```bash
+RUN_NAME=spatial_random_slope_validation sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
+```
+
+The analyzer is:
+
+```bash
+python examples/analyze_spatial_random_slope_validation.py \
+  --spatial-full-posterior run/spatial_full/posterior.h5 \
+  --spatial-gpp-posterior run/spatial_gpp/posterior.h5 \
+  --spatial-nngp-posterior run/spatial_nngp/posterior.h5
+```

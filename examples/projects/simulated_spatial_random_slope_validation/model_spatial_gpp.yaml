@@ -1,0 +1,18 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ env"
+distribution: probit
+chains: 2
+samples: 1000
+transient: 500
+thin: 10
+study_design: data/study_design.csv
+random_levels:
+  plot:
+    column: plot
+    type: spatial_gpp
+    coords: [xcoord, ycoord]
+    n_knots: 9
+    x_formula: "~ slope_env"
+    nf: 1

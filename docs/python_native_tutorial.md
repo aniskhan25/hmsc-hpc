@@ -133,6 +133,18 @@ posterior predictive checks (`5 / 5` species, `36 / 36` site richness). The
 full spatial random-intercept model had stronger Eta/truth recovery
 (`0.868592`) than the iid random-intercept model (`0.675717`).
 
+The deterministic spatial random-slope validation can be run as:
+
+```bash
+RUN_NAME=spatial_random_slope_validation sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
+```
+
+This runs full spatial, GPP spatial, and NNGP spatial random-slope models for
+`examples/projects/simulated_spatial_random_slope_validation`, then writes
+`spatial_random_slope_validation_report.txt` under the scratch run directory.
+The analyzer reports beta sign recovery, posterior predictive coverage, Eta
+recovery, and both Lambda intercept and slope recovery.
+
 The compact real-data big-spatial plant validation can be run as:
 
 ```bash

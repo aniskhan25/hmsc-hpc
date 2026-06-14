@@ -172,6 +172,83 @@ def simulate_random_slope_effect_data(
     return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
 
 
+def simulate_spatial_random_slope_effect_data(
+    n_sites: int = 49,
+    n_species: int = 5,
+    beta: np.ndarray | None = None,
+    spatial_range: float = 0.28,
+    spatial_sd: float = 1.0,
+    distr: str = "probit",
+    seed: int = 41,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Simulate a deterministic spatial random-slope validation dataset.
+
+    The simulation has one fixed environmental covariate, one spatial latent
+    factor over sites, and a site-level slope covariate that modulates the
+    latent factor through species-specific loadings. It targets the native
+    full/GPP/NNGP spatial random-slope sampler path.
+    """
+    if n_sites <= 3:
+        raise ValueError("n_sites must be greater than 3")
+    if n_species <= 1:
+        raise ValueError("n_species must be greater than 1")
+    if spatial_range <= 0 or spatial_sd <= 0:
+        raise ValueError("spatial_range and spatial_sd must be positive")
+    rng = np.random.default_rng(seed)
+    coords = _unit_square_grid(n_sites, rng)
+    env = rng.normal(size=n_sites)
+    slope_env = np.sin(2.0 * np.pi * coords[:, 0]) + 0.5 * np.cos(2.0 * np.pi * coords[:, 1])
+    slope_env = (slope_env - slope_env.mean()) / max(slope_env.std(ddof=1), np.finfo(float).eps)
+    beta = np.asarray(beta if beta is not None else _default_spatial_beta(n_species), dtype=float)
+    if beta.shape != (2, n_species):
+        raise ValueError(f"beta must have shape {(2, n_species)}")
+    dist = _pairwise_distances(coords)
+    weights = np.exp(-dist / spatial_range)
+    raw_latent = rng.normal(size=n_sites)
+    latent = weights @ raw_latent / np.maximum(weights.sum(axis=1), np.finfo(float).eps)
+    latent = latent * spatial_sd
+    latent = (latent - latent.mean()) / max(latent.std(ddof=1), np.finfo(float).eps)
+    lambda_intercept = np.linspace(0.9, -0.9, n_species)
+    lambda_slope = np.linspace(-0.8, 0.8, n_species)
+    design = np.column_stack([np.ones(n_sites), env])
+    random_effect = latent[:, None] * (
+        lambda_intercept[None, :] + slope_env[:, None] * lambda_slope[None, :]
+    )
+    linear = design @ beta + random_effect
+    key = distr.lower()
+    if key in {"normal", "gaussian"}:
+        Y = linear + rng.normal(scale=0.12, size=linear.shape)
+    elif key == "poisson":
+        Y = rng.poisson(np.exp(np.clip(linear, -6, 6)))
+    elif key in {"probit", "bernoulli", "binomial"}:
+        Y = rng.binomial(1, _normal_cdf(linear))
+    else:
+        raise ValueError(f"Unsupported distribution {distr!r}")
+    site_names = [f"site_{idx + 1:03d}" for idx in range(n_sites)]
+    species = [f"sp{idx + 1}" for idx in range(n_species)]
+    X = pd.DataFrame({"env": env}, index=site_names)
+    study_design = pd.DataFrame(
+        {
+            "plot": site_names,
+            "slope_env": slope_env,
+            "xcoord": coords[:, 0],
+            "ycoord": coords[:, 1],
+        },
+        index=site_names,
+    )
+    truth = {
+        "beta": pd.DataFrame(beta, index=["Intercept", "env"], columns=species),
+        "site_effect": pd.DataFrame({"eta": latent}, index=site_names),
+        "lambda": pd.DataFrame(
+            [lambda_intercept, lambda_slope],
+            index=["Intercept", "slope_env"],
+            columns=species,
+        ),
+        "linear_predictor": pd.DataFrame(linear, index=site_names, columns=species),
+    }
+    return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
+
+
 def _unit_square_grid(n_sites: int, rng: np.random.Generator) -> np.ndarray:
     side = int(np.ceil(np.sqrt(n_sites)))
     grid = np.array([(x, y) for y in np.linspace(0, 1, side) for x in np.linspace(0, 1, side)], dtype=float)
