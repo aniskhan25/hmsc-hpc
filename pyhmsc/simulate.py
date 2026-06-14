@@ -178,6 +178,9 @@ def simulate_spatial_random_slope_effect_data(
     beta: np.ndarray | None = None,
     spatial_range: float = 0.28,
     spatial_sd: float = 1.0,
+    lambda_intercept_scale: float = 0.9,
+    lambda_slope_scale: float = 0.8,
+    noise_sd: float = 0.12,
     distr: str = "probit",
     seed: int = 41,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
@@ -194,6 +197,10 @@ def simulate_spatial_random_slope_effect_data(
         raise ValueError("n_species must be greater than 1")
     if spatial_range <= 0 or spatial_sd <= 0:
         raise ValueError("spatial_range and spatial_sd must be positive")
+    if lambda_intercept_scale <= 0 or lambda_slope_scale <= 0:
+        raise ValueError("lambda scales must be positive")
+    if noise_sd <= 0:
+        raise ValueError("noise_sd must be positive")
     rng = np.random.default_rng(seed)
     coords = _unit_square_grid(n_sites, rng)
     env = rng.normal(size=n_sites)
@@ -208,8 +215,8 @@ def simulate_spatial_random_slope_effect_data(
     latent = weights @ raw_latent / np.maximum(weights.sum(axis=1), np.finfo(float).eps)
     latent = latent * spatial_sd
     latent = (latent - latent.mean()) / max(latent.std(ddof=1), np.finfo(float).eps)
-    lambda_intercept = np.linspace(0.9, -0.9, n_species)
-    lambda_slope = np.linspace(-0.8, 0.8, n_species)
+    lambda_intercept = np.linspace(lambda_intercept_scale, -lambda_intercept_scale, n_species)
+    lambda_slope = np.linspace(-lambda_slope_scale, lambda_slope_scale, n_species)
     design = np.column_stack([np.ones(n_sites), env])
     random_effect = latent[:, None] * (
         lambda_intercept[None, :] + slope_env[:, None] * lambda_slope[None, :]
@@ -217,7 +224,7 @@ def simulate_spatial_random_slope_effect_data(
     linear = design @ beta + random_effect
     key = distr.lower()
     if key in {"normal", "gaussian"}:
-        Y = linear + rng.normal(scale=0.12, size=linear.shape)
+        Y = linear + rng.normal(scale=noise_sd, size=linear.shape)
     elif key == "poisson":
         Y = rng.poisson(np.exp(np.clip(linear, -6, 6)))
     elif key in {"probit", "bernoulli", "binomial"}:

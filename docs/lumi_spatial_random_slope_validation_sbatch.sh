@@ -21,6 +21,7 @@ set -euo pipefail
 #   SAMPLES=1000 TRANSIENT=500 THIN=10 VERBOSE=100
 #   SKIP_EXISTING=1
 #   MODELS="spatial_gpp spatial_nngp"
+#   PROJECT_DIR="${PWD}/examples/projects/simulated_spatial_random_slope_strong_validation"
 
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
@@ -29,7 +30,7 @@ PYTHON="${VENV}/bin/python3"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 RUN_NAME="${RUN_NAME:-spatial_random_slope_validation_${SLURM_JOB_ID:-manual}}"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
-PROJECT_DIR="${REPO_DIR}/examples/projects/simulated_spatial_random_slope_validation"
+PROJECT_DIR="${PROJECT_DIR:-${REPO_DIR}/examples/projects/simulated_spatial_random_slope_validation}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 MODELS="${MODELS:-spatial_full spatial_gpp spatial_nngp}"
 

@@ -256,11 +256,38 @@ spatial posterior:
 
 The sbatch workflow is resumable with `SKIP_EXISTING=1` and can target selected
 models with `MODELS="spatial_gpp spatial_nngp"`, which avoids rerunning
-completed posteriors after a post-processing or stale-code failure. The next
-practical target is improving or stress-testing latent slope recovery if stronger
-random-slope loading recovery is needed. A larger or replicated NNGP validation
-would also help separate expected approximation behavior from small-dataset
-instability.
+completed posteriors after a post-processing or stale-code failure.
+
+A stronger validation project is now available to test whether weak Lambda slope
+recovery is signal-limited rather than a sampler-path issue:
+
+```text
+examples/projects/simulated_spatial_random_slope_strong_validation/
+  model_spatial_full.yaml
+  model_spatial_gpp.yaml
+  model_spatial_nngp.yaml
+  data/
+    Y.csv
+    X.csv
+    study_design.csv
+    truth_beta.csv
+    truth_eta.csv
+    truth_lambda.csv
+```
+
+It uses `n_sites=81`, `n_species=6`, `distr="normal"`,
+`lambda_slope_scale=1.8`, and `noise_sd=0.05`. Run it on LUMI with:
+
+```bash
+RUN_NAME=spatial_random_slope_strong_validation \
+PROJECT_DIR="${PWD}/examples/projects/simulated_spatial_random_slope_strong_validation" \
+SAMPLES=2000 TRANSIENT=1000 THIN=10 \
+sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
+```
+
+The next practical target is running this stronger scenario on LUMI. A larger or
+replicated NNGP validation would also help separate expected approximation
+behavior from small-dataset instability.
 
 The deterministic simulator for this validation is available as:
 

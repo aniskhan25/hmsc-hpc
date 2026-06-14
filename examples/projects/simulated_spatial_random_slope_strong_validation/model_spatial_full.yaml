@@ -1,0 +1,17 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ env"
+distribution: normal
+chains: 2
+samples: 2000
+transient: 1000
+thin: 10
+study_design: data/study_design.csv
+random_levels:
+  plot:
+    column: plot
+    type: spatial_full
+    coords: [xcoord, ycoord]
+    x_formula: "~ slope_env"
+    nf: 1

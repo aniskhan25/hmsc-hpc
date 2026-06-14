@@ -13,6 +13,7 @@ from pyhmsc.validation import validate_compiled_native_model
 
 
 PROJECT = Path("examples/projects/simulated_spatial_random_slope_validation")
+STRONG_PROJECT = Path("examples/projects/simulated_spatial_random_slope_strong_validation")
 
 
 def test_spatial_random_slope_project_structure():
@@ -31,6 +32,24 @@ def test_spatial_random_slope_project_structure():
     ]
     for relative in expected:
         assert (PROJECT / relative).exists(), relative
+
+
+def test_strong_spatial_random_slope_project_structure():
+    expected = [
+        "README.md",
+        "model_spatial_full.yaml",
+        "model_spatial_gpp.yaml",
+        "model_spatial_nngp.yaml",
+        "data/Y.csv",
+        "data/X.csv",
+        "data/study_design.csv",
+        "data/truth_beta.csv",
+        "data/truth_eta.csv",
+        "data/truth_lambda.csv",
+        "data/truth_linear_predictor.csv",
+    ]
+    for relative in expected:
+        assert (STRONG_PROJECT / relative).exists(), relative
 
 
 def test_spatial_random_slope_project_files_match_simulator():
@@ -52,12 +71,33 @@ def test_spatial_random_slope_project_files_match_simulator():
     )
 
 
+def test_strong_spatial_random_slope_project_files_match_simulator():
+    Y, X, study_design, truth = simulate_spatial_random_slope_effect_data(
+        n_sites=81,
+        n_species=6,
+        spatial_range=0.32,
+        spatial_sd=1.4,
+        lambda_intercept_scale=1.1,
+        lambda_slope_scale=1.8,
+        noise_sd=0.05,
+        distr="normal",
+        seed=91,
+    )
+    base = STRONG_PROJECT / "data"
+    pd.testing.assert_frame_equal(pd.read_csv(base / "Y.csv", index_col=0), Y)
+    pd.testing.assert_frame_equal(pd.read_csv(base / "X.csv", index_col=0), X)
+    pd.testing.assert_frame_equal(pd.read_csv(base / "study_design.csv", index_col=0), study_design)
+    pd.testing.assert_frame_equal(pd.read_csv(base / "truth_beta.csv", index_col=0), truth["beta"])
+    pd.testing.assert_frame_equal(pd.read_csv(base / "truth_eta.csv", index_col=0), truth["site_effect"])
+    pd.testing.assert_frame_equal(pd.read_csv(base / "truth_lambda.csv", index_col=0), truth["lambda"])
+    pd.testing.assert_frame_equal(
+        pd.read_csv(base / "truth_linear_predictor.csv", index_col=0),
+        truth["linear_predictor"],
+    )
+
+
 def test_spatial_random_slope_configs_compile_and_validate(tmp_path):
-    configs = [
-        PROJECT / "model_spatial_full.yaml",
-        PROJECT / "model_spatial_gpp.yaml",
-        PROJECT / "model_spatial_nngp.yaml",
-    ]
+    configs = _model_configs(PROJECT) + _model_configs(STRONG_PROJECT)
     for config_path in configs:
         model, config = model_from_config(config_path)
         compiled = model.compile(tmp_path / config_path.stem, chains=config["chains"])
@@ -74,6 +114,19 @@ def test_spatial_random_slope_configs_define_expected_features():
     assert gpp["random_levels"]["plot"]["n_knots"] == 9
     assert nngp["random_levels"]["plot"]["type"] == "spatial_nngp"
     assert nngp["random_levels"]["plot"]["n_neighbors"] == 8
+    for config in [full, gpp, nngp]:
+        assert config["random_levels"]["plot"]["x_formula"] == "~ slope_env"
+
+
+def test_strong_spatial_random_slope_configs_define_expected_features():
+    full = load_model_config(STRONG_PROJECT / "model_spatial_full.yaml")
+    gpp = load_model_config(STRONG_PROJECT / "model_spatial_gpp.yaml")
+    nngp = load_model_config(STRONG_PROJECT / "model_spatial_nngp.yaml")
+    assert full["distribution"] == "normal"
+    assert full["samples"] == 2000
+    assert full["transient"] == 1000
+    assert gpp["random_levels"]["plot"]["n_knots"] == 16
+    assert nngp["random_levels"]["plot"]["n_neighbors"] == 10
     for config in [full, gpp, nngp]:
         assert config["random_levels"]["plot"]["x_formula"] == "~ slope_env"
 
@@ -124,6 +177,14 @@ def _make_posteriors(tmp_path):
     for path in posteriors.values():
         _write_spatial_random_slope_posterior(PROJECT, path)
     return posteriors
+
+
+def _model_configs(project):
+    return [
+        project / "model_spatial_full.yaml",
+        project / "model_spatial_gpp.yaml",
+        project / "model_spatial_nngp.yaml",
+    ]
 
 
 def _write_spatial_random_slope_posterior(project, path):

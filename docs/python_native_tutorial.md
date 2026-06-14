@@ -154,6 +154,19 @@ Lambda intercept recovery was strong for all three (`0.886723`, `0.921705`,
 `0.978135`), while Lambda slope recovery was weak to moderate (`0.022262`,
 `0.384912`, `0.331418`).
 
+A stronger companion scenario is available for testing whether weak Lambda slope
+recovery is signal-limited:
+
+```bash
+RUN_NAME=spatial_random_slope_strong_validation \
+PROJECT_DIR="${PWD}/examples/projects/simulated_spatial_random_slope_strong_validation" \
+SAMPLES=2000 TRANSIENT=1000 THIN=10 \
+sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
+```
+
+This uses a normal response, 81 sites, lower observation noise, and stronger
+random-slope loadings.
+
 The compact real-data big-spatial plant validation can be run as:
 
 ```bash
