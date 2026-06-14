@@ -12,9 +12,9 @@
 | iid random-intercept real-data validation | Supported; Whittaker plant iid site-level run validated on LUMI |
 | Full spatial random intercepts | Supported |
 | iid random slopes | Supported for native TensorFlow sampling |
-| Full spatial random slopes | Supported for native TensorFlow sampling; deterministic validation workflow added, LUMI run pending |
-| GPP spatial random slopes | Supported for native TensorFlow sampling; deterministic validation workflow added, LUMI run pending |
-| NNGP spatial random slopes | Supported for native TensorFlow sampling; deterministic validation workflow added, LUMI run pending |
+| Full spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
+| GPP spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
+| NNGP spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
 | NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent recovery needs more validation |
 | HDF5 posterior output | Supported |
@@ -154,6 +154,6 @@ a larger or replicated spatial validation run is completed.
 | Feature | Next work |
 | --- | --- |
 | Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
-| Random slopes | Run deterministic full/GPP/NNGP spatial random-slope validation on LUMI |
+| Random slopes | Improve latent recovery for spatial random-slope slope loadings if stronger recovery is needed |
 | NNGP spatial effects | Add larger or replicated validation to assess latent recovery beyond runtime/PPC behavior |
 | R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |

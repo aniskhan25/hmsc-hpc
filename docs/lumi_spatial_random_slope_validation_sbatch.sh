@@ -19,6 +19,8 @@ set -euo pipefail
 #
 # Optional overrides:
 #   SAMPLES=1000 TRANSIENT=500 THIN=10 VERBOSE=100
+#   SKIP_EXISTING=1
+#   MODELS="spatial_gpp spatial_nngp"
 
 PROJECT_ID="project_462000131"
 USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
@@ -28,6 +30,8 @@ REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 RUN_NAME="${RUN_NAME:-spatial_random_slope_validation_${SLURM_JOB_ID:-manual}}"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 PROJECT_DIR="${REPO_DIR}/examples/projects/simulated_spatial_random_slope_validation"
+SKIP_EXISTING="${SKIP_EXISTING:-1}"
+MODELS="${MODELS:-spatial_full spatial_gpp spatial_nngp}"
 
 mkdir -p output "${RUN_ROOT}"
 
@@ -59,16 +63,24 @@ run_model() {
   echo "== ${name} =="
   echo "Model config: ${config}"
 
-  "${PYTHON}" -m pyhmsc compile "${config}" --output "${compiled}"
+  if [[ "${SKIP_EXISTING}" == "1" && -s "${compiled}/init.json" ]]; then
+    echo "Compiled init exists; skipping compile: ${compiled}/init.json"
+  else
+    "${PYTHON}" -m pyhmsc compile "${config}" --output "${compiled}"
+  fi
   "${PYTHON}" -m pyhmsc validate-init "${compiled}/init.json" --strict
 
-  srun "${PYTHON}" -m pyhmsc sample \
-    "${compiled}/init.json" \
-    --output "${posterior}" \
-    --samples "${SAMPLES:-1000}" \
-    --transient "${TRANSIENT:-500}" \
-    --thin "${THIN:-10}" \
-    --verbose "${VERBOSE:-100}"
+  if [[ "${SKIP_EXISTING}" == "1" && -s "${posterior}" ]]; then
+    echo "Posterior exists; skipping sample: ${posterior}"
+  else
+    srun "${PYTHON}" -m pyhmsc sample \
+      "${compiled}/init.json" \
+      --output "${posterior}" \
+      --samples "${SAMPLES:-1000}" \
+      --transient "${TRANSIENT:-500}" \
+      --thin "${THIN:-10}" \
+      --verbose "${VERBOSE:-100}"
+  fi
 
   "${PYTHON}" -m pyhmsc summarize "${posterior}" --param Beta \
     > "${model_run_root}/beta_summary.txt"
@@ -92,16 +104,36 @@ run_model() {
     --output "${model_run_root}/lambda_slope_diagnostics.txt"
 }
 
-run_model "spatial_full" "${PROJECT_DIR}/model_spatial_full.yaml"
-run_model "spatial_gpp" "${PROJECT_DIR}/model_spatial_gpp.yaml"
-run_model "spatial_nngp" "${PROJECT_DIR}/model_spatial_nngp.yaml"
+for model_name in ${MODELS}; do
+  case "${model_name}" in
+    spatial_full)
+      run_model "spatial_full" "${PROJECT_DIR}/model_spatial_full.yaml"
+      ;;
+    spatial_gpp)
+      run_model "spatial_gpp" "${PROJECT_DIR}/model_spatial_gpp.yaml"
+      ;;
+    spatial_nngp)
+      run_model "spatial_nngp" "${PROJECT_DIR}/model_spatial_nngp.yaml"
+      ;;
+    *)
+      echo "Unknown model in MODELS: ${model_name}" >&2
+      exit 2
+      ;;
+  esac
+done
 
-"${PYTHON}" examples/analyze_spatial_random_slope_validation.py \
-  --project "${PROJECT_DIR}" \
-  --spatial-full-posterior "${RUN_ROOT}/spatial_full/posterior.h5" \
-  --spatial-gpp-posterior "${RUN_ROOT}/spatial_gpp/posterior.h5" \
-  --spatial-nngp-posterior "${RUN_ROOT}/spatial_nngp/posterior.h5" \
-  --output "${RUN_ROOT}/spatial_random_slope_validation_report.txt"
+if [[ -s "${RUN_ROOT}/spatial_full/posterior.h5" \
+   && -s "${RUN_ROOT}/spatial_gpp/posterior.h5" \
+   && -s "${RUN_ROOT}/spatial_nngp/posterior.h5" ]]; then
+  "${PYTHON}" examples/analyze_spatial_random_slope_validation.py \
+    --project "${PROJECT_DIR}" \
+    --spatial-full-posterior "${RUN_ROOT}/spatial_full/posterior.h5" \
+    --spatial-gpp-posterior "${RUN_ROOT}/spatial_gpp/posterior.h5" \
+    --spatial-nngp-posterior "${RUN_ROOT}/spatial_nngp/posterior.h5" \
+    --output "${RUN_ROOT}/spatial_random_slope_validation_report.txt"
+else
+  echo "Skipping analyzer because not all posterior files are present yet."
+fi
 
 echo
 echo "Spatial full posterior: ${RUN_ROOT}/spatial_full/posterior.h5"

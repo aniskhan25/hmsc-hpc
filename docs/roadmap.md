@@ -241,9 +241,26 @@ NNGP validation against full spatial and GPP fits:
   (`Eta/truth = 0.030639`, `Lambda/truth = 0.228298`)
 
 The deterministic full/GPP/NNGP spatial random-slope validation workflow is now
-implemented locally. The next practical target is running it on LUMI. After
-that, run a larger or replicated NNGP validation to separate expected
-approximation behavior from small-dataset instability.
+implemented and completed on LUMI. Run `spatial_random_slope_validation_cli_fixed`
+completed in two stages after resuming the GPP/NNGP models from an existing full
+spatial posterior:
+
+- full spatial, GPP, and NNGP all recovered beta signs `4 / 4`
+- all three covered species PPC `5 / 5` and site richness PPC `49 / 49`
+- Eta/truth recovery was `0.831875` full spatial, `0.766687` GPP, and
+  `0.107724` NNGP
+- Lambda intercept/truth recovery was strong: `0.886723` full spatial,
+  `0.921705` GPP, and `0.978135` NNGP
+- Lambda slope/truth recovery was weak to moderate: `0.022262` full spatial,
+  `0.384912` GPP, and `0.331418` NNGP
+
+The sbatch workflow is resumable with `SKIP_EXISTING=1` and can target selected
+models with `MODELS="spatial_gpp spatial_nngp"`, which avoids rerunning
+completed posteriors after a post-processing or stale-code failure. The next
+practical target is improving or stress-testing latent slope recovery if stronger
+random-slope loading recovery is needed. A larger or replicated NNGP validation
+would also help separate expected approximation behavior from small-dataset
+instability.
 
 The deterministic simulator for this validation is available as:
 

@@ -145,6 +145,15 @@ This runs full spatial, GPP spatial, and NNGP spatial random-slope models for
 The analyzer reports beta sign recovery, posterior predictive coverage, Eta
 recovery, and both Lambda intercept and slope recovery.
 
+Validated LUMI run `spatial_random_slope_validation_cli_fixed` completed the
+full/GPP/NNGP spatial random-slope validation on `dev-g`. The run recovered beta
+signs for all three models (`4 / 4`) and covered all species and site richness
+checks (`5 / 5` species, `49 / 49` sites). Eta/truth recovery was strongest for
+full spatial (`0.831875`) and GPP (`0.766687`) and weak for NNGP (`0.107724`);
+Lambda intercept recovery was strong for all three (`0.886723`, `0.921705`,
+`0.978135`), while Lambda slope recovery was weak to moderate (`0.022262`,
+`0.384912`, `0.331418`).
+
 The compact real-data big-spatial plant validation can be run as:
 
 ```bash
