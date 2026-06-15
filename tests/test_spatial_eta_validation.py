@@ -101,8 +101,9 @@ def test_spatial_eta_analyzer_smoke(tmp_path):
     assert "Simulated Spatial Eta Validation Report" in result.stdout
     assert "spatial_full" in result.stdout
     assert "spatial_nngp_20" in result.stdout
-    assert "eta_truth_corr" in result.stdout
-    assert "eta_rmse_scaled" in result.stdout
+    assert "eta_raw_truth_corr" in result.stdout
+    assert "eta_aligned_truth_corr" in result.stdout
+    assert "eta_aligned_rmse_scaled" in result.stdout
 
 
 def test_spatial_eta_analyzer_metrics(tmp_path):
@@ -111,7 +112,8 @@ def test_spatial_eta_analyzer_metrics(tmp_path):
 
     assert list(metrics["model"]) == MODEL_NAMES
     assert metrics["beta_sign_recovered"].tolist() == ["6 / 6"] * len(MODEL_NAMES)
-    assert metrics["eta_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0] * len(MODEL_NAMES))
+    assert metrics["eta_raw_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0] * len(MODEL_NAMES))
+    assert metrics["eta_aligned_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0] * len(MODEL_NAMES))
     assert metrics["lambda_truth_corr"].astype(float).to_numpy() == pytest.approx([1.0] * len(MODEL_NAMES))
     assert metrics.loc[metrics["model"] == "spatial_nngp_5", "n_neighbors"].iloc[0] == 5
     assert metrics.loc[metrics["model"] == "spatial_nngp_20", "n_neighbors"].iloc[0] == 20

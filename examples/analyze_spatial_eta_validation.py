@@ -93,9 +93,11 @@ def build_metrics_table(
                 **_model_settings(config),
                 "beta_sign_recovered": _beta_sign_recovered(fit, data["truth_beta"]),
                 **_ppc_metrics(fit, X, data["Y"], level, ppc_seed),
-                "eta_truth_corr": _eta_truth_correlation(fit, data["truth_eta"]),
+                "eta_raw_truth_corr": _eta_truth_correlation(fit, data["truth_eta"], align=False),
+                "eta_aligned_truth_corr": _eta_truth_correlation(fit, data["truth_eta"], align=True),
                 "lambda_truth_corr": _lambda_truth_correlation(fit, data["truth_lambda"]),
-                "eta_rmse_scaled": _eta_scaled_rmse(fit, data["truth_eta"]),
+                "eta_raw_rmse_scaled": _eta_scaled_rmse(fit, data["truth_eta"], align=False),
+                "eta_aligned_rmse_scaled": _eta_scaled_rmse(fit, data["truth_eta"], align=True),
             }
         )
     return pd.DataFrame(rows)
@@ -196,9 +198,9 @@ def _beta_sign_recovered(fit: HmscFit, truth_beta: pd.DataFrame) -> str:
     return f"{recovered} / {checked}"
 
 
-def _eta_truth_correlation(fit: HmscFit, truth_eta: pd.DataFrame) -> float | str:
+def _eta_truth_correlation(fit: HmscFit, truth_eta: pd.DataFrame, align: bool = False) -> float | str:
     try:
-        eta = fit.eta_mean(level=0)
+        eta = fit.eta_mean(level=0, align=align)
     except ValueError:
         return "n/a"
     common = [name for name in truth_eta.index if name in eta.index]
@@ -210,9 +212,9 @@ def _eta_truth_correlation(fit: HmscFit, truth_eta: pd.DataFrame) -> float | str
     )
 
 
-def _eta_scaled_rmse(fit: HmscFit, truth_eta: pd.DataFrame) -> float | str:
+def _eta_scaled_rmse(fit: HmscFit, truth_eta: pd.DataFrame, align: bool = False) -> float | str:
     try:
-        eta = fit.eta_mean(level=0)
+        eta = fit.eta_mean(level=0, align=align)
     except ValueError:
         return "n/a"
     common = [name for name in truth_eta.index if name in eta.index]

@@ -196,10 +196,28 @@ missing models.
 Validated LUMI run `spatial_eta_validation_real` completed after one resume. The
 first job, `19273473`, timed out after completing full spatial, GPP, NNGP-5,
 and NNGP-10; resume job `19275812` completed NNGP-20 in 9 minutes 27 seconds
-and generated the combined report. Full spatial recovered Eta/truth correlation
-`0.988845`, GPP recovered `0.894420`, while NNGP remained weak at neighbor
-counts 5, 10, and 20 (`0.162178`, `0.101626`, `0.199853`). All models covered
-species PPC `6 / 6` and site richness PPC `100 / 100`.
+and generated the combined report. Raw NNGP Eta means were weak because of
+latent-factor sign switching (`0.162178`, `0.101626`, `0.199853` for neighbor
+counts 5, 10, and 20), but aligned Eta recovery was good (`0.926203`,
+`0.926601`, `0.935971`). Full spatial and GPP aligned Eta recovery were
+`0.986014` and `0.984491`. All models covered species PPC `6 / 6` and site
+richness PPC `100 / 100`.
+
+A smaller multi-factor NNGP validation is available for the `nf > 1` Eta updater
+path:
+
+```bash
+RUN_NAME=spatial_multifactor_eta_validation \
+SAMPLES=1000 TRANSIENT=500 THIN=10 \
+sbatch docs/lumi_spatial_multifactor_eta_validation_sbatch.sh
+```
+
+Validated run `spatial_multifactor_eta_validation_real` completed sampling on
+LUMI as job `19276714`. The fixed analyzer regenerated the report from the
+completed posterior: beta signs recovered `8 / 8`, species PPC covered `8 / 8`,
+site richness PPC covered `64 / 64`, aligned Eta mean/truth correlation was
+`0.856748`, aligned Lambda mean/truth correlation was `0.916068`, and
+association truth correlation was `0.981125`.
 
 The compact real-data big-spatial plant validation can be run as:
 

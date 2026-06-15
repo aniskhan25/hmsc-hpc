@@ -16,7 +16,7 @@
 | GPP spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed |
 | NNGP spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed; Eta recovery remains weaker than full/GPP |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
-| NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent Eta recovery remains weak in focused validation |
+| NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, aligned latent Eta recovery validated |
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
@@ -40,6 +40,8 @@
 | Simulated spatial validation analyzer | Supported; fixed/iid/spatial LUMI validation completed |
 | Simulated spatial Eta validation project | Added with full/GPP/NNGP neighbor-count configs; LUMI validation completed after resume |
 | Simulated spatial Eta validation analyzer | Supported; reports Eta recovery versus NNGP neighbor count |
+| Simulated multi-factor NNGP Eta validation project | Added with `nf=2`; LUMI sampler validation completed |
+| Simulated multi-factor NNGP Eta validation analyzer | Supported; matches adaptive extra factors to known truth |
 | Simulated random-slope/GPP validation project | Supported; fixed/random-slope/full-spatial/GPP LUMI validation completed |
 | Big spatial real-data validation project | Added with fixed, iid, and full-spatial configs |
 | Big spatial real-data analyzer | Supported; fixed/iid/spatial LUMI validation completed |
@@ -94,8 +96,9 @@ been run on LUMI without R.
 The run used 2 chains, 2000 saved samples, 1000 transient iterations, and thin
 10. The Slurm job completed in 20 minutes 41 seconds on `dev-g` with TensorFlow
 2.16 and an MI250X GPU. This confirms spatial random-slope Lambda recovery under
-strong signal for full, GPP, and NNGP samplers; NNGP latent Eta recovery remains
-the main approximation caveat to investigate separately.
+strong signal for full, GPP, and NNGP samplers; raw NNGP Eta summaries can be
+sensitive to latent-factor sign switching and should be interpreted with
+alignment.
 
 Focused spatial Eta validation run `spatial_eta_validation_real` completed on
 LUMI after one resume. The first `dev-g` job timed out after full spatial, GPP,
@@ -103,15 +106,28 @@ NNGP-5, and NNGP-10; the resume job completed NNGP-20 and generated the report.
 
 | Model | Run | Result |
 | --- | --- | --- |
-| full spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.988845`, Lambda/truth correlation `0.999982` |
-| GPP spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.894420`, Lambda/truth correlation `0.999186` |
-| NNGP-5 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.162178`, Lambda/truth correlation `0.998229` |
-| NNGP-10 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.101626`, Lambda/truth correlation `0.999068` |
-| NNGP-20 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.199853`, Lambda/truth correlation `0.944280` |
+| full spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, raw/aligned Eta truth correlation `0.988845` / `0.986014`, Lambda/truth correlation `0.999982` |
+| GPP spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, raw/aligned Eta truth correlation `0.894420` / `0.984491`, Lambda/truth correlation `0.999186` |
+| NNGP-5 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, raw/aligned Eta truth correlation `0.162178` / `0.926203`, Lambda/truth correlation `0.998229` |
+| NNGP-10 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, raw/aligned Eta truth correlation `0.101626` / `0.926601`, Lambda/truth correlation `0.999068` |
+| NNGP-20 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, raw/aligned Eta truth correlation `0.199853` / `0.935971`, Lambda/truth correlation `0.944280` |
 
-This run shows that increasing NNGP neighbors from 5 to 20 did not resolve weak
-latent Eta recovery, despite clean PPC coverage. Treat direct NNGP Eta summaries
-as experimental until the NNGP precision/update path has been inspected further.
+This run shows that raw NNGP Eta means were dominated by latent-factor sign
+switching, while aligned Eta summaries recovered the simulated latent spatial
+signal well. Use aligned Eta summaries for latent recovery diagnostics.
+
+Multi-factor NNGP Eta validation run `spatial_multifactor_eta_validation_real`
+exercised the `nf > 1` NNGP Eta updater path on LUMI. Job `19276714` completed
+sampling in 6 minutes 8 seconds; after fixing the analyzer to account for
+adaptive extra factors, the report was regenerated from the completed posterior.
+
+| Model | Run | Result |
+| --- | --- | --- |
+| NNGP spatial random-intercept normal, `nf=2` | `spatial_multifactor_eta_validation_real` | Completed on LUMI; beta signs recovered `8 / 8`, species PPC covered `8 / 8`, site richness PPC covered `64 / 64`, raw/aligned Eta mean truth correlation `0.220537` / `0.856748`, raw/aligned Lambda mean truth correlation `0.776261` / `0.916068`, association truth correlation `0.981125` |
+
+This validates the multi-factor NNGP path after the Eta prior precision ordering
+fix. Interpret raw factor means cautiously; aligned factor summaries and
+association summaries are the useful diagnostics.
 
 ## Validated Spatial Real-Data Runs
 

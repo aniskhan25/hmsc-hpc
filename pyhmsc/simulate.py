@@ -175,6 +175,82 @@ def simulate_spatial_eta_effect_data(
     return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
 
 
+def simulate_spatial_multifactor_eta_effect_data(
+    n_sites: int = 64,
+    n_species: int = 8,
+    n_factors: int = 2,
+    beta: np.ndarray | None = None,
+    spatial_ranges: tuple[float, ...] = (0.20, 0.45),
+    spatial_sd: float = 1.2,
+    lambda_scale: float = 1.1,
+    noise_sd: float = 0.08,
+    distr: str = "normal",
+    seed: int = 211,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Simulate a focused multi-factor spatial Eta validation dataset."""
+    if n_sites <= 3:
+        raise ValueError("n_sites must be greater than 3")
+    if n_species <= n_factors:
+        raise ValueError("n_species must be greater than n_factors")
+    if n_factors <= 1:
+        raise ValueError("n_factors must be greater than 1")
+    if len(spatial_ranges) != n_factors:
+        raise ValueError("spatial_ranges must contain one value per factor")
+    if any(value <= 0 for value in spatial_ranges) or spatial_sd <= 0:
+        raise ValueError("spatial ranges and spatial_sd must be positive")
+    if lambda_scale <= 0:
+        raise ValueError("lambda_scale must be positive")
+    if noise_sd <= 0:
+        raise ValueError("noise_sd must be positive")
+    rng = np.random.default_rng(seed)
+    coords = _unit_square_grid(n_sites, rng)
+    env = rng.normal(size=n_sites)
+    beta = np.asarray(beta if beta is not None else _default_spatial_beta(n_species), dtype=float)
+    if beta.shape != (2, n_species):
+        raise ValueError(f"beta must have shape {(2, n_species)}")
+    dist = _pairwise_distances(coords)
+    eta_columns = []
+    for factor_idx, spatial_range in enumerate(spatial_ranges):
+        covariance = np.exp(-dist / spatial_range) + np.eye(n_sites) * 1e-6
+        latent = rng.multivariate_normal(np.zeros(n_sites), covariance)
+        latent = latent * spatial_sd
+        latent = (latent - latent.mean()) / max(latent.std(ddof=1), np.finfo(float).eps)
+        eta_columns.append(latent)
+    eta = np.column_stack(eta_columns)
+    loadings = _default_multifactor_loadings(n_factors, n_species) * lambda_scale
+    design = np.column_stack([np.ones(n_sites), env])
+    random_effect = eta @ loadings
+    linear = design @ beta + random_effect
+    key = distr.lower()
+    if key in {"normal", "gaussian"}:
+        Y = linear + rng.normal(scale=noise_sd, size=linear.shape)
+    elif key == "poisson":
+        Y = rng.poisson(np.exp(np.clip(linear, -6, 6)))
+    elif key in {"probit", "bernoulli", "binomial"}:
+        Y = rng.binomial(1, _normal_cdf(linear))
+    else:
+        raise ValueError(f"Unsupported distribution {distr!r}")
+    site_names = [f"site_{idx + 1:03d}" for idx in range(n_sites)]
+    species = [f"sp{idx + 1}" for idx in range(n_species)]
+    factor_names = [f"factor_{idx}" for idx in range(n_factors)]
+    X = pd.DataFrame({"env": env}, index=site_names)
+    study_design = pd.DataFrame(
+        {
+            "plot": site_names,
+            "xcoord": coords[:, 0],
+            "ycoord": coords[:, 1],
+        },
+        index=site_names,
+    )
+    truth = {
+        "beta": pd.DataFrame(beta, index=["Intercept", "env"], columns=species),
+        "site_effect": pd.DataFrame(eta, index=site_names, columns=factor_names),
+        "lambda": pd.DataFrame(loadings, index=factor_names, columns=species),
+        "linear_predictor": pd.DataFrame(linear, index=site_names, columns=species),
+    }
+    return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
+
+
 def simulate_random_slope_effect_data(
     n_groups: int = 12,
     sites_per_group: int = 4,
@@ -347,6 +423,20 @@ def _default_spatial_loadings(n_species: int) -> np.ndarray:
     if n_species > 1:
         values[midpoint:] -= 0.25
     return values
+
+
+def _default_multifactor_loadings(n_factors: int, n_species: int) -> np.ndarray:
+    x = np.linspace(-1.0, 1.0, n_species)
+    rows = []
+    for factor_idx in range(n_factors):
+        if factor_idx == 0:
+            values = np.linspace(1.2, -1.2, n_species)
+        elif factor_idx == 1:
+            values = np.sin(np.pi * x)
+        else:
+            values = np.cos((factor_idx + 1) * np.pi * x / 2)
+        rows.append(values)
+    return np.asarray(rows, dtype=float)
 
 
 def _pairwise_distances(coords: np.ndarray) -> np.ndarray:

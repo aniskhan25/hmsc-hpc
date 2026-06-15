@@ -324,9 +324,10 @@ examples/projects/simulated_spatial_eta_validation/
 
 It uses `n_sites=100`, `n_species=6`, `distr="normal"`,
 `spatial_range=0.24`, `spatial_sd=1.6`, `lambda_scale=1.2`, and
-`noise_sd=0.06`. The analyzer reports Eta/truth correlation, scaled Eta RMSE,
-Lambda/truth correlation, beta sign recovery, and PPC summaries for full
-spatial, GPP, and NNGP neighbor counts 5, 10, and 20. Run it on LUMI with:
+`noise_sd=0.06`. The analyzer reports raw and aligned Eta/truth correlation,
+scaled Eta RMSE, Lambda/truth correlation, beta sign recovery, and PPC summaries
+for full spatial, GPP, and NNGP neighbor counts 5, 10, and 20. Run it on LUMI
+with:
 
 ```bash
 RUN_NAME=spatial_eta_validation \
@@ -346,16 +347,54 @@ GPP, NNGP-5, and NNGP-10. Resume job `19275812` completed NNGP-20 in 9 minutes
 
 - full spatial Eta/truth recovery was strong: `0.988845`
 - GPP Eta/truth recovery was good but lower: `0.894420`
-- NNGP Eta/truth recovery remained weak at all tested neighbor counts:
+- raw NNGP Eta/truth recovery was weak at all tested neighbor counts:
   `0.162178` for 5 neighbors, `0.101626` for 10, and `0.199853` for 20
+- post-hoc aligned NNGP Eta/truth recovery was good: `0.926203` for 5
+  neighbors, `0.926601` for 10, and `0.935971` for 20
+- aligned full spatial and GPP Eta/truth recovery were `0.986014` and
+  `0.984491`
 - all models covered species PPC `6 / 6` and site richness PPC `100 / 100`
 - Lambda/truth recovery was strong for full spatial, GPP, NNGP-5, and NNGP-10;
   NNGP-20 was lower but still high at `0.944280`
 
-This supports treating the current NNGP implementation as predictive/PPC-capable
-but not yet reliable for direct latent Eta interpretation. The next NNGP-specific
-diagnostic should inspect the NNGP precision construction and Eta update path,
-not simply increase neighbor count again.
+This shows the weak raw NNGP Eta metric was mostly a latent-factor sign-switching
+summary issue, not a failed NNGP spatial approximation. Direct raw `Eta` means
+should be treated as non-identifiable; aligned Eta summaries are the appropriate
+diagnostic target for latent recovery.
+
+The NNGP Eta updater also has a multi-factor validation workflow for the
+`nf > 1` path:
+
+```text
+examples/projects/simulated_spatial_multifactor_eta_validation/
+  model_spatial_nngp.yaml
+  data/
+    Y.csv
+    X.csv
+    study_design.csv
+    truth_beta.csv
+    truth_eta.csv
+    truth_lambda.csv
+```
+
+It uses `n_sites=64`, `n_species=8`, `nf=2`, `distr="normal"`,
+`n_neighbors=10`, and known two-factor spatial Eta/Lambda truth. LUMI job
+`19276714` completed the NNGP sampler in 6 minutes 8 seconds. The batch step
+initially failed during analysis because the adaptive factor sampler expanded to
+four factors and the first analyzer assumed exactly two; after fixing the
+analyzer to match the best estimated factors to truth, the report was
+regenerated from the completed posterior. Results:
+
+- beta signs recovered `8 / 8`
+- species PPC covered `8 / 8`; site richness PPC covered `64 / 64`
+- raw Eta mean/truth correlation was weak: `0.220537`
+- aligned Eta mean/truth correlation was good: `0.856748`
+- raw Lambda mean/truth correlation was `0.776261`; aligned was `0.916068`
+- identifiable association recovery was strong: `0.981125`
+
+This directly exercises the multi-factor NNGP Eta precision-order fix. The
+remaining caveat is that aligned factor summaries are required; raw factor means
+remain non-identifiable.
 
 The deterministic simulator for the focused spatial Eta validation is available
 as:

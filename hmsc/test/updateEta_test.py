@@ -4,7 +4,7 @@ import pytest
 import tensorflow as tf
 tfr, tfm = tf.random, tf.math
 
-from hmsc.updaters.updateEta import updateEta
+from hmsc.updaters.updateEta import _nngp_eta_prior_precision, updateEta
 
 def _simple_model(spatial_method="None", dtype = np.float64):
     
@@ -92,3 +92,39 @@ def test_updateEta_shape():
     for r in range(modelDims["nr"]):
         assert tf.shape(EtaList[r])[0] == modelDims["np"][r]
         assert tf.shape(EtaList[r])[1] == modelDims["nf"][r]
+
+
+def test_nngp_eta_prior_precision_uses_unit_major_factor_order():
+    iW_factor_0 = np.array(
+        [
+            [2.0, -1.0, 0.0],
+            [-1.0, 2.0, -0.5],
+            [0.0, -0.5, 1.5],
+        ]
+    )
+    iW_factor_1 = np.array(
+        [
+            [3.0, 0.25, 0.0],
+            [0.25, 4.0, 0.75],
+            [0.0, 0.75, 5.0],
+        ]
+    )
+
+    prior = _nngp_eta_prior_precision(
+        [iW_factor_0, iW_factor_1],
+        Alpha=np.array([0, 1]),
+        nu=3,
+        nf=2,
+    ).toarray()
+
+    factor_0_positions = [0, 2, 4]
+    factor_1_positions = [1, 3, 5]
+    assert_allclose(prior[np.ix_(factor_0_positions, factor_0_positions)], iW_factor_0)
+    assert_allclose(prior[np.ix_(factor_1_positions, factor_1_positions)], iW_factor_1)
+    assert_allclose(prior[np.ix_(factor_0_positions, factor_1_positions)], 0.0)
+    assert_allclose(prior[np.ix_(factor_1_positions, factor_0_positions)], 0.0)
+
+
+def test_nngp_eta_prior_precision_rejects_alpha_factor_mismatch():
+    with pytest.raises(ValueError, match="one spatial index per factor"):
+        _nngp_eta_prior_precision([np.eye(2)], Alpha=np.array([0, 0]), nu=2, nf=1)

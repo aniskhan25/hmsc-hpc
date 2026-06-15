@@ -2,9 +2,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from hmsc.utils.export_native_utils import load_native_params
+from hmsc.utils.export_native_utils import _spatial_nngp_params, load_native_params
 from hmsc.run_gibbs_sampler import validate_sampler_supported_params
 from pyhmsc import HmscModel
+from pyhmsc.compiler import _nngp_neighbors
 from pyhmsc.validation import validate_compiled_native_model
 
 
@@ -198,6 +199,33 @@ def test_native_loader_builds_spatial_nngp_random_level_state(tmp_path):
     by_name = {result.name: result for result in results}
     assert by_name["native_sampler_supported"].passed
     validate_sampler_supported_params(random_hyper)
+
+
+def test_nngp_neighbor_builder_uses_previous_nearest_neighbors():
+    coords = np.array([[0.0], [1.0], [3.0], [6.0]])
+    dist = np.abs(coords - coords.T)
+
+    indices, local_dists = _nngp_neighbors(dist, n_neighbors=2)
+
+    assert indices.tolist() == [[-1, -1], [0, -1], [1, 0], [2, 1]]
+    np.testing.assert_allclose(local_dists[1, :2, :2], [[0.0, 1.0], [1.0, 0.0]])
+    np.testing.assert_allclose(local_dists[2, :3, :3], [[0.0, 1.0, 2.0], [1.0, 0.0, 3.0], [2.0, 3.0, 0.0]])
+    np.testing.assert_allclose(local_dists[3, :3, :3], [[0.0, 2.0, 3.0], [2.0, 0.0, 5.0], [3.0, 5.0, 0.0]])
+
+
+def test_nngp_precision_matches_full_precision_with_all_previous_neighbors():
+    coords = np.array([[0.0], [0.3], [0.8], [1.7]])
+    dist = np.abs(coords - coords.T)
+    alpha = 0.45
+    indices, local_dists = _nngp_neighbors(dist, n_neighbors=3)
+
+    params = _spatial_nngp_params(indices, local_dists, np.asarray([[alpha, 1.0]]), np.float64)
+    nngp_precision = params["iWList_csr"][0].toarray()
+    full_covariance = np.exp(-dist / alpha)
+    full_precision = np.linalg.inv(full_covariance)
+
+    np.testing.assert_allclose(nngp_precision, full_precision, rtol=1e-10, atol=1e-10)
+    assert np.linalg.eigvalsh(nngp_precision).min() > 0
 
 
 def test_native_loader_builds_random_slope_state(tmp_path):

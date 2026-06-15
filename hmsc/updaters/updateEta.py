@@ -175,18 +175,7 @@ def modelSpatialGPP(LamInvSigLam, mu0, AlphaInd, Fg, idDg, idDW12g, nK, nu, nf, 
 
 def modelSpatialNNGP_scipy(LamInvSigLam, mu0, Alpha, iWList, nu, nf, dtype=np.float64):
     LamInvSigLam_bdiag = block_diag([LamInvSigLam[i] for i in range(nu)], dtype=dtype)
-    dataList, colList, rowList = [None]*int(nf), [None]*int(nf), [None]*int(nf)
-    for h, a in enumerate(Alpha):
-      iW = coo_matrix(iWList[a])
-      dataList[h] = iW.data
-      colList[h] = iW.col + h*nu
-      rowList[h] = iW.row + h*nu
-    dataArray = np.concatenate(dataList)
-    colArray = np.concatenate(colList)
-    rowArray = np.concatenate(rowList)
-    iUEta = csc_matrix((dataArray,(colArray,rowArray)), [nu*nf,nu*nf]) + LamInvSigLam_bdiag
-    # iWs = [kron(iWList[a], csc_matrix(coo_matrix(([1],([h],[h])), [nf,nf]))) for h, a in enumerate(Alpha)] #replaced with indices
-    # iUEta = sum(iWs) + LamInvSigLam_bdiag
+    iUEta = _nngp_eta_prior_precision(iWList, Alpha, nu, nf, dtype) + LamInvSigLam_bdiag
     LU_factor = splu(iUEta, "NATURAL", diag_pivot_thresh=0)
     L, U = LU_factor.L, LU_factor.U
     LiUEta = csr_matrix(L.multiply(np.sqrt(U.diagonal())), dtype=dtype)
@@ -194,3 +183,19 @@ def modelSpatialNNGP_scipy(LamInvSigLam, mu0, Alpha, iWList, nu, nf, dtype=np.fl
     eta = spsolve_triangular(LiUEta.transpose(), mu1 + np.random.normal(dtype(0), dtype(1), size=[nf*nu]), lower=False)
     Eta = np.reshape(eta, [nu,nf]).astype(dtype)
     return Eta
+
+
+def _nngp_eta_prior_precision(iWList, Alpha, nu, nf, dtype=np.float64):
+    alpha = np.asarray(Alpha).reshape(-1).astype(int)
+    if len(alpha) != int(nf):
+        raise ValueError(f"Alpha must contain one spatial index per factor; got {len(alpha)} for nf={nf}")
+    dataList, rowList, colList = [None] * int(nf), [None] * int(nf), [None] * int(nf)
+    for h, a in enumerate(alpha):
+        iW = coo_matrix(iWList[a])
+        dataList[h] = iW.data
+        rowList[h] = iW.row * int(nf) + h
+        colList[h] = iW.col * int(nf) + h
+    dataArray = np.concatenate(dataList)
+    rowArray = np.concatenate(rowList)
+    colArray = np.concatenate(colList)
+    return csc_matrix((dataArray, (rowArray, colArray)), [int(nu) * int(nf), int(nu) * int(nf)], dtype=dtype)

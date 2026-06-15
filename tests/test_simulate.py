@@ -2,6 +2,7 @@ import numpy as np
 
 from pyhmsc.simulate import (
     simulate_fixed_effect_data,
+    simulate_spatial_multifactor_eta_effect_data,
     simulate_spatial_eta_effect_data,
     simulate_spatial_effect_data,
     simulate_spatial_random_slope_effect_data,
@@ -74,6 +75,24 @@ def test_simulate_spatial_eta_effect_data_is_deterministic_and_named():
     assert truth["linear_predictor"].shape == (25, 4)
     assert truth["lambda"].loc["factor_0", "sp1"] > 0
     assert truth["lambda"].loc["factor_0", "sp4"] < 0
+
+
+def test_simulate_spatial_multifactor_eta_effect_data_is_deterministic_and_named():
+    left = simulate_spatial_multifactor_eta_effect_data(n_sites=25, n_species=5, n_factors=2, seed=212)
+    right = simulate_spatial_multifactor_eta_effect_data(n_sites=25, n_species=5, n_factors=2, seed=212)
+
+    for left_frame, right_frame in zip(left[:3], right[:3]):
+        assert left_frame.equals(right_frame)
+    for key in left[3]:
+        assert left[3][key].equals(right[3][key])
+
+    Y, X, study_design, truth = left
+    assert Y.shape == (25, 5)
+    assert X.shape == (25, 1)
+    assert list(study_design.columns) == ["plot", "xcoord", "ycoord"]
+    assert truth["site_effect"].shape == (25, 2)
+    assert truth["lambda"].shape == (2, 5)
+    assert list(truth["lambda"].index) == ["factor_0", "factor_1"]
 
 
 def test_simulate_spatial_random_slope_effect_data_is_deterministic_and_named():
