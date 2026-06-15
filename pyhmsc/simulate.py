@@ -105,6 +105,76 @@ def simulate_spatial_effect_data(
     return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
 
 
+def simulate_spatial_eta_effect_data(
+    n_sites: int = 100,
+    n_species: int = 6,
+    beta: np.ndarray | None = None,
+    spatial_range: float = 0.24,
+    spatial_sd: float = 1.6,
+    lambda_scale: float = 1.2,
+    noise_sd: float = 0.06,
+    distr: str = "normal",
+    seed: int = 121,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Simulate a focused spatial Eta-recovery validation dataset.
+
+    The simulation isolates one spatial latent site factor with species-specific
+    loadings and no random slopes. It is intended for comparing full spatial,
+    GPP, and NNGP latent Eta recovery under controlled neighbor/knot settings.
+    """
+    if n_sites <= 3:
+        raise ValueError("n_sites must be greater than 3")
+    if n_species <= 1:
+        raise ValueError("n_species must be greater than 1")
+    if spatial_range <= 0 or spatial_sd <= 0:
+        raise ValueError("spatial_range and spatial_sd must be positive")
+    if lambda_scale <= 0:
+        raise ValueError("lambda_scale must be positive")
+    if noise_sd <= 0:
+        raise ValueError("noise_sd must be positive")
+    rng = np.random.default_rng(seed)
+    coords = _unit_square_grid(n_sites, rng)
+    env = rng.normal(size=n_sites)
+    beta = np.asarray(beta if beta is not None else _default_spatial_beta(n_species), dtype=float)
+    if beta.shape != (2, n_species):
+        raise ValueError(f"beta must have shape {(2, n_species)}")
+    dist = _pairwise_distances(coords)
+    covariance = np.exp(-dist / spatial_range) + np.eye(n_sites) * 1e-6
+    latent = rng.multivariate_normal(np.zeros(n_sites), covariance)
+    latent = latent * spatial_sd
+    latent = (latent - latent.mean()) / max(latent.std(ddof=1), np.finfo(float).eps)
+    loadings = _default_spatial_loadings(n_species) * lambda_scale
+    design = np.column_stack([np.ones(n_sites), env])
+    linear = design @ beta + latent[:, None] * loadings[None, :]
+    key = distr.lower()
+    if key in {"normal", "gaussian"}:
+        Y = linear + rng.normal(scale=noise_sd, size=linear.shape)
+    elif key == "poisson":
+        Y = rng.poisson(np.exp(np.clip(linear, -6, 6)))
+    elif key in {"probit", "bernoulli", "binomial"}:
+        Y = rng.binomial(1, _normal_cdf(linear))
+    else:
+        raise ValueError(f"Unsupported distribution {distr!r}")
+    site_names = [f"site_{idx + 1:03d}" for idx in range(n_sites)]
+    species = [f"sp{idx + 1}" for idx in range(n_species)]
+    X = pd.DataFrame({"env": env}, index=site_names)
+    study_design = pd.DataFrame(
+        {
+            "plot": site_names,
+            "xcoord": coords[:, 0],
+            "ycoord": coords[:, 1],
+        },
+        index=site_names,
+    )
+    truth = {
+        "beta": pd.DataFrame(beta, index=["Intercept", "env"], columns=species),
+        "site_effect": pd.DataFrame({"eta": latent}, index=site_names),
+        "lambda": pd.DataFrame([loadings], index=["factor_0"], columns=species),
+        "linear_predictor": pd.DataFrame(linear, index=site_names, columns=species),
+    }
+    return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
+
+
 def simulate_random_slope_effect_data(
     n_groups: int = 12,
     sites_per_group: int = 4,

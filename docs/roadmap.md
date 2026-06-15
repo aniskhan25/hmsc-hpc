@@ -285,11 +285,89 @@ SAMPLES=2000 TRANSIENT=1000 THIN=10 \
 sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
 ```
 
-The next practical target is running this stronger scenario on LUMI. A larger or
-replicated NNGP validation would also help separate expected approximation
-behavior from small-dataset instability.
+Validated LUMI run `spatial_random_slope_strong_validation_real` completed on
+`dev-g` as job `19272750` in 20 minutes 41 seconds with 2 chains, 2000 saved
+samples, 1000 transient iterations, and thin 10. Results:
 
-The deterministic simulator for this validation is available as:
+- full spatial, GPP, and NNGP all recovered beta signs `6 / 6`
+- all three covered species PPC `6 / 6` and site richness PPC `81 / 81`
+- Eta/truth recovery was `0.962924` full spatial, `0.895142` GPP, and
+  `0.674563` NNGP
+- Lambda intercept/truth recovery was effectively exact: `0.999993` full
+  spatial, `0.999142` GPP, and `0.999993` NNGP
+- Lambda slope/truth recovery was strong: `0.999992` full spatial, `0.999573`
+  GPP, and `0.999988` NNGP
+
+This confirms that the weak Lambda slope recovery in the baseline validation was
+signal-limited rather than an obvious sampler-path failure. The remaining
+scientific caveat is lower NNGP Eta recovery relative to full spatial and GPP,
+so a focused NNGP latent-recovery validation is the next useful spatial
+diagnostic if we want to keep tightening spatial approximations.
+
+That focused spatial Eta validation workflow is now implemented as:
+
+```text
+examples/projects/simulated_spatial_eta_validation/
+  model_spatial_full.yaml
+  model_spatial_gpp.yaml
+  model_spatial_nngp_5.yaml
+  model_spatial_nngp_10.yaml
+  model_spatial_nngp_20.yaml
+  data/
+    Y.csv
+    X.csv
+    study_design.csv
+    truth_beta.csv
+    truth_eta.csv
+    truth_lambda.csv
+```
+
+It uses `n_sites=100`, `n_species=6`, `distr="normal"`,
+`spatial_range=0.24`, `spatial_sd=1.6`, `lambda_scale=1.2`, and
+`noise_sd=0.06`. The analyzer reports Eta/truth correlation, scaled Eta RMSE,
+Lambda/truth correlation, beta sign recovery, and PPC summaries for full
+spatial, GPP, and NNGP neighbor counts 5, 10, and 20. Run it on LUMI with:
+
+```bash
+RUN_NAME=spatial_eta_validation \
+SAMPLES=1500 TRANSIENT=750 THIN=10 \
+sbatch docs/lumi_spatial_eta_validation_sbatch.sh
+```
+
+The full five-model Eta validation can exceed one 30-minute `dev-g` allocation.
+The sbatch script is resumable: reuse the same `RUN_NAME` with a narrowed
+`MODELS` value, such as `MODELS=spatial_nngp_20`, to finish missing models and
+then generate the combined report.
+
+Validated LUMI run `spatial_eta_validation_real` completed after one resume. The
+first job, `19273473`, timed out at 30 minutes after completing full spatial,
+GPP, NNGP-5, and NNGP-10. Resume job `19275812` completed NNGP-20 in 9 minutes
+27 seconds and generated the combined report. Results:
+
+- full spatial Eta/truth recovery was strong: `0.988845`
+- GPP Eta/truth recovery was good but lower: `0.894420`
+- NNGP Eta/truth recovery remained weak at all tested neighbor counts:
+  `0.162178` for 5 neighbors, `0.101626` for 10, and `0.199853` for 20
+- all models covered species PPC `6 / 6` and site richness PPC `100 / 100`
+- Lambda/truth recovery was strong for full spatial, GPP, NNGP-5, and NNGP-10;
+  NNGP-20 was lower but still high at `0.944280`
+
+This supports treating the current NNGP implementation as predictive/PPC-capable
+but not yet reliable for direct latent Eta interpretation. The next NNGP-specific
+diagnostic should inspect the NNGP precision construction and Eta update path,
+not simply increase neighbor count again.
+
+The deterministic simulator for the focused spatial Eta validation is available
+as:
+
+```python
+from pyhmsc import simulate_spatial_eta_effect_data
+
+Y, X, study_design, truth = simulate_spatial_eta_effect_data(seed=121)
+```
+
+The deterministic simulator for the original spatial random-intercept
+validation is available as:
 
 ```python
 from pyhmsc import simulate_spatial_effect_data

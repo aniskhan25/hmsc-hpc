@@ -12,11 +12,11 @@
 | iid random-intercept real-data validation | Supported; Whittaker plant iid site-level run validated on LUMI |
 | Full spatial random intercepts | Supported |
 | iid random slopes | Supported for native TensorFlow sampling |
-| Full spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
-| GPP spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
-| NNGP spatial random slopes | Supported for native TensorFlow sampling; deterministic LUMI validation completed |
+| Full spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed |
+| GPP spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed |
+| NNGP spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed; Eta recovery remains weaker than full/GPP |
 | GPP spatial effects | Supported for native TensorFlow sampling with deterministic knot selection |
-| NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent recovery needs more validation |
+| NNGP spatial effects | Supported for native TensorFlow sampling; LUMI runtime/PPC validation completed, latent Eta recovery remains weak in focused validation |
 | HDF5 posterior output | Supported |
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
@@ -35,8 +35,11 @@
 | Chain status and retry helpers | Supported |
 | Slow simulation recovery tests | Supported for fixed effects; smoke tests for traits/random/spatial |
 | Deterministic spatial validation simulator | Supported via `simulate_spatial_effect_data` |
+| Deterministic spatial Eta validation simulator | Supported via `simulate_spatial_eta_effect_data` |
 | Simulated spatial validation project | Added with fixed, iid, and full-spatial configs |
 | Simulated spatial validation analyzer | Supported; fixed/iid/spatial LUMI validation completed |
+| Simulated spatial Eta validation project | Added with full/GPP/NNGP neighbor-count configs; LUMI validation completed after resume |
+| Simulated spatial Eta validation analyzer | Supported; reports Eta recovery versus NNGP neighbor count |
 | Simulated random-slope/GPP validation project | Supported; fixed/random-slope/full-spatial/GPP LUMI validation completed |
 | Big spatial real-data validation project | Added with fixed, iid, and full-spatial configs |
 | Big spatial real-data analyzer | Supported; fixed/iid/spatial LUMI validation completed |
@@ -77,6 +80,38 @@ The deterministic spatial validation project in
 The run used 2 chains, 1000 saved samples, 500 transient iterations, and thin
 10. The full Slurm job completed in 7 minutes 15 seconds on `dev-g` with
 TensorFlow 2.16 and an MI250X GPU.
+
+The strong-signal spatial random-slope validation project in
+`examples/projects/simulated_spatial_random_slope_strong_validation` has also
+been run on LUMI without R.
+
+| Model | Run | Result |
+| --- | --- | --- |
+| full spatial random-slope normal | `spatial_random_slope_strong_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `81 / 81`, Eta/truth correlation `0.962924`, Lambda slope/truth correlation `0.999992` |
+| GPP spatial random-slope normal | `spatial_random_slope_strong_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `81 / 81`, Eta/truth correlation `0.895142`, Lambda slope/truth correlation `0.999573` |
+| NNGP spatial random-slope normal | `spatial_random_slope_strong_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `81 / 81`, Eta/truth correlation `0.674563`, Lambda slope/truth correlation `0.999988` |
+
+The run used 2 chains, 2000 saved samples, 1000 transient iterations, and thin
+10. The Slurm job completed in 20 minutes 41 seconds on `dev-g` with TensorFlow
+2.16 and an MI250X GPU. This confirms spatial random-slope Lambda recovery under
+strong signal for full, GPP, and NNGP samplers; NNGP latent Eta recovery remains
+the main approximation caveat to investigate separately.
+
+Focused spatial Eta validation run `spatial_eta_validation_real` completed on
+LUMI after one resume. The first `dev-g` job timed out after full spatial, GPP,
+NNGP-5, and NNGP-10; the resume job completed NNGP-20 and generated the report.
+
+| Model | Run | Result |
+| --- | --- | --- |
+| full spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.988845`, Lambda/truth correlation `0.999982` |
+| GPP spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `6 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.894420`, Lambda/truth correlation `0.999186` |
+| NNGP-5 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.162178`, Lambda/truth correlation `0.998229` |
+| NNGP-10 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.101626`, Lambda/truth correlation `0.999068` |
+| NNGP-20 spatial random-intercept normal | `spatial_eta_validation_real` | Completed on LUMI; beta signs recovered `5 / 6`, species PPC covered `6 / 6`, site richness PPC covered `100 / 100`, Eta/truth correlation `0.199853`, Lambda/truth correlation `0.944280` |
+
+This run shows that increasing NNGP neighbors from 5 to 20 did not resolve weak
+latent Eta recovery, despite clean PPC coverage. Treat direct NNGP Eta summaries
+as experimental until the NNGP precision/update path has been inspected further.
 
 ## Validated Spatial Real-Data Runs
 

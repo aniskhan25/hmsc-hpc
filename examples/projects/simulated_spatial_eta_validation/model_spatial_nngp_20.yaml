@@ -1,0 +1,17 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ env"
+distribution: normal
+chains: 2
+samples: 1500
+transient: 750
+thin: 10
+study_design: data/study_design.csv
+random_levels:
+  plot:
+    column: plot
+    type: spatial_nngp
+    coords: [xcoord, ycoord]
+    n_neighbors: 20
+    nf: 1

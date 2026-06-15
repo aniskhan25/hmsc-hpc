@@ -167,6 +167,40 @@ sbatch docs/lumi_spatial_random_slope_validation_sbatch.sh
 This uses a normal response, 81 sites, lower observation noise, and stronger
 random-slope loadings.
 
+Validated LUMI run `spatial_random_slope_strong_validation_real` completed on
+`dev-g` as job `19272750` in 20 minutes 41 seconds with 2 chains, 2000 saved
+samples, 1000 transient iterations, and thin 10. All three spatial random-slope
+models recovered beta signs (`6 / 6`), species PPC (`6 / 6`), and site richness
+PPC (`81 / 81`). Lambda slope recovery was strong for full spatial
+(`0.999992`), GPP (`0.999573`), and NNGP (`0.999988`), confirming that the weak
+baseline Lambda slope result is signal-limited. Eta recovery remained weaker
+for NNGP (`0.674563`) than full spatial (`0.962924`) and GPP (`0.895142`).
+
+A focused spatial Eta validation is available for checking whether NNGP latent
+recovery improves as neighbor count increases:
+
+```bash
+RUN_NAME=spatial_eta_validation \
+SAMPLES=1500 TRANSIENT=750 THIN=10 \
+sbatch docs/lumi_spatial_eta_validation_sbatch.sh
+```
+
+This uses `examples/projects/simulated_spatial_eta_validation`, a normal-response
+100-site simulation with one known spatial latent factor. It compares full
+spatial, GPP, and NNGP models with 5, 10, and 20 neighbors, then writes
+`spatial_eta_validation_report.txt` under the scratch run directory.
+The full five-model run can exceed one 30-minute `dev-g` allocation; reuse the
+same `RUN_NAME` with `MODELS=spatial_nngp_20` or another subset to resume
+missing models.
+
+Validated LUMI run `spatial_eta_validation_real` completed after one resume. The
+first job, `19273473`, timed out after completing full spatial, GPP, NNGP-5,
+and NNGP-10; resume job `19275812` completed NNGP-20 in 9 minutes 27 seconds
+and generated the combined report. Full spatial recovered Eta/truth correlation
+`0.988845`, GPP recovered `0.894420`, while NNGP remained weak at neighbor
+counts 5, 10, and 20 (`0.162178`, `0.101626`, `0.199853`). All models covered
+species PPC `6 / 6` and site richness PPC `100 / 100`.
+
 The compact real-data big-spatial plant validation can be run as:
 
 ```bash
