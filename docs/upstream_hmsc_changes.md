@@ -31,6 +31,7 @@ the original `hmsc/` tree.
 
 | Commit | Files under `hmsc/` | Category | Upstream status |
 | --- | --- | --- | --- |
+| Legacy compatibility validation | `hmsc/utils/export_rds_utils.py` | RDS compatibility hardening | Should be upstreamed or retained as compatibility fix |
 | `b80c2b0` Validate multi-factor NNGP Eta recovery | `hmsc/updaters/updateEta.py`, `hmsc/test/updateEta_test.py` | Core sampler bug fix and tests | Should be upstreamed |
 | `f268ae9` Support NNGP spatial random slopes | `hmsc/run_gibbs_sampler.py` | Native runner support | Audit before upstreaming |
 | `7625036` Add native NNGP spatial support | `hmsc/utils/export_native_utils.py` | Native JSON/HDF5 loader support | Extension; upstream optional |
@@ -74,6 +75,27 @@ Validation already run locally for this patch included the focused test suite
 and the multi-factor NNGP validation workflow. The final validation report for
 the LUMI run showed strong aligned Eta/Lambda recovery and near-perfect
 association recovery.
+
+## Current compatibility fix
+
+### RDS JSON payload extraction
+
+Affected file: `hmsc/utils/export_rds_utils.py`
+
+The legacy RDS loader originally assumed the JSON payload was available as
+`pyreadr.read_r(path)[None][None][0]`. That shape matches the historical
+R-generated single-string compatibility object, but it does not handle one-cell
+data frames produced by `pyreadr.write_rds()`, including the current
+compatibility output writer in this repository.
+
+The loader now extracts the first JSON string from either shape:
+
+- R-generated or unnamed payloads keyed by `None`,
+- pyreadr-generated one-cell data frames with a regular column name,
+- simple series/array-like payloads.
+
+This is a compatibility hardening change for legacy `.rds` support. It does not
+change sampler math or Python-native JSON/HDF5 model compilation.
 
 ## Changes that should be split before upstreaming
 
@@ -136,4 +158,3 @@ a clean upstream patch series.
    ordering fix, because it is the clearest correctness issue.
 5. Keep the Python-native feature branch carrying only `pyhmsc/`, examples,
    docs, sbatch scripts, and tests when possible.
-

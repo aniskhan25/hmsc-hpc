@@ -9,10 +9,27 @@ def load_model_from_rds(rds_file_path):
     except ImportError as exc:
         raise RuntimeError("Install pyreadr to read RDS compatibility inputs") from exc
 
-    long_str = pyreadr.read_r(rds_file_path)
-    hmsc_obj = json.loads(long_str[None][None][0])
+    hmsc_obj = json.loads(_extract_json_string(pyreadr.read_r(rds_file_path)))
     
     return hmsc_obj, hmsc_obj.get("hM")
+
+
+def _extract_json_string(pyreadr_result):
+    """Extract the JSON payload from R-generated or pyreadr-generated RDS data."""
+    if None in pyreadr_result:
+        payload = pyreadr_result[None]
+    else:
+        payload = next(iter(pyreadr_result.values()))
+
+    if isinstance(payload, pd.DataFrame):
+        if None in payload.columns:
+            return payload[None][0]
+        return payload.iloc[0, 0]
+    if isinstance(payload, pd.Series):
+        return payload.iloc[0]
+    if isinstance(payload, (list, tuple, np.ndarray)):
+        return payload[0]
+    return payload
 
 
 def save_chains_postList_to_rds(postList, postList_file_path, nChains, elapsedTime=-1, flag_save_eta=True):
