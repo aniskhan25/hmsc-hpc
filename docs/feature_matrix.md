@@ -22,7 +22,8 @@
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
 | HDF5 posterior merge | Supported |
 | Posterior predictive checks | Supported |
-| Known random-effect posterior predictive checks | Supported when the fit is loaded with its model config |
+| Known random-effect posterior predictive checks | Supported when the fit is loaded with its model config; prediction accepts separate `study_design` and `coords` frames |
+| Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, and nearest-neighbor projection for unseen spatial groups |
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |

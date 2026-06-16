@@ -338,6 +338,9 @@ class HmscFit:
         response: bool = True,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
     ) -> np.ndarray:
         if self.model is None:
             if self._x_formula() is None:
@@ -345,7 +348,8 @@ class HmscFit:
                     "predict_samples requires the HmscModel used to create the fit "
                     "or embedded posterior metadata with formula.X"
                 )
-        X_new = X_new if isinstance(X_new, pd.DataFrame) else pd.DataFrame(X_new)
+        random_effects = _resolve_random_effect_mode(random_effects, include_random_effects)
+        X_new = _prediction_frame(X_new, study_design=study_design, coords=coords)
         design = build_design_matrix(self._x_formula(), X_new)
         beta_frame = self.beta_mean()
         missing = [column for column in beta_frame.index if column not in design.columns]
@@ -370,17 +374,22 @@ class HmscFit:
         response: bool = True,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
     ) -> pd.DataFrame:
+        X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         samples = self.predict_samples(
-            X_new,
+            X_frame,
             response=response,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            include_random_effects=include_random_effects,
         )
         values = samples.mean(axis=(0, 1))
         return pd.DataFrame(
             values,
-            index=(X_new.index if isinstance(X_new, pd.DataFrame) else None),
+            index=X_frame.index,
             columns=self.beta_mean().columns,
         )
 
@@ -391,32 +400,41 @@ class HmscFit:
         response: bool = True,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
     ) -> dict[str, pd.DataFrame]:
+        X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         samples = self.predict_samples(
-            X_new,
+            X_frame,
             response=response,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            include_random_effects=include_random_effects,
         )
         lo = np.quantile(samples, (1 - level) / 2, axis=(0, 1))
         hi = np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1))
-        index = X_new.index if isinstance(X_new, pd.DataFrame) else None
         cols = self.beta_mean().columns
-        return {"lower": pd.DataFrame(lo, index=index, columns=cols), "upper": pd.DataFrame(hi, index=index, columns=cols)}
+        return {"lower": pd.DataFrame(lo, index=X_frame.index, columns=cols), "upper": pd.DataFrame(hi, index=X_frame.index, columns=cols)}
 
     def posterior_predictive(
         self,
         X_new: Any,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         rng_seed: int | None = None,
     ) -> np.ndarray:
         """Draw replicated responses from the posterior predictive distribution."""
         rng = np.random.default_rng(rng_seed)
+        random_effects = _resolve_random_effect_mode(random_effects, include_random_effects)
+        X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         distribution = self._distribution().lower()
         if distribution in {"normal", "gaussian"}:
             mean = self.predict_samples(
-                X_new,
+                X_frame,
                 response=False,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
@@ -425,7 +443,7 @@ class HmscFit:
             return rng.normal(loc=mean, scale=sigma[:, :, None, :])
         if distribution == "poisson":
             rate = self.predict_samples(
-                X_new,
+                X_frame,
                 response=True,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
@@ -433,7 +451,7 @@ class HmscFit:
             return rng.poisson(np.clip(rate, 0.0, 1e12))
         if distribution in {"probit", "bernoulli", "binomial"}:
             probability = self.predict_samples(
-                X_new,
+                X_frame,
                 response=True,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
@@ -448,6 +466,9 @@ class HmscFit:
         level: float = 0.95,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         """Summarize observed species means against replicated posterior means."""
@@ -458,6 +479,9 @@ class HmscFit:
             X,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            study_design=study_design,
+            coords=coords,
+            include_random_effects=include_random_effects,
             rng_seed=rng_seed,
         )
         species = self._species_names(samples.shape[-1])
@@ -487,6 +511,9 @@ class HmscFit:
         level: float = 0.95,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         """Summarize observed site richness against replicated posterior richness."""
@@ -497,6 +524,9 @@ class HmscFit:
             X,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            study_design=study_design,
+            coords=coords,
+            include_random_effects=include_random_effects,
             rng_seed=rng_seed,
         )
         observed = y_frame.sum(axis=1).to_numpy(dtype=float)
@@ -522,6 +552,9 @@ class HmscFit:
         level: float = 0.95,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         return self.posterior_predictive_summary(
@@ -530,6 +563,9 @@ class HmscFit:
             level=level,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            study_design=study_design,
+            coords=coords,
+            include_random_effects=include_random_effects,
             rng_seed=rng_seed,
         )
 
@@ -540,6 +576,9 @@ class HmscFit:
         level: float = 0.95,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         return self.site_richness_posterior_predictive_summary(
@@ -548,6 +587,9 @@ class HmscFit:
             level=level,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            study_design=study_design,
+            coords=coords,
+            include_random_effects=include_random_effects,
             rng_seed=rng_seed,
         )
 
@@ -761,6 +803,9 @@ class HmscFit:
         response: bool = True,
         random_effects: str = "none",
         unseen_groups: str = "error",
+        study_design: Any | None = None,
+        coords: Any | None = None,
+        include_random_effects: bool | None = None,
         return_samples: bool = False,
     ) -> pd.DataFrame | np.ndarray:
         if return_samples:
@@ -769,12 +814,18 @@ class HmscFit:
                 response=response,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
+                study_design=study_design,
+                coords=coords,
+                include_random_effects=include_random_effects,
             )
         return self.predict_mean(
             X_new,
             response=response,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            study_design=study_design,
+            coords=coords,
+            include_random_effects=include_random_effects,
         )
 
     def gradient(
@@ -1089,7 +1140,7 @@ class HmscFit:
             eta = self.eta_samples(level_idx)[:, :, codes, :]
             lam = self.lambda_samples(level_idx)
             if lam.ndim == 5:
-                x_mat = self._random_slope_design_for_groups(spec, X_new, codes)
+                x_mat = self._random_slope_design_for_groups(spec, X_new)
                 effect = np.einsum("cdnf,nk,cdfsk->cdns", eta, x_mat, lam)
             else:
                 effect = np.einsum("cdnf,cdfs->cdns", eta, lam)
@@ -1106,7 +1157,7 @@ class HmscFit:
         if mode == "sample":
             return row_idx % self.eta_samples(0).shape[2]
         if mode == "nearest":
-            if spec.get("type") != "spatial_full":
+            if spec.get("type") not in {"spatial_full", "spatial_gpp", "gpp", "spatial_nngp", "nngp"}:
                 return row_idx % self.eta_samples(0).shape[2]
             coords = spec.get("coords", ["x", "y"])
             if self.model is None or self.model.study_design is None or any(col not in X_new for col in coords):
@@ -1135,16 +1186,21 @@ class HmscFit:
                 total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)
         return total
 
-    def _random_slope_design_for_groups(self, spec: dict[str, Any], X_new: pd.DataFrame, codes: list[int]) -> np.ndarray:
+    def _random_slope_design_for_groups(self, spec: dict[str, Any], X_new: pd.DataFrame) -> np.ndarray:
         x_formula = spec.get("x_formula")
         if not x_formula:
             raise ValueError("Random-slope Lambda samples require random_levels.*.x_formula")
         if self.model is None or self.model.study_design is None:
             raise ValueError("Random-slope prediction requires model.study_design")
-        column = spec.get("column", "plot")
-        matrix = build_design_matrix(x_formula, self.model.study_design)
-        unit_matrix = matrix.groupby(self.model.study_design[column], sort=True).mean().to_numpy(dtype=float)
-        return unit_matrix[np.asarray(codes, dtype=int)]
+        reference = build_design_matrix(x_formula, self.model.study_design)
+        matrix = build_design_matrix(x_formula, X_new)
+        missing = [column for column in reference.columns if column not in matrix.columns]
+        missing_non_intercept = [column for column in missing if column != "Intercept"]
+        if missing_non_intercept:
+            raise ValueError(f"Prediction data is missing random-slope covariates: {missing_non_intercept}")
+        for column in missing:
+            matrix[column] = 1.0
+        return matrix.loc[:, reference.columns].to_numpy(dtype=float)
 
     def _random_slope_design_for_marginal(self, spec: dict[str, Any], n_new: int) -> np.ndarray:
         if self.model is None or self.model.study_design is None:
@@ -1430,6 +1486,33 @@ def _gradient_summary_frame(values: pd.Series, samples: np.ndarray, level: float
             "upper": hi,
         }
     )
+
+
+def _prediction_frame(
+    X_new: Any,
+    study_design: Any | None = None,
+    coords: Any | None = None,
+) -> pd.DataFrame:
+    frame = X_new.copy() if isinstance(X_new, pd.DataFrame) else pd.DataFrame(X_new)
+    for extra_name, extra in [("study_design", study_design), ("coords", coords)]:
+        if extra is None:
+            continue
+        extra_frame = extra.copy() if isinstance(extra, pd.DataFrame) else pd.DataFrame(extra)
+        if len(extra_frame) != len(frame):
+            raise ValueError(f"{extra_name} must have the same number of rows as X_new")
+        extra_frame.index = frame.index
+        for column in extra_frame.columns:
+            if column not in frame:
+                frame[column] = extra_frame[column]
+    return frame
+
+
+def _resolve_random_effect_mode(random_effects: str, include_random_effects: bool | None) -> str:
+    if include_random_effects is None:
+        return random_effects
+    if include_random_effects:
+        return "known" if random_effects == "none" else random_effects
+    return "none"
 
 
 def _response_scale(values: np.ndarray, distribution: str) -> np.ndarray:

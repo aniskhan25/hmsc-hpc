@@ -202,6 +202,96 @@ def test_known_random_effect_prediction_from_hdf5(tmp_path):
     np.testing.assert_allclose(marginal.to_numpy(), [[0.35]])
 
 
+def test_known_random_effect_prediction_accepts_separate_study_design():
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, 1, 2, 1)),
+            "random_levels/0/Eta": np.array([[[[0.2], [0.5]]]]),
+            "random_levels/0/Lambda": np.array([[[[1.0]]]]),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"]}),
+        random_levels={"plot": {"column": "plot", "type": "iid"}},
+    )
+    fit = HmscFit(posterior, model=model)
+
+    pred = fit.predict(
+        pd.DataFrame({"x": [0.0, 1.0]}, index=["site_a", "site_b"]),
+        study_design=pd.DataFrame({"plot": ["a", "b"]}),
+        include_random_effects=True,
+    )
+
+    assert list(pred.index) == ["site_a", "site_b"]
+    np.testing.assert_allclose(pred.to_numpy(), [[0.2], [0.5]])
+
+
+def test_random_slope_prediction_uses_new_row_covariates():
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, 1, 2, 1)),
+            "random_levels/0/Eta": np.array([[[[1.0], [1.0]]]]),
+            "random_levels/0/Lambda": np.array([[[[[0.0, 2.0]]]]]),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"], "slope_env": [1.0, 1.0]}),
+        random_levels={"plot": {"column": "plot", "type": "iid", "x_formula": "~ slope_env"}},
+    )
+    fit = HmscFit(posterior, model=model)
+
+    pred = fit.predict(
+        pd.DataFrame({"x": [0.0], "slope_env": [5.0]}),
+        study_design=pd.DataFrame({"plot": ["a"]}),
+        random_effects="known",
+    )
+
+    np.testing.assert_allclose(pred.to_numpy(), [[10.0]])
+
+
+def test_spatial_nearest_prediction_accepts_separate_coords_for_unseen_group():
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, 1, 2, 1)),
+            "random_levels/0/Eta": np.array([[[[0.2], [0.8]]]]),
+            "random_levels/0/Lambda": np.array([[[[1.0]]]]),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [1, 2]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame({"plot": ["a", "b"], "xcoord": [0.0, 10.0], "ycoord": [0.0, 0.0]}),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+            }
+        },
+    )
+    fit = HmscFit(posterior, model=model)
+
+    pred = fit.predict(
+        pd.DataFrame({"x": [0.0]}),
+        study_design=pd.DataFrame({"plot": ["new"]}),
+        coords=pd.DataFrame({"xcoord": [9.0], "ycoord": [0.0]}),
+        random_effects="known",
+        unseen_groups="nearest",
+    )
+
+    np.testing.assert_allclose(pred.to_numpy(), [[0.8]])
+
+
 def test_species_association_summaries_from_lambda():
     posterior = {
         "__metadata__": {"names": {"species": ["sp1", "sp2", "sp3"]}},

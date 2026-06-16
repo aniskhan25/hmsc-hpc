@@ -284,6 +284,31 @@ python -m pyhmsc diagnostics run/posterior.h5 --param Lambda --random-level 0 --
 python -m pyhmsc diagnostics run/posterior.h5 --param Associations --random-level 0
 ```
 
+Prediction can include known random effects without manually adding random-level
+columns to `X`:
+
+```python
+pred = fit.predict(
+    new_X,
+    study_design=new_study_design,
+    coords=new_coords,
+    include_random_effects=True,
+)
+```
+
+For unseen spatial groups, use nearest-neighbor projection to reuse the closest
+sampled random-effect unit:
+
+```python
+pred = fit.predict(
+    new_X,
+    study_design=new_study_design,
+    coords=new_coords,
+    random_effects="known",
+    unseen_groups="nearest",
+)
+```
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.
