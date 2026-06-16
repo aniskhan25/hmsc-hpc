@@ -47,7 +47,7 @@
 | Big spatial real-data validation project | Added with fixed, iid, and full-spatial configs |
 | Big spatial real-data analyzer | Supported; fixed/iid/spatial LUMI validation completed |
 | Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
-| CLI compile/sample/summarize/predict/validate | Supported |
+| CLI compile/sample/summarize/predict/validate | Supported; `predict` accepts `--model-config`, `--study-design`, `--coords`, and random-effect options |
 | CLI init validation | Supported |
 | No-R example smoke runner | Supported |
 | ArviZ diagnostics | Optional extra |

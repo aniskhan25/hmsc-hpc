@@ -80,8 +80,16 @@ def main() -> None:
     predict_parser.add_argument("--X", required=True)
     predict_parser.add_argument("--formula")
     predict_parser.add_argument("--distribution")
+    predict_parser.add_argument("--model-config", help="model config used for the fitted posterior")
+    predict_parser.add_argument("--study-design", help="study design table for prediction rows")
+    predict_parser.add_argument("--coords", help="coordinate table for prediction rows")
     predict_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
     predict_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
+    predict_parser.add_argument(
+        "--include-random-effects",
+        action="store_true",
+        help="include known random effects; shorthand for --random-effects known when not otherwise set",
+    )
     predict_parser.add_argument("--output")
 
     ppc_parser = subparsers.add_parser("ppc", help="run posterior predictive checks")
@@ -90,8 +98,16 @@ def main() -> None:
     ppc_parser.add_argument("--Y", required=True)
     ppc_parser.add_argument("--formula")
     ppc_parser.add_argument("--distribution")
+    ppc_parser.add_argument("--model-config", help="model config used for the fitted posterior")
+    ppc_parser.add_argument("--study-design", help="study design table for prediction rows")
+    ppc_parser.add_argument("--coords", help="coordinate table for prediction rows")
     ppc_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
     ppc_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
+    ppc_parser.add_argument(
+        "--include-random-effects",
+        action="store_true",
+        help="include known random effects; shorthand for --random-effects known when not otherwise set",
+    )
     ppc_parser.add_argument("--level", type=float, default=0.95)
     ppc_parser.add_argument("--seed", type=int)
     ppc_parser.add_argument("--scope", choices=["species", "site-richness"], default="species")
@@ -245,8 +261,12 @@ def main() -> None:
         from pyhmsc.model import HmscModel
 
         X = read_table(args.X)
+        study_design = read_table(args.study_design) if args.study_design else None
+        coords = read_table(args.coords) if args.coords else None
         fit = HmscFit.from_file(args.posterior)
-        if args.formula:
+        if args.model_config:
+            fit.model, _config = model_from_config(args.model_config)
+        elif args.formula:
             dummy_y = X.iloc[:, :1].copy()
             dummy_y.columns = ["species_0"]
             fit.model = HmscModel(
@@ -256,8 +276,15 @@ def main() -> None:
                 distr=args.distribution or fit._distribution(),
             )
         elif fit._x_formula() is None:
-            parser.error("predict requires --formula unless posterior metadata includes formula.X")
-        pred = fit.predict(X, random_effects=args.random_effects, unseen_groups=args.unseen_groups)
+            parser.error("predict requires --formula or --model-config unless posterior metadata includes formula.X")
+        pred = fit.predict(
+            X,
+            study_design=study_design,
+            coords=coords,
+            random_effects=args.random_effects,
+            unseen_groups=args.unseen_groups,
+            include_random_effects=args.include_random_effects or None,
+        )
         if args.output:
             pred.to_csv(args.output)
         else:
@@ -267,8 +294,12 @@ def main() -> None:
 
         X = read_table(args.X)
         Y = read_table(args.Y)
+        study_design = read_table(args.study_design) if args.study_design else None
+        coords = read_table(args.coords) if args.coords else None
         fit = HmscFit.from_file(args.posterior)
-        if args.formula:
+        if args.model_config:
+            fit.model, _config = model_from_config(args.model_config)
+        elif args.formula:
             fit.model = HmscModel(
                 Y=Y,
                 X=X,
@@ -284,6 +315,9 @@ def main() -> None:
                 level=args.level,
                 random_effects=args.random_effects,
                 unseen_groups=args.unseen_groups,
+                study_design=study_design,
+                coords=coords,
+                include_random_effects=args.include_random_effects or None,
                 rng_seed=args.seed,
             )
         else:
@@ -293,6 +327,9 @@ def main() -> None:
                 level=args.level,
                 random_effects=args.random_effects,
                 unseen_groups=args.unseen_groups,
+                study_design=study_design,
+                coords=coords,
+                include_random_effects=args.include_random_effects or None,
                 rng_seed=args.seed,
             )
         if args.output:

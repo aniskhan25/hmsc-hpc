@@ -309,6 +309,19 @@ pred = fit.predict(
 )
 ```
 
+The same random-effect-aware prediction path is available from the CLI:
+
+```bash
+python -m pyhmsc predict run/posterior.h5 \
+  --X data/X_new.csv \
+  --model-config model.yaml \
+  --study-design data/study_design_new.csv \
+  --coords data/coords_new.csv \
+  --random-effects known \
+  --unseen-groups nearest \
+  --output run/predictions.csv
+```
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.

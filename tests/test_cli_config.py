@@ -128,6 +128,148 @@ def test_cli_predict_probit_uses_response_scale(tmp_path):
     assert abs(pred.loc["site_1", "sp1"] - 0.5) < 1e-8
 
 
+def test_cli_predict_supports_separate_study_design_for_random_effects(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    x_train = tmp_path / "X_train.csv"
+    y_train = tmp_path / "Y_train.csv"
+    study_train = tmp_path / "study_train.csv"
+    x_new = tmp_path / "X_new.csv"
+    study_new = tmp_path / "study_new.csv"
+    config = tmp_path / "model.json"
+    output = tmp_path / "pred.csv"
+
+    pd.DataFrame({"x": [0.0, 1.0]}, index=["site_a", "site_b"]).to_csv(x_train)
+    pd.DataFrame({"sp1": [1.0, 2.0]}, index=["site_a", "site_b"]).to_csv(y_train)
+    pd.DataFrame({"plot": ["a", "b"]}, index=["site_a", "site_b"]).to_csv(study_train)
+    pd.DataFrame({"x": [0.0, 1.0]}, index=["new_a", "new_b"]).to_csv(x_new)
+    pd.DataFrame({"plot": ["a", "b"]}, index=["new_a", "new_b"]).to_csv(study_new)
+    config.write_text(
+        json.dumps(
+            {
+                "response": y_train.name,
+                "covariates": x_train.name,
+                "study_design": study_train.name,
+                "formula": {"X": "~ x"},
+                "distribution": "normal",
+                "random_levels": {"plot": {"column": "plot", "type": "iid"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset("Beta", data=[[[[0.0], [0.0]]]])
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=[[[[0.2], [0.5]]]])
+        level.create_dataset("Lambda", data=[[[[1.0]]]])
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "predict",
+            str(posterior),
+            "--X",
+            str(x_new),
+            "--model-config",
+            str(config),
+            "--study-design",
+            str(study_new),
+            "--include-random-effects",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    pred = pd.read_csv(output, index_col=0)
+    assert list(pred.index) == ["new_a", "new_b"]
+    assert abs(pred.loc["new_a", "sp1"] - 0.2) < 1e-8
+    assert abs(pred.loc["new_b", "sp1"] - 0.5) < 1e-8
+
+
+def test_cli_predict_supports_spatial_nearest_with_coords(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    x_train = tmp_path / "X_train.csv"
+    y_train = tmp_path / "Y_train.csv"
+    study_train = tmp_path / "study_train.csv"
+    x_new = tmp_path / "X_new.csv"
+    study_new = tmp_path / "study_new.csv"
+    coords_new = tmp_path / "coords_new.csv"
+    config = tmp_path / "model.json"
+    output = tmp_path / "pred.csv"
+
+    pd.DataFrame({"x": [0.0, 1.0]}, index=["site_a", "site_b"]).to_csv(x_train)
+    pd.DataFrame({"sp1": [1.0, 2.0]}, index=["site_a", "site_b"]).to_csv(y_train)
+    pd.DataFrame(
+        {"plot": ["a", "b"], "xcoord": [0.0, 10.0], "ycoord": [0.0, 0.0]},
+        index=["site_a", "site_b"],
+    ).to_csv(study_train)
+    pd.DataFrame({"x": [0.0]}, index=["new_site"]).to_csv(x_new)
+    pd.DataFrame({"plot": ["new"]}, index=["new_site"]).to_csv(study_new)
+    pd.DataFrame({"xcoord": [9.0], "ycoord": [0.0]}, index=["new_site"]).to_csv(coords_new)
+    config.write_text(
+        json.dumps(
+            {
+                "response": y_train.name,
+                "covariates": x_train.name,
+                "study_design": study_train.name,
+                "formula": {"X": "~ x"},
+                "distribution": "normal",
+                "random_levels": {
+                    "plot": {
+                        "column": "plot",
+                        "type": "spatial_nngp",
+                        "coords": ["xcoord", "ycoord"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset("Beta", data=[[[[0.0], [0.0]]]])
+        level = handle.create_group("random_levels").create_group("0")
+        level.create_dataset("Eta", data=[[[[0.2], [0.8]]]])
+        level.create_dataset("Lambda", data=[[[[1.0]]]])
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pyhmsc",
+            "predict",
+            str(posterior),
+            "--X",
+            str(x_new),
+            "--model-config",
+            str(config),
+            "--study-design",
+            str(study_new),
+            "--coords",
+            str(coords_new),
+            "--random-effects",
+            "known",
+            "--unseen-groups",
+            "nearest",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    pred = pd.read_csv(output, index_col=0)
+    assert abs(pred.loc["new_site", "sp1"] - 0.8) < 1e-8
+
+
 def test_cli_summarize_gamma_uses_metadata_names(tmp_path):
     import h5py
 
