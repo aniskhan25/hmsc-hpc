@@ -322,6 +322,32 @@ python -m pyhmsc predict run/posterior.h5 \
   --output run/predictions.csv
 ```
 
+This CLI prediction path was validated on LUMI with the completed
+`spatial_eta_validation_real/spatial_nngp_20` posterior. The validation used
+separate prediction `study_design` and `coords` files, then compared in-sample
+known-group and synthetic unseen-group nearest-neighbor predictions against
+`truth_linear_predictor.csv`. Both paths produced correlation `0.999652`, RMSE
+`0.029760`, and MAE `0.022363` over 100 sites and 6 species; known and nearest
+predictions were identical when the unseen groups were supplied at the sampled
+coordinates.
+
+For a stronger held-out test, use the deterministic training/test project:
+
+```bash
+python examples/generate_spatial_holdout_validation.py
+
+RUN_NAME=spatial_holdout_validation \
+  sbatch docs/lumi_spatial_holdout_validation_sbatch.sh
+```
+
+The project fits fixed, full spatial, GPP, and NNGP models to 80 training sites,
+then invokes `pyhmsc predict` for 20 sites that were excluded from fitting. The
+analyzer reports held-out correlation, RMSE, MAE, credible-interval coverage,
+and improvement relative to the fixed-effects baseline. Reuse the same
+`RUN_NAME` with `MODELS="spatial_gpp spatial_nngp"` to resume an incomplete run.
+This workflow validates the current nearest-unit baseline; it does not claim
+conditional GP/GPP/NNGP interpolation.
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.

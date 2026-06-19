@@ -175,6 +175,54 @@ def simulate_spatial_eta_effect_data(
     return pd.DataFrame(Y, index=site_names, columns=species), X, study_design, truth
 
 
+def simulate_spatial_holdout_data(
+    n_sites: int = 100,
+    n_species: int = 6,
+    holdout_stride: int = 5,
+    seed: int = 321,
+) -> dict[str, pd.DataFrame]:
+    """Create deterministic train/test data for spatial prediction validation.
+
+    Every ``holdout_stride`` site is excluded from fitting. Because the base
+    simulator orders sites on a jittered grid, this creates spatially
+    interspersed held-out locations without duplicating training coordinates.
+    """
+    if holdout_stride < 2:
+        raise ValueError("holdout_stride must be at least 2")
+    Y, X, study_design, truth = simulate_spatial_eta_effect_data(
+        n_sites=n_sites,
+        n_species=n_species,
+        spatial_range=0.24,
+        spatial_sd=1.6,
+        lambda_scale=1.2,
+        noise_sd=0.06,
+        distr="normal",
+        seed=seed,
+    )
+    holdout_mask = np.arange(n_sites) % holdout_stride == 0
+    if not holdout_mask.any() or holdout_mask.all():
+        raise ValueError("holdout split must contain both training and test sites")
+    train_index = Y.index[~holdout_mask]
+    test_index = Y.index[holdout_mask]
+    split = pd.DataFrame(
+        {"split": np.where(holdout_mask, "test", "train")},
+        index=Y.index,
+    )
+    return {
+        "train_Y": Y.loc[train_index].copy(),
+        "train_X": X.loc[train_index].copy(),
+        "train_study_design": study_design.loc[train_index].copy(),
+        "test_Y": Y.loc[test_index].copy(),
+        "test_X": X.loc[test_index].copy(),
+        "test_study_design": study_design.loc[test_index, ["plot"]].copy(),
+        "test_coords": study_design.loc[test_index, ["xcoord", "ycoord"]].copy(),
+        "truth_linear_predictor": truth["linear_predictor"].loc[test_index].copy(),
+        "truth_beta": truth["beta"].copy(),
+        "truth_lambda": truth["lambda"].copy(),
+        "split": split,
+    }
+
+
 def simulate_spatial_multifactor_eta_effect_data(
     n_sites: int = 64,
     n_species: int = 8,

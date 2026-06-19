@@ -9,6 +9,7 @@ from pyhmsc.simulate import (
     simulate_spatial_multifactor_eta_effect_data,
     simulate_spatial_eta_effect_data,
     simulate_spatial_effect_data,
+    simulate_spatial_holdout_data,
     simulate_spatial_random_slope_effect_data,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "simulate_spatial_multifactor_eta_effect_data",
     "simulate_spatial_eta_effect_data",
     "simulate_spatial_effect_data",
+    "simulate_spatial_holdout_data",
     "simulate_spatial_random_slope_effect_data",
 ]
