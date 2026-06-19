@@ -348,6 +348,26 @@ and improvement relative to the fixed-effects baseline. Reuse the same
 This workflow validates the current nearest-unit baseline; it does not claim
 conditional GP/GPP/NNGP interpolation.
 
+Validated LUMI run `spatial_holdout_validation_real` fit all four models in job
+`19367647`. Sampling completed, but the first job failed in the analyzer because
+the loaded compatibility signature for `predict_ci()` did not accept separate
+study-design and coordinate arguments. The compatibility fallback was added and
+resume job `19368235` reused every posterior and completed prediction/reporting
+in 58 seconds.
+
+Held-out results over 20 sites and 6 species were:
+
+- fixed: correlation `0.666523`, RMSE `0.992220`, coverage `0.325000`;
+- full spatial nearest: correlation `0.818042`, RMSE `0.777394`, coverage `0.250000`;
+- GPP nearest: correlation `0.816411`, RMSE `0.784542`, coverage `0.116667`;
+- NNGP nearest: correlation `0.817900`, RMSE `0.778055`, coverage `0.116667`.
+
+Thus nearest-unit spatial prediction improved RMSE by approximately `0.21` and
+raised correlation from `0.67` to `0.82`, but its posterior intervals were much
+too narrow for nominal 95% coverage. This supports implementing conditional
+spatial Eta prediction with new-location uncertainty rather than treating
+nearest-unit reuse as the final spatial prediction method.
+
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
 and parameter initialization outside the TensorFlow Gibbs sampler.

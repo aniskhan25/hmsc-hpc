@@ -25,7 +25,7 @@
 | Known random-effect posterior predictive checks | Supported when the fit is loaded with its model config; prediction accepts separate `study_design` and `coords` frames |
 | Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, and nearest-neighbor projection for unseen spatial groups |
 | Spatial held-out prediction simulator | Supported with deterministic 80/20 train/test split and distinct test coordinates |
-| Spatial held-out prediction validation | Project, analyzer, regression tests, and resumable LUMI script included; nearest-unit baseline pending LUMI results |
+| Spatial held-out prediction validation | LUMI validation completed; nearest-unit spatial models improved held-out RMSE over fixed effects, but interval coverage was under-dispersed |
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
