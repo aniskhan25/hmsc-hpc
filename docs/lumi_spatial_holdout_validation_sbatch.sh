@@ -41,6 +41,7 @@ module use /appl/local/csc/modulefiles
 module load tensorflow/2.16
 source "${VENV}/bin/activate"
 cd "${REPO_DIR}"
+export PYTHONPATH="${REPO_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
