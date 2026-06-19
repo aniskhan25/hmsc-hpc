@@ -100,19 +100,68 @@ def _interval_metrics(
     model, _config = model_from_config(project / MODEL_CONFIGS[name])
     fit = HmscFit.from_file(posterior, model=model)
     X = pd.read_csv(project / "data/test/X.csv", index_col=0)
-    kwargs: dict[str, object] = {}
+    study_design = None
+    coords = None
+    random_effects = "none"
+    unseen_groups = "error"
     if name != "fixed":
-        kwargs = {
-            "study_design": pd.read_csv(project / "data/test/study_design.csv", index_col=0),
-            "coords": pd.read_csv(project / "data/test/coords.csv", index_col=0),
-            "random_effects": "known",
-            "unseen_groups": "nearest",
-        }
-    interval = fit.predict_ci(X, level=level, response=False, **kwargs)
+        study_design = pd.read_csv(project / "data/test/study_design.csv", index_col=0)
+        coords = pd.read_csv(project / "data/test/coords.csv", index_col=0)
+        random_effects = "known"
+        unseen_groups = "nearest"
+    interval = _predict_interval_compat(
+        fit,
+        X,
+        level=level,
+        study_design=study_design,
+        coords=coords,
+        random_effects=random_effects,
+        unseen_groups=unseen_groups,
+    )
     lower = interval["lower"].loc[truth.index, truth.columns]
     upper = interval["upper"].loc[truth.index, truth.columns]
     covered = (lower <= truth) & (truth <= upper)
     return float(covered.to_numpy().mean()), float((upper - lower).to_numpy().mean())
+
+
+def _predict_interval_compat(
+    fit: HmscFit,
+    X: pd.DataFrame,
+    level: float,
+    study_design: pd.DataFrame | None,
+    coords: pd.DataFrame | None,
+    random_effects: str,
+    unseen_groups: str,
+) -> dict[str, pd.DataFrame]:
+    try:
+        return fit.predict_ci(
+            X,
+            level=level,
+            response=False,
+            study_design=study_design,
+            coords=coords,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
+    except TypeError as exc:
+        if "unexpected keyword argument" not in str(exc):
+            raise
+        merged = X.copy()
+        for extra in [study_design, coords]:
+            if extra is None:
+                continue
+            aligned = extra.copy()
+            aligned.index = merged.index
+            for column in aligned:
+                if column not in merged:
+                    merged[column] = aligned[column]
+        return fit.predict_ci(
+            merged,
+            level=level,
+            response=False,
+            random_effects=random_effects,
+            unseen_groups=unseen_groups,
+        )
 
 
 def _parse_named_paths(values: list[str], flag: str) -> dict[str, Path]:

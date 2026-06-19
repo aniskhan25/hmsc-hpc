@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from examples.analyze_spatial_holdout_validation import build_metrics_table
+from examples.analyze_spatial_holdout_validation import _predict_interval_compat, build_metrics_table
 from pyhmsc.config import load_model_config, model_from_config
 from pyhmsc.simulate import simulate_spatial_holdout_data
 from pyhmsc.validation import validate_compiled_native_model
@@ -106,3 +106,31 @@ def test_spatial_holdout_analyzer_metrics_and_report(tmp_path):
     assert "Lowest held-out RMSE: spatial_full" in result.stdout
     assert output.exists()
     assert output.with_suffix(".csv").exists()
+
+
+def test_interval_compat_merges_prediction_metadata_for_legacy_signature():
+    class LegacyFit:
+        def __init__(self):
+            self.columns = []
+
+        def predict_ci(self, X, level, response, random_effects, unseen_groups):
+            self.columns = list(X.columns)
+            values = pd.DataFrame(0.0, index=X.index, columns=["sp1"])
+            return {"lower": values, "upper": values}
+
+    fit = LegacyFit()
+    X = pd.DataFrame({"env": [0.0]}, index=["site_1"])
+    study = pd.DataFrame({"plot": ["new"]}, index=["site_1"])
+    coords = pd.DataFrame({"xcoord": [0.5], "ycoord": [0.5]}, index=["site_1"])
+
+    _predict_interval_compat(
+        fit,
+        X,
+        level=0.95,
+        study_design=study,
+        coords=coords,
+        random_effects="known",
+        unseen_groups="nearest",
+    )
+
+    assert fit.columns == ["env", "plot", "xcoord", "ycoord"]
