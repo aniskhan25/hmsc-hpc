@@ -86,6 +86,12 @@ def main() -> None:
     predict_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
     predict_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
     predict_parser.add_argument(
+        "--spatial-prediction",
+        choices=["nearest", "conditional"],
+        default="nearest",
+    )
+    predict_parser.add_argument("--seed", type=int)
+    predict_parser.add_argument(
         "--include-random-effects",
         action="store_true",
         help="include known random effects; shorthand for --random-effects known when not otherwise set",
@@ -103,6 +109,11 @@ def main() -> None:
     ppc_parser.add_argument("--coords", help="coordinate table for prediction rows")
     ppc_parser.add_argument("--random-effects", choices=["none", "known", "marginal"], default="none")
     ppc_parser.add_argument("--unseen-groups", choices=["error", "zero", "sample", "nearest"], default="error")
+    ppc_parser.add_argument(
+        "--spatial-prediction",
+        choices=["nearest", "conditional"],
+        default="nearest",
+    )
     ppc_parser.add_argument(
         "--include-random-effects",
         action="store_true",
@@ -284,6 +295,8 @@ def main() -> None:
             random_effects=args.random_effects,
             unseen_groups=args.unseen_groups,
             include_random_effects=args.include_random_effects or None,
+            spatial_prediction=args.spatial_prediction,
+            rng_seed=args.seed,
         )
         if args.output:
             pred.to_csv(args.output)
@@ -318,6 +331,7 @@ def main() -> None:
                 study_design=study_design,
                 coords=coords,
                 include_random_effects=args.include_random_effects or None,
+                spatial_prediction=args.spatial_prediction,
                 rng_seed=args.seed,
             )
         else:
@@ -330,6 +344,7 @@ def main() -> None:
                 study_design=study_design,
                 coords=coords,
                 include_random_effects=args.include_random_effects or None,
+                spatial_prediction=args.spatial_prediction,
                 rng_seed=args.seed,
             )
         if args.output:

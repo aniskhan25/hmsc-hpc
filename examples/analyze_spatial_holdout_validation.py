@@ -20,6 +20,7 @@ from pyhmsc.posterior import HmscFit
 MODEL_CONFIGS = {
     "fixed": "model_fixed.yaml",
     "spatial_full": "model_spatial_full.yaml",
+    "spatial_full_conditional": "model_spatial_full.yaml",
     "spatial_gpp": "model_spatial_gpp.yaml",
     "spatial_nngp": "model_spatial_nngp.yaml",
 }
@@ -35,12 +36,13 @@ def main() -> None:
     parser.add_argument("--prediction", action="append", default=[], help="MODEL=predictions.csv")
     parser.add_argument("--posterior", action="append", default=[], help="MODEL=posterior.h5")
     parser.add_argument("--level", type=float, default=0.95)
+    parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     predictions = _parse_named_paths(args.prediction, "--prediction")
     posteriors = _parse_named_paths(args.posterior, "--posterior")
-    metrics = build_metrics_table(args.project, predictions, posteriors, level=args.level)
+    metrics = build_metrics_table(args.project, predictions, posteriors, level=args.level, seed=args.seed)
     report = _build_report(args.project, metrics, args.level)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -54,6 +56,7 @@ def build_metrics_table(
     predictions: dict[str, Path],
     posteriors: dict[str, Path] | None = None,
     level: float = 0.95,
+    seed: int = 17,
 ) -> pd.DataFrame:
     if not 0 < level < 1:
         raise ValueError("level must be between 0 and 1")
@@ -77,7 +80,7 @@ def build_metrics_table(
             "mean_interval_width": "n/a",
         }
         if name in posteriors:
-            coverage, width = _interval_metrics(project, name, posteriors[name], truth, level)
+            coverage, width = _interval_metrics(project, name, posteriors[name], truth, level, seed)
             row["interval_coverage"] = coverage
             row["mean_interval_width"] = width
         rows.append(row)
@@ -96,6 +99,7 @@ def _interval_metrics(
     posterior: Path,
     truth: pd.DataFrame,
     level: float,
+    seed: int,
 ) -> tuple[float, float]:
     model, _config = model_from_config(project / MODEL_CONFIGS[name])
     fit = HmscFit.from_file(posterior, model=model)
@@ -104,11 +108,14 @@ def _interval_metrics(
     coords = None
     random_effects = "none"
     unseen_groups = "error"
+    spatial_prediction = "nearest"
     if name != "fixed":
         study_design = pd.read_csv(project / "data/test/study_design.csv", index_col=0)
         coords = pd.read_csv(project / "data/test/coords.csv", index_col=0)
         random_effects = "known"
         unseen_groups = "nearest"
+        if name == "spatial_full_conditional":
+            spatial_prediction = "conditional"
     interval = _predict_interval_compat(
         fit,
         X,
@@ -117,6 +124,8 @@ def _interval_metrics(
         coords=coords,
         random_effects=random_effects,
         unseen_groups=unseen_groups,
+        spatial_prediction=spatial_prediction,
+        rng_seed=seed,
     )
     lower = interval["lower"].loc[truth.index, truth.columns]
     upper = interval["upper"].loc[truth.index, truth.columns]
@@ -132,6 +141,8 @@ def _predict_interval_compat(
     coords: pd.DataFrame | None,
     random_effects: str,
     unseen_groups: str,
+    spatial_prediction: str = "nearest",
+    rng_seed: int | None = None,
 ) -> dict[str, pd.DataFrame]:
     try:
         return fit.predict_ci(
@@ -142,10 +153,16 @@ def _predict_interval_compat(
             coords=coords,
             random_effects=random_effects,
             unseen_groups=unseen_groups,
+            spatial_prediction=spatial_prediction,
+            rng_seed=rng_seed,
         )
     except TypeError as exc:
         if "unexpected keyword argument" not in str(exc):
             raise
+        if spatial_prediction == "conditional":
+            raise RuntimeError(
+                "Conditional spatial prediction requires the current pyhmsc posterior API"
+            ) from exc
         merged = X.copy()
         for extra in [study_design, coords]:
             if extra is None:
@@ -192,6 +209,8 @@ def _build_report(project: Path, metrics: pd.DataFrame, level: float) -> str:
         "",
         "Nearest spatial predictions reuse the closest sampled random-effect unit; "
         "they are a baseline rather than conditional spatial interpolation.",
+        "Full conditional spatial predictions sample held-out Eta values from the "
+        "Gaussian conditional distribution for each posterior draw.",
     ]
     return "\n".join(lines) + "\n"
 

@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -268,6 +269,106 @@ def test_cli_predict_supports_spatial_nearest_with_coords(tmp_path):
 
     pred = pd.read_csv(output, index_col=0)
     assert abs(pred.loc["new_site", "sp1"] - 0.8) < 1e-8
+
+
+def test_cli_predict_supports_full_spatial_conditional_prediction(tmp_path):
+    import h5py
+
+    posterior = tmp_path / "posterior.h5"
+    x_train = tmp_path / "X_train.csv"
+    y_train = tmp_path / "Y_train.csv"
+    study_train = tmp_path / "study_train.csv"
+    x_new = tmp_path / "X_new.csv"
+    study_new = tmp_path / "study_new.csv"
+    coords_new = tmp_path / "coords_new.csv"
+    config = tmp_path / "model.json"
+    output = tmp_path / "pred.csv"
+    repeated_output = tmp_path / "pred_repeated.csv"
+
+    pd.DataFrame({"x": [0.0, 1.0]}, index=["site_a", "site_b"]).to_csv(x_train)
+    pd.DataFrame({"sp1": [0.0, 1.0]}, index=["site_a", "site_b"]).to_csv(y_train)
+    pd.DataFrame(
+        {"plot": ["a", "b"], "xcoord": [0.0, 1.0], "ycoord": [0.0, 0.0]},
+        index=["site_a", "site_b"],
+    ).to_csv(study_train)
+    pd.DataFrame({"x": [0.0]}, index=["new_site"]).to_csv(x_new)
+    pd.DataFrame({"plot": ["new"]}, index=["new_site"]).to_csv(study_new)
+    pd.DataFrame({"xcoord": [0.5], "ycoord": [0.0]}, index=["new_site"]).to_csv(coords_new)
+    config.write_text(
+        json.dumps(
+            {
+                "response": y_train.name,
+                "covariates": x_train.name,
+                "study_design": study_train.name,
+                "formula": {"X": "~ x"},
+                "distribution": "normal",
+                "random_levels": {
+                    "plot": {
+                        "column": "plot",
+                        "type": "spatial_full",
+                        "coords": ["xcoord", "ycoord"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    draws = 100
+    with h5py.File(posterior, "w") as handle:
+        handle.create_dataset("Beta", data=np.zeros((1, draws, 2, 1)))
+        level = handle.create_group("random_levels").create_group("0")
+        eta = np.zeros((1, draws, 2, 1))
+        eta[:, :, 1, 0] = 1.0
+        level.create_dataset("Eta", data=eta)
+        level.create_dataset("Lambda", data=np.ones((1, draws, 1, 1)))
+        level.create_dataset("Alpha", data=np.ones((1, draws, 1), dtype=int))
+        handle.attrs["pyhmsc_metadata"] = json.dumps(
+            {
+                "random_levels": [
+                    {
+                        "name": "plot",
+                        "column": "plot",
+                        "type": "spatial_full",
+                        "coords": ["xcoord", "ycoord"],
+                        "alphapw": [[1.0, 1.0]],
+                    }
+                ]
+            }
+        )
+
+    base_command = [
+        sys.executable,
+        "-m",
+        "pyhmsc",
+        "predict",
+        str(posterior),
+        "--X",
+        str(x_new),
+        "--model-config",
+        str(config),
+        "--study-design",
+        str(study_new),
+        "--coords",
+        str(coords_new),
+        "--random-effects",
+        "known",
+        "--spatial-prediction",
+        "conditional",
+        "--seed",
+        "23",
+    ]
+    subprocess.run(base_command + ["--output", str(output)], check=True, capture_output=True, text=True)
+    subprocess.run(
+        base_command + ["--output", str(repeated_output)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    prediction = pd.read_csv(output, index_col=0)
+    repeated = pd.read_csv(repeated_output, index_col=0)
+    assert np.isfinite(prediction.to_numpy()).all()
+    pd.testing.assert_frame_equal(prediction, repeated)
 
 
 def test_cli_summarize_gamma_uses_metadata_names(tmp_path):

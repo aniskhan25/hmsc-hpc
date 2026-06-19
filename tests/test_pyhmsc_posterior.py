@@ -292,6 +292,104 @@ def test_spatial_nearest_prediction_accepts_separate_coords_for_unseen_group():
     np.testing.assert_allclose(pred.to_numpy(), [[0.8]])
 
 
+def test_full_spatial_conditional_prediction_matches_gaussian_conditioning():
+    draws = 6000
+    eta = np.zeros((1, draws, 2, 1))
+    eta[:, :, 1, 0] = 1.0
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, draws, 2, 1)),
+            "random_levels/0/Eta": eta,
+            "random_levels/0/Lambda": np.ones((1, draws, 1, 1)),
+            "random_levels/0/Alpha": np.ones((1, draws, 1), dtype=int),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame(
+            {"plot": ["a", "b"], "xcoord": [0.0, 1.0], "ycoord": [0.0, 0.0]}
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_full",
+                "coords": ["xcoord", "ycoord"],
+                "alphapw": [[1.0, 1.0]],
+            }
+        },
+    )
+    fit = HmscFit(posterior, model=model)
+    new = pd.DataFrame(
+        {"x": [0.0], "plot": ["new"], "xcoord": [0.5], "ycoord": [0.0]}
+    )
+
+    samples = fit.predict_samples(
+        new,
+        response=False,
+        random_effects="known",
+        spatial_prediction="conditional",
+        rng_seed=41,
+    ).reshape(-1)
+    repeated = fit.predict_samples(
+        new,
+        response=False,
+        random_effects="known",
+        spatial_prediction="conditional",
+        rng_seed=41,
+    ).reshape(-1)
+
+    train_correlation = np.exp(-1.0)
+    cross_correlation = np.exp(-0.5)
+    expected_mean = cross_correlation / (1.0 + train_correlation)
+    expected_variance = 1.0 - 2.0 * cross_correlation**2 / (1.0 + train_correlation)
+    np.testing.assert_allclose(samples, repeated)
+    assert abs(samples.mean() - expected_mean) < 0.03
+    assert abs(samples.var() - expected_variance) < 0.03
+    np.testing.assert_array_equal(fit.alpha_samples(), np.zeros((1, draws, 1), dtype=int))
+
+
+def test_full_spatial_conditional_prediction_preserves_known_eta():
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, 2, 2, 1)),
+            "random_levels/0/Eta": np.array([[[[0.2], [0.8]], [[0.3], [0.9]]]]),
+            "random_levels/0/Lambda": np.ones((1, 2, 1, 1)),
+            "random_levels/0/Alpha": np.ones((1, 2, 1), dtype=int),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame(
+            {"plot": ["a", "b"], "xcoord": [0.0, 1.0], "ycoord": [0.0, 0.0]}
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_full",
+                "coords": ["xcoord", "ycoord"],
+                "alphapw": [[1.0, 1.0]],
+            }
+        },
+    )
+    fit = HmscFit(posterior, model=model)
+
+    samples = fit.predict_samples(
+        pd.DataFrame({"x": [0.0], "plot": ["b"], "xcoord": [1.0], "ycoord": [0.0]}),
+        response=False,
+        random_effects="known",
+        spatial_prediction="conditional",
+        rng_seed=9,
+    )
+
+    np.testing.assert_allclose(samples[:, :, 0, 0], [[0.8, 0.9]])
+
+
 def test_species_association_summaries_from_lambda():
     posterior = {
         "__metadata__": {"names": {"species": ["sp1", "sp2", "sp3"]}},

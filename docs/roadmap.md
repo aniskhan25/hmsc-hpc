@@ -485,3 +485,16 @@ python examples/analyze_spatial_random_slope_validation.py \
   --spatial-gpp-posterior run/spatial_gpp/posterior.h5 \
   --spatial-nngp-posterior run/spatial_nngp/posterior.h5
 ```
+
+## Conditional Held-Out Spatial Prediction
+
+Full spatial random levels support joint conditional sampling of latent `Eta`
+at unseen coordinates for every posterior chain, draw, and factor. Prediction
+uses the posterior `Alpha` range-grid index and the same exponential covariance
+as the sampler. Known groups retain their sampled `Eta` values.
+
+The immediate validation target is to resume
+`spatial_holdout_validation_real`, reuse its existing full-spatial posterior,
+and compare conditional point accuracy and interval coverage with the recorded
+nearest-unit baseline. Conditional GPP and NNGP prediction are subsequent
+targets and require method-specific covariance conditioning.

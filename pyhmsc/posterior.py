@@ -76,6 +76,13 @@ class HmscFit:
     def lambda_samples(self, level: int = 0) -> np.ndarray:
         return self._random_level_samples("Lambda", level)
 
+    def alpha_samples(self, level: int = 0) -> np.ndarray:
+        """Return zero-based posterior spatial range-grid indices."""
+        values = np.asarray(self._random_level_samples("Alpha", level), dtype=int)
+        if values.ndim > 3 and values.shape[-1] == 1:
+            values = np.squeeze(values, axis=-1)
+        return values - 1
+
     def rho_samples(self) -> np.ndarray:
         return self._samples("rhoInd")
 
@@ -341,6 +348,8 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
+        rng_seed: int | None = None,
     ) -> np.ndarray:
         if self.model is None:
             if self._x_formula() is None:
@@ -363,7 +372,12 @@ class HmscFit:
         if random_effects not in {"none", "known", "marginal"}:
             raise ValueError("random_effects must be 'none', 'known', or 'marginal'")
         if random_effects == "known":
-            linear = linear + self._known_random_effect_prediction(X_new, unseen_groups=unseen_groups)
+            linear = linear + self._known_random_effect_prediction(
+                X_new,
+                unseen_groups=unseen_groups,
+                spatial_prediction=spatial_prediction,
+                rng=np.random.default_rng(rng_seed),
+            )
         elif random_effects == "marginal":
             linear = linear + self._marginal_random_effect_prediction(linear.shape[2])
         return _response_scale(linear, self._distribution()) if response else linear
@@ -377,6 +391,8 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
+        rng_seed: int | None = None,
     ) -> pd.DataFrame:
         X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         samples = self.predict_samples(
@@ -385,6 +401,8 @@ class HmscFit:
             random_effects=random_effects,
             unseen_groups=unseen_groups,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
+            rng_seed=rng_seed,
         )
         values = samples.mean(axis=(0, 1))
         return pd.DataFrame(
@@ -403,6 +421,8 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
+        rng_seed: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         samples = self.predict_samples(
@@ -411,6 +431,8 @@ class HmscFit:
             random_effects=random_effects,
             unseen_groups=unseen_groups,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
+            rng_seed=rng_seed,
         )
         lo = np.quantile(samples, (1 - level) / 2, axis=(0, 1))
         hi = np.quantile(samples, 1 - (1 - level) / 2, axis=(0, 1))
@@ -425,10 +447,14 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
         rng_seed: int | None = None,
     ) -> np.ndarray:
         """Draw replicated responses from the posterior predictive distribution."""
         rng = np.random.default_rng(rng_seed)
+        prediction_seed = None
+        if rng_seed is not None:
+            prediction_seed = int(rng.integers(0, np.iinfo(np.int64).max))
         random_effects = _resolve_random_effect_mode(random_effects, include_random_effects)
         X_frame = _prediction_frame(X_new, study_design=study_design, coords=coords)
         distribution = self._distribution().lower()
@@ -438,6 +464,8 @@ class HmscFit:
                 response=False,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
+                spatial_prediction=spatial_prediction,
+                rng_seed=prediction_seed,
             )
             sigma = np.maximum(self.sigma_samples(), np.finfo(float).eps)
             return rng.normal(loc=mean, scale=sigma[:, :, None, :])
@@ -447,6 +475,8 @@ class HmscFit:
                 response=True,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
+                spatial_prediction=spatial_prediction,
+                rng_seed=prediction_seed,
             )
             return rng.poisson(np.clip(rate, 0.0, 1e12))
         if distribution in {"probit", "bernoulli", "binomial"}:
@@ -455,6 +485,8 @@ class HmscFit:
                 response=True,
                 random_effects=random_effects,
                 unseen_groups=unseen_groups,
+                spatial_prediction=spatial_prediction,
+                rng_seed=prediction_seed,
             )
             return rng.binomial(1, probability)
         raise ValueError(f"Posterior predictive checks do not support distribution {distribution!r}")
@@ -469,6 +501,7 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         """Summarize observed species means against replicated posterior means."""
@@ -482,6 +515,7 @@ class HmscFit:
             study_design=study_design,
             coords=coords,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
             rng_seed=rng_seed,
         )
         species = self._species_names(samples.shape[-1])
@@ -514,6 +548,7 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         """Summarize observed site richness against replicated posterior richness."""
@@ -527,6 +562,7 @@ class HmscFit:
             study_design=study_design,
             coords=coords,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
             rng_seed=rng_seed,
         )
         observed = y_frame.sum(axis=1).to_numpy(dtype=float)
@@ -555,6 +591,7 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         return self.posterior_predictive_summary(
@@ -566,6 +603,7 @@ class HmscFit:
             study_design=study_design,
             coords=coords,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
             rng_seed=rng_seed,
         )
 
@@ -579,6 +617,7 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
         rng_seed: int | None = None,
     ) -> pd.DataFrame:
         return self.site_richness_posterior_predictive_summary(
@@ -590,6 +629,7 @@ class HmscFit:
             study_design=study_design,
             coords=coords,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
             rng_seed=rng_seed,
         )
 
@@ -806,6 +846,8 @@ class HmscFit:
         study_design: Any | None = None,
         coords: Any | None = None,
         include_random_effects: bool | None = None,
+        spatial_prediction: str = "nearest",
+        rng_seed: int | None = None,
         return_samples: bool = False,
     ) -> pd.DataFrame | np.ndarray:
         if return_samples:
@@ -817,6 +859,8 @@ class HmscFit:
                 study_design=study_design,
                 coords=coords,
                 include_random_effects=include_random_effects,
+                spatial_prediction=spatial_prediction,
+                rng_seed=rng_seed,
             )
         return self.predict_mean(
             X_new,
@@ -826,6 +870,8 @@ class HmscFit:
             study_design=study_design,
             coords=coords,
             include_random_effects=include_random_effects,
+            spatial_prediction=spatial_prediction,
+            rng_seed=rng_seed,
         )
 
     def gradient(
@@ -1113,13 +1159,23 @@ class HmscFit:
                 return [str(value) for value in names]
         return [f"unit_{idx}" for idx in range(size)]
 
-    def _known_random_effect_prediction(self, X_new: pd.DataFrame, unseen_groups: str = "error") -> np.ndarray:
+    def _known_random_effect_prediction(
+        self,
+        X_new: pd.DataFrame,
+        unseen_groups: str = "error",
+        spatial_prediction: str = "nearest",
+        rng: np.random.Generator | None = None,
+    ) -> np.ndarray:
         if unseen_groups not in {"error", "zero", "sample", "nearest"}:
             raise ValueError("unseen_groups must be 'error', 'zero', 'sample', or 'nearest'")
+        if spatial_prediction not in {"nearest", "conditional"}:
+            raise ValueError("spatial_prediction must be 'nearest' or 'conditional'")
         if self.model is None or not getattr(self.model, "random_levels", None):
             return 0
+        rng = rng or np.random.default_rng()
         total = 0
         for level_idx, (level_name, spec) in enumerate(self.model.random_levels.items()):
+            spec = self._prediction_random_level_spec(level_idx, spec)
             column = spec.get("column", level_name)
             if column not in X_new:
                 raise ValueError(f"Known random-effect prediction requires column {column!r}")
@@ -1127,17 +1183,21 @@ class HmscFit:
                 raise ValueError("Known random-effect prediction requires model.study_design")
             _, levels = pd.factorize(self.model.study_design[column], sort=True)
             mapping = {value: idx for idx, value in enumerate(levels)}
-            codes = []
-            zero_mask = []
-            for row_idx, value in enumerate(X_new[column]):
-                code = mapping.get(value)
-                if code is None:
-                    zero_mask.append(unseen_groups == "zero")
-                    code = self._resolve_unseen_group(spec, X_new, row_idx, unseen_groups)
-                else:
-                    zero_mask.append(False)
-                codes.append(code)
-            eta = self.eta_samples(level_idx)[:, :, codes, :]
+            raw_codes = np.asarray([mapping.get(value, -1) for value in X_new[column]], dtype=int)
+            if spatial_prediction == "conditional" and np.any(raw_codes < 0):
+                eta = self._conditional_spatial_eta_samples(level_idx, spec, X_new, raw_codes, rng)
+                zero_mask = [False] * len(X_new)
+            else:
+                codes = []
+                zero_mask = []
+                for row_idx, code in enumerate(raw_codes):
+                    if code < 0:
+                        zero_mask.append(unseen_groups == "zero")
+                        code = self._resolve_unseen_group(spec, X_new, row_idx, unseen_groups)
+                    else:
+                        zero_mask.append(False)
+                    codes.append(code)
+                eta = self.eta_samples(level_idx)[:, :, codes, :]
             lam = self.lambda_samples(level_idx)
             if lam.ndim == 5:
                 x_mat = self._random_slope_design_for_groups(spec, X_new)
@@ -1148,6 +1208,120 @@ class HmscFit:
                 effect[:, :, zero_mask, :] = 0
             total = total + effect
         return total
+
+    def _conditional_spatial_eta_samples(
+        self,
+        level: int,
+        spec: dict[str, Any],
+        X_new: pd.DataFrame,
+        known_codes: np.ndarray,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        if spec.get("type") != "spatial_full":
+            raise NotImplementedError("conditional spatial prediction currently supports spatial_full only")
+        if self.model is None or self.model.study_design is None:
+            raise ValueError("conditional spatial prediction requires model.study_design")
+        coord_columns = spec.get("coords", ["x", "y"])
+        if any(column not in X_new for column in coord_columns):
+            raise ValueError("conditional spatial prediction requires coordinate columns")
+        level_name = spec.get("name", "plot")
+        group_column = spec.get("column", level_name)
+        training_coords = (
+            self.model.study_design.groupby(group_column, sort=True)[coord_columns]
+            .mean()
+            .to_numpy(dtype=float)
+        )
+        eta_train = self.eta_samples(level)
+        if eta_train.shape[2] != training_coords.shape[0]:
+            raise ValueError("training coordinates do not match posterior Eta units")
+
+        eta_new = np.empty((*eta_train.shape[:2], len(X_new), eta_train.shape[-1]), dtype=float)
+        known_rows = np.flatnonzero(known_codes >= 0)
+        if len(known_rows):
+            eta_new[:, :, known_rows, :] = eta_train[:, :, known_codes[known_rows], :]
+
+        unknown_rows = np.flatnonzero(known_codes < 0)
+        if len(unknown_rows):
+            unknown_frame = X_new.iloc[unknown_rows]
+            unknown_codes, _unknown_levels = pd.factorize(unknown_frame[group_column], sort=True)
+            new_coords = (
+                unknown_frame.assign(__prediction_group=unknown_codes)
+                .groupby("__prediction_group", sort=True)[coord_columns]
+                .mean()
+                .to_numpy(dtype=float)
+            )
+            conditional = self._sample_full_spatial_conditional_eta(
+                level,
+                spec,
+                eta_train,
+                training_coords,
+                new_coords,
+                rng,
+            )
+            eta_new[:, :, unknown_rows, :] = conditional[:, :, unknown_codes, :]
+        return eta_new
+
+    def _sample_full_spatial_conditional_eta(
+        self,
+        level: int,
+        spec: dict[str, Any],
+        eta_train: np.ndarray,
+        training_coords: np.ndarray,
+        new_coords: np.ndarray,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        ranges = np.asarray(spec.get("alphapw", []), dtype=float)
+        if ranges.size == 0:
+            distance = _pairwise_distance_matrix(training_coords, training_coords)
+            positive = distance[distance > 0]
+            scale = float(spec.get("alpha", np.median(positive) if positive.size else 1.0))
+            ranges = np.asarray([[scale, 1.0]], dtype=float)
+        ranges = np.atleast_2d(ranges)
+        try:
+            alpha = self.alpha_samples(level)
+        except ValueError:
+            alpha = np.zeros((*eta_train.shape[:2], eta_train.shape[-1]), dtype=int)
+        if alpha.shape != (*eta_train.shape[:2], eta_train.shape[-1]):
+            raise ValueError("posterior Alpha and Eta factor dimensions do not match")
+
+        train_distance = _pairwise_distance_matrix(training_coords, training_coords)
+        cross_distance = _pairwise_distance_matrix(new_coords, training_coords)
+        new_distance = _pairwise_distance_matrix(new_coords, new_coords)
+        output = np.empty((*eta_train.shape[:2], len(new_coords), eta_train.shape[-1]), dtype=float)
+        for factor in range(eta_train.shape[-1]):
+            target = output[..., factor]
+            for alpha_index in np.unique(alpha[..., factor]):
+                if alpha_index < 0 or alpha_index >= len(ranges):
+                    raise ValueError(f"posterior Alpha index {alpha_index} is outside alphapw")
+                scale = float(ranges[alpha_index, 0])
+                if scale <= 0:
+                    scale = 1.0
+                train_cov = np.exp(-train_distance / scale)
+                train_cov = train_cov + np.eye(len(training_coords)) * 1e-8
+                cross_cov = np.exp(-cross_distance / scale)
+                new_cov = np.exp(-new_distance / scale)
+                solved = np.linalg.solve(train_cov, cross_cov.T)
+                projection = solved.T
+                conditional_cov = new_cov - cross_cov @ solved
+                conditional_root = _positive_semidefinite_root(conditional_cov)
+                means = np.einsum("nt,cdt->cdn", projection, eta_train[..., factor])
+                noise = np.einsum(
+                    "ij,cdj->cdi",
+                    conditional_root,
+                    rng.normal(size=means.shape),
+                )
+                candidate = means + noise
+                selected = alpha[..., factor] == alpha_index
+                target[selected] = candidate[selected]
+        return output
+
+    def _prediction_random_level_spec(self, level: int, spec: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(spec)
+        metadata = self.metadata if isinstance(self.metadata, dict) else {}
+        levels = metadata.get("random_levels", [])
+        if isinstance(levels, list) and 0 <= level < len(levels) and isinstance(levels[level], dict):
+            merged.update(levels[level])
+        return merged
 
     def _resolve_unseen_group(self, spec: dict[str, Any], X_new: pd.DataFrame, row_idx: int, mode: str) -> int:
         if mode == "error":
@@ -1513,6 +1687,18 @@ def _resolve_random_effect_mode(random_effects: str, include_random_effects: boo
     if include_random_effects:
         return "known" if random_effects == "none" else random_effects
     return "none"
+
+
+def _pairwise_distance_matrix(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    delta = left[:, None, :] - right[None, :, :]
+    return np.sqrt(np.sum(delta * delta, axis=-1))
+
+
+def _positive_semidefinite_root(matrix: np.ndarray) -> np.ndarray:
+    symmetric = (matrix + matrix.T) / 2
+    eigenvalues, eigenvectors = np.linalg.eigh(symmetric)
+    eigenvalues = np.maximum(eigenvalues, 0.0)
+    return eigenvectors @ np.diag(np.sqrt(eigenvalues))
 
 
 def _response_scale(values: np.ndarray, distribution: str) -> np.ndarray:

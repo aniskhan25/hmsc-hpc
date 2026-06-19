@@ -33,6 +33,7 @@ RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 PROJECT_DIR="${PROJECT_DIR:-${REPO_DIR}/examples/projects/simulated_spatial_holdout_validation}"
 MODELS="${MODELS:-fixed spatial_full spatial_gpp spatial_nngp}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
+PREDICTION_SEED="${PREDICTION_SEED:-17}"
 
 mkdir -p output "${RUN_ROOT}"
 
@@ -55,6 +56,7 @@ run_model() {
   local compiled="${model_root}/compiled"
   local posterior="${model_root}/posterior.h5"
   local prediction="${model_root}/heldout_predictions.csv"
+  local conditional_prediction="${model_root}/heldout_predictions_conditional.csv"
 
   mkdir -p "${model_root}"
   echo
@@ -93,6 +95,17 @@ run_model() {
       --random-effects known \
       --unseen-groups nearest \
       --output "${prediction}"
+    if [[ "${name}" == "spatial_full" ]]; then
+      "${PYTHON}" -m pyhmsc predict "${posterior}" \
+        --X "${PROJECT_DIR}/data/test/X.csv" \
+        --model-config "${config}" \
+        --study-design "${PROJECT_DIR}/data/test/study_design.csv" \
+        --coords "${PROJECT_DIR}/data/test/coords.csv" \
+        --random-effects known \
+        --spatial-prediction conditional \
+        --seed "${PREDICTION_SEED}" \
+        --output "${conditional_prediction}"
+    fi
   fi
 }
 
@@ -120,9 +133,19 @@ for model_name in fixed spatial_full spatial_gpp spatial_nngp; do
   fi
 done
 
+conditional_prediction="${RUN_ROOT}/spatial_full/heldout_predictions_conditional.csv"
+conditional_posterior="${RUN_ROOT}/spatial_full/posterior.h5"
+if [[ -s "${conditional_prediction}" ]]; then
+  analyzer_args+=(--prediction "spatial_full_conditional=${conditional_prediction}")
+fi
+if [[ -s "${conditional_posterior}" ]]; then
+  analyzer_args+=(--posterior "spatial_full_conditional=${conditional_posterior}")
+fi
+
 if [[ "${#analyzer_args[@]}" -gt 0 ]]; then
   "${PYTHON}" examples/analyze_spatial_holdout_validation.py \
     --project "${PROJECT_DIR}" \
+    --seed "${PREDICTION_SEED}" \
     "${analyzer_args[@]}" \
     --output "${RUN_ROOT}/spatial_holdout_validation_report.txt"
 else

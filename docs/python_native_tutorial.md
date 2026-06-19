@@ -309,6 +309,26 @@ pred = fit.predict(
 )
 ```
 
+For a full spatial random level, conditional prediction instead samples the
+held-out latent `Eta` values from their Gaussian conditional distribution for
+every posterior draw. It uses the sampled spatial range index and propagates
+new-location uncertainty through `Lambda`:
+
+```python
+pred = fit.predict(
+    new_X,
+    study_design=new_study_design,
+    coords=new_coords,
+    random_effects="known",
+    spatial_prediction="conditional",
+    rng_seed=17,
+)
+```
+
+The equivalent CLI options are `--spatial-prediction conditional --seed 17`.
+Conditional prediction currently supports `spatial_full`; GPP and NNGP use the
+nearest-unit baseline.
+
 The same random-effect-aware prediction path is available from the CLI:
 
 ```bash
@@ -345,8 +365,9 @@ then invokes `pyhmsc predict` for 20 sites that were excluded from fitting. The
 analyzer reports held-out correlation, RMSE, MAE, credible-interval coverage,
 and improvement relative to the fixed-effects baseline. Reuse the same
 `RUN_NAME` with `MODELS="spatial_gpp spatial_nngp"` to resume an incomplete run.
-This workflow validates the current nearest-unit baseline; it does not claim
-conditional GP/GPP/NNGP interpolation.
+The workflow compares nearest-unit predictions for all spatial methods with
+conditional Gaussian interpolation for the full spatial model. It does not yet
+claim conditional GPP or NNGP interpolation.
 
 Validated LUMI run `spatial_holdout_validation_real` fit all four models in job
 `19367647`. Sampling completed, but the first job failed in the analyzer because
@@ -364,9 +385,9 @@ Held-out results over 20 sites and 6 species were:
 
 Thus nearest-unit spatial prediction improved RMSE by approximately `0.21` and
 raised correlation from `0.67` to `0.82`, but its posterior intervals were much
-too narrow for nominal 95% coverage. This supports implementing conditional
-spatial Eta prediction with new-location uncertainty rather than treating
-nearest-unit reuse as the final spatial prediction method.
+too narrow for nominal 95% coverage. This motivated the conditional
+full-spatial Eta implementation. Its updated held-out LUMI comparison is
+pending; the values above remain the nearest-unit baseline.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
