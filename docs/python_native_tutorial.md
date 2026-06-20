@@ -367,7 +367,7 @@ and improvement relative to the fixed-effects baseline. Reuse the same
 `RUN_NAME` with `MODELS="spatial_gpp spatial_nngp"` to resume an incomplete run.
 The workflow compares nearest-unit predictions for all spatial methods with
 conditional interpolation for full spatial, GPP, and NNGP models. Full-spatial
-validation is recorded below; GPP and NNGP validation results are pending.
+validation results for all three methods are recorded below.
 
 Validated LUMI run `spatial_holdout_validation_real` fit all four models in job
 `19367647`. Sampling completed, but the first job failed in the analyzer because
@@ -389,7 +389,7 @@ Held-out results over 20 sites and 6 species were:
 - GPP conditional: correlation `0.882362`, RMSE `0.626497`, MAE `0.450791`,
   coverage `1.000000`, and mean interval width `2.549525`;
 - NNGP nearest: correlation `0.817900`, RMSE `0.778055`, MAE `0.585704`,
-  coverage `0.233333`, and mean interval width `0.421810`.
+  coverage `0.233333`, and mean interval width `0.421810`;
 - NNGP conditional: correlation `0.925759`, RMSE `0.510099`, MAE `0.383430`,
   coverage `1.000000`, and mean interval width `2.399664`.
 
@@ -409,6 +409,47 @@ by `0.267956` and closely matched the full-spatial conditional result. Coverage
 was `1.000` for both approximations; their mean interval widths around `2.4` to
 `2.55` should be interpreted with the small validation size rather than as
 evidence of exact calibration.
+
+### Replicated Hold-Out Validation
+
+The replicated workflow evaluates seed robustness and NNGP ordering
+sensitivity. By default it generates seeds `321`, `654`, and `987`. Each seed
+has canonical fixed, full-spatial, GPP, and NNGP tasks, plus reverse-order and
+deterministic random-order NNGP tasks, for 18 GPU-array tasks total.
+
+On LUMI, launch the generated projects, array, and dependent analysis job with:
+
+```bash
+RUN_NAME=replicated_spatial_holdout_validation \
+  bash docs/lumi_replicated_spatial_holdout_submit.sh
+```
+
+Override seeds or concurrency without editing the scripts:
+
+```bash
+SEEDS="321 654 987 1234" MAX_CONCURRENT=2 \
+  RUN_NAME=replicated_spatial_holdout_validation_v2 \
+  bash docs/lumi_replicated_spatial_holdout_submit.sh
+```
+
+The launcher writes generated projects and `tasks.csv` under the run directory,
+submits one isolated task per manifest row, and schedules aggregation with an
+`afterok` dependency. Outputs include:
+
+```text
+replicated_spatial_holdout_report.txt
+replicated_spatial_holdout_report_raw.csv
+replicated_spatial_holdout_report_summary.csv
+replicated_spatial_holdout_report_ordering.csv
+```
+
+The summary reports coverage bias from the requested nominal level and the
+minimum/maximum replicate coverage in addition to metric means and standard
+deviations. The ordering table reports per-seed correlation, RMSE, coverage,
+and interval width deltas from canonical NNGP ordering. Positive RMSE deltas
+mean the tested ordering performed worse. Only plot labels change between
+ordering variants; responses, covariates, coordinates, truth, row order, and
+split are identical.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,

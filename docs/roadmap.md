@@ -514,3 +514,18 @@ coverage `1.000000`; NNGP conditional prediction achieved correlation
 `0.925759`, RMSE `0.510099`, and coverage `1.000000`. This completes conditional
 held-out prediction support and deterministic validation for all three spatial
 methods.
+
+## Replicated Spatial Hold-Out Validation
+
+A manifest-driven replicated workflow covers three default simulation seeds
+and NNGP ordering sensitivity. Canonical ordering fits fixed, full-spatial, GPP,
+and NNGP models. Reverse and deterministic random orderings fit additional NNGP
+models while preserving observations, covariates, coordinates, truth, row
+order, and train/test membership.
+
+The default manifest contains 18 independent tasks. The LUMI launcher submits
+them as a throttled GPU array and schedules a dependent CPU analysis job. The
+analyzer writes raw per-task metrics, across-seed means and standard deviations,
+coverage bias and replicate bounds, and per-seed NNGP deltas from canonical
+ordering. Local deterministic structure and aggregation tests are complete; the
+replicated LUMI run remains pending.

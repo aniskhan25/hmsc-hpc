@@ -223,6 +223,41 @@ def simulate_spatial_holdout_data(
     }
 
 
+def apply_spatial_holdout_group_order(
+    data: dict[str, pd.DataFrame],
+    ordering: str = "canonical",
+    seed: int = 1,
+) -> dict[str, pd.DataFrame]:
+    """Relabel unique spatial groups to control compiler ordering.
+
+    The response, covariates, coordinates, truth, row order, and train/test
+    split are unchanged. Only the lexicographic order of the ``plot`` labels is
+    varied, which changes the directed NNGP graph construction.
+    """
+    if ordering not in {"canonical", "reverse", "random"}:
+        raise ValueError("ordering must be 'canonical', 'reverse', or 'random'")
+    if "split" not in data or "train_study_design" not in data or "test_study_design" not in data:
+        raise ValueError("spatial hold-out data is missing split or study-design tables")
+    site_index = list(data["split"].index)
+    n_sites = len(site_index)
+    if ordering == "canonical":
+        positions = np.arange(n_sites)
+    elif ordering == "reverse":
+        positions = np.arange(n_sites - 1, -1, -1)
+    else:
+        positions = np.random.default_rng(seed).permutation(n_sites)
+    width = max(3, len(str(max(0, n_sites - 1))))
+    labels = {
+        site: f"plot_{int(position):0{width}d}"
+        for site, position in zip(site_index, positions)
+    }
+    ordered = {name: frame.copy() for name, frame in data.items()}
+    for key in ["train_study_design", "test_study_design"]:
+        frame = ordered[key]
+        frame["plot"] = [labels[site] for site in frame.index]
+    return ordered
+
+
 def simulate_spatial_multifactor_eta_effect_data(
     n_sites: int = 64,
     n_species: int = 8,
