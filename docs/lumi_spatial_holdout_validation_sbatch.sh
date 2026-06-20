@@ -109,6 +109,26 @@ run_model() {
         --spatial-prediction conditional \
         --seed "${PREDICTION_SEED}" \
         --output "${conditional_prediction}"
+    elif [[ "${name}" == "spatial_gpp" ]]; then
+      "${PYTHON}" -m pyhmsc predict "${posterior}" \
+        --X "${PROJECT_DIR}/data/test/X.csv" \
+        --model-config "${config}" \
+        --study-design "${PROJECT_DIR}/data/test/study_design.csv" \
+        --coords "${PROJECT_DIR}/data/test/coords.csv" \
+        --random-effects known \
+        --spatial-prediction conditional \
+        --seed "${PREDICTION_SEED}" \
+        --output "${conditional_prediction}"
+    elif [[ "${name}" == "spatial_nngp" ]]; then
+      "${PYTHON}" -m pyhmsc predict "${posterior}" \
+        --X "${PROJECT_DIR}/data/test/X.csv" \
+        --model-config "${config}" \
+        --study-design "${PROJECT_DIR}/data/test/study_design.csv" \
+        --coords "${PROJECT_DIR}/data/test/coords.csv" \
+        --random-effects known \
+        --spatial-prediction conditional \
+        --seed "${PREDICTION_SEED}" \
+        --output "${conditional_prediction}"
     fi
   fi
 }
@@ -144,6 +164,24 @@ if [[ -s "${conditional_prediction}" ]]; then
 fi
 if [[ -s "${conditional_posterior}" ]]; then
   analyzer_args+=(--posterior "spatial_full_conditional=${conditional_posterior}")
+fi
+
+conditional_prediction="${RUN_ROOT}/spatial_gpp/heldout_predictions_conditional.csv"
+conditional_posterior="${RUN_ROOT}/spatial_gpp/posterior.h5"
+if [[ -s "${conditional_prediction}" ]]; then
+  analyzer_args+=(--prediction "spatial_gpp_conditional=${conditional_prediction}")
+fi
+if [[ -s "${conditional_posterior}" ]]; then
+  analyzer_args+=(--posterior "spatial_gpp_conditional=${conditional_posterior}")
+fi
+
+conditional_prediction="${RUN_ROOT}/spatial_nngp/heldout_predictions_conditional.csv"
+conditional_posterior="${RUN_ROOT}/spatial_nngp/posterior.h5"
+if [[ -s "${conditional_prediction}" ]]; then
+  analyzer_args+=(--prediction "spatial_nngp_conditional=${conditional_prediction}")
+fi
+if [[ -s "${conditional_posterior}" ]]; then
+  analyzer_args+=(--posterior "spatial_nngp_conditional=${conditional_posterior}")
 fi
 
 if [[ "${#analyzer_args[@]}" -gt 0 ]]; then

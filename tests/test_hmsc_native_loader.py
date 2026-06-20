@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -157,6 +159,8 @@ def test_native_loader_builds_spatial_gpp_random_level_state(tmp_path):
     assert random_hyper[0]["idDg"].shape == (1, 4)
     assert random_hyper[0]["Fg"].shape == (1, 2, 2)
     assert init_list[0]["Eta"][0].shape == (4, 1)
+    metadata = json.loads(compiled.init_json.read_text(encoding="utf-8"))
+    np.testing.assert_allclose(metadata["random_levels"][0]["knots"], [[0.0, 0.0], [1.0, 1.0]])
 
 
 def test_native_loader_builds_spatial_nngp_random_level_state(tmp_path):

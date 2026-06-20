@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 
 def test_cli_compile_yaml_config(tmp_path):
@@ -271,7 +272,8 @@ def test_cli_predict_supports_spatial_nearest_with_coords(tmp_path):
     assert abs(pred.loc["new_site", "sp1"] - 0.8) < 1e-8
 
 
-def test_cli_predict_supports_full_spatial_conditional_prediction(tmp_path):
+@pytest.mark.parametrize("spatial_type", ["spatial_full", "spatial_gpp", "spatial_nngp"])
+def test_cli_predict_supports_conditional_spatial_prediction(tmp_path, spatial_type):
     import h5py
 
     posterior = tmp_path / "posterior.h5"
@@ -305,8 +307,10 @@ def test_cli_predict_supports_full_spatial_conditional_prediction(tmp_path):
                 "random_levels": {
                     "plot": {
                         "column": "plot",
-                        "type": "spatial_full",
+                        "type": spatial_type,
                         "coords": ["xcoord", "ycoord"],
+                        **({"n_knots": 1} if spatial_type == "spatial_gpp" else {}),
+                        **({"n_neighbors": 1} if spatial_type == "spatial_nngp" else {}),
                     }
                 },
             }
@@ -328,9 +332,15 @@ def test_cli_predict_supports_full_spatial_conditional_prediction(tmp_path):
                     {
                         "name": "plot",
                         "column": "plot",
-                        "type": "spatial_full",
+                        "type": spatial_type,
                         "coords": ["xcoord", "ycoord"],
                         "alphapw": [[1.0, 1.0]],
+                        **(
+                            {"nKnots": 1, "knots": [[0.0, 0.0]]}
+                            if spatial_type == "spatial_gpp"
+                            else {}
+                        ),
+                        **({"nNeighbors": 1} if spatial_type == "spatial_nngp" else {}),
                     }
                 ]
             }

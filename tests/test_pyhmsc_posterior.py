@@ -390,6 +390,129 @@ def test_full_spatial_conditional_prediction_preserves_known_eta():
     np.testing.assert_allclose(samples[:, :, 0, 0], [[0.8, 0.9]])
 
 
+def test_gpp_conditional_prediction_matches_predictive_process_conditioning():
+    draws = 6000
+    eta_values = np.array([0.0, 1.0, -0.5])
+    eta = np.broadcast_to(eta_values[None, None, :, None], (1, draws, 3, 1)).copy()
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, draws, 2, 1)),
+            "random_levels/0/Eta": eta,
+            "random_levels/0/Lambda": np.ones((1, draws, 1, 1)),
+            "random_levels/0/Alpha": np.ones((1, draws, 1), dtype=int),
+        }
+    }
+    training_coords = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": eta_values}),
+        X=pd.DataFrame({"x": [0.0, 1.0, 2.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame(
+            {
+                "plot": ["a", "b", "c"],
+                "xcoord": training_coords[:, 0],
+                "ycoord": training_coords[:, 1],
+            }
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_gpp",
+                "coords": ["xcoord", "ycoord"],
+                "n_knots": 1,
+                "alphapw": [[1.0, 1.0]],
+            }
+        },
+    )
+    fit = HmscFit(posterior, model=model)
+    new = pd.DataFrame(
+        {"x": [0.0], "plot": ["new"], "xcoord": [0.5], "ycoord": [0.0]}
+    )
+
+    samples = fit.predict_samples(
+        new,
+        response=False,
+        random_effects="known",
+        spatial_prediction="conditional",
+        rng_seed=73,
+    ).reshape(-1)
+
+    knot = np.array([[1.0, 0.0]])
+    knot_cov = np.array([[1.0 + 1e-8]])
+    inverse_knot_cov = np.linalg.inv(knot_cov)
+    train_knot_cov = np.exp(-np.linalg.norm(training_coords - knot, axis=1))[:, None]
+    new_knot_cov = np.array([[np.exp(-0.5)]])
+    train_low_rank = train_knot_cov @ inverse_knot_cov @ train_knot_cov.T
+    train_cov = train_low_rank + np.diag(1.0 - np.diag(train_low_rank)) + np.eye(3) * 1e-8
+    cross_cov = new_knot_cov @ inverse_knot_cov @ train_knot_cov.T
+    expected_mean = (cross_cov @ np.linalg.solve(train_cov, eta_values)).item()
+    expected_variance = (1.0 - cross_cov @ np.linalg.solve(train_cov, cross_cov.T)).item()
+    assert abs(samples.mean() - expected_mean) < 0.03
+    assert abs(samples.var() - expected_variance) < 0.03
+
+
+def test_nngp_conditional_prediction_extends_neighbor_graph_sequentially():
+    draws = 6000
+    eta_values = np.array([1.0, -1.0])
+    eta = np.broadcast_to(eta_values[None, None, :, None], (1, draws, 2, 1)).copy()
+    posterior = {
+        "__arrays__": {
+            "Beta": np.zeros((1, draws, 2, 1)),
+            "random_levels/0/Eta": eta,
+            "random_levels/0/Lambda": np.ones((1, draws, 1, 1)),
+            "random_levels/0/Alpha": np.ones((1, draws, 1), dtype=int),
+        }
+    }
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": eta_values}),
+        X=pd.DataFrame({"x": [0.0, 3.0]}),
+        x_formula="~ x",
+        distr="normal",
+        study_design=pd.DataFrame(
+            {"plot": ["a", "b"], "xcoord": [0.0, 3.0], "ycoord": [0.0, 0.0]}
+        ),
+        random_levels={
+            "plot": {
+                "column": "plot",
+                "type": "spatial_nngp",
+                "coords": ["xcoord", "ycoord"],
+                "n_neighbors": 1,
+                "alphapw": [[1.0, 1.0]],
+            }
+        },
+    )
+    fit = HmscFit(posterior, model=model)
+    new = pd.DataFrame(
+        {
+            "x": [0.5, 1.0],
+            "plot": ["c", "d"],
+            "xcoord": [0.5, 1.0],
+            "ycoord": [0.0, 0.0],
+        }
+    )
+
+    samples = fit.predict_samples(
+        new,
+        response=False,
+        random_effects="known",
+        spatial_prediction="conditional",
+        rng_seed=91,
+    ).reshape(draws, 2)
+
+    coefficient = np.exp(-0.5)
+    residual_variance = 1.0 - coefficient**2
+    expected_mean = np.array([coefficient, coefficient**2])
+    expected_covariance = np.array(
+        [
+            [residual_variance, coefficient * residual_variance],
+            [coefficient * residual_variance, residual_variance * (1.0 + coefficient**2)],
+        ]
+    )
+    np.testing.assert_allclose(samples.mean(axis=0), expected_mean, atol=0.03)
+    np.testing.assert_allclose(np.cov(samples, rowvar=False), expected_covariance, atol=0.03)
+
+
 def test_species_association_summaries_from_lambda():
     posterior = {
         "__metadata__": {"names": {"species": ["sp1", "sp2", "sp3"]}},

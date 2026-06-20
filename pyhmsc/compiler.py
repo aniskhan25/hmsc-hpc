@@ -204,6 +204,7 @@ def _compile_random_levels(
                 arrays[f"{prefix}_distMat12"] = _cross_distances(coords, knots)
                 arrays[f"{prefix}_distMat22"] = _pairwise_distances(knots)
                 level_meta["nKnots"] = int(knots.shape[0])
+                level_meta["knots"] = knots.tolist()
             else:
                 n_neighbors = int(spec.get("n_neighbors", spec.get("nNeighbors", min(10, max(1, n_levels - 1)))))
                 indices, local_dists = _nngp_neighbors(dist, n_neighbors)

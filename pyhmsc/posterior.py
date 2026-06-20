@@ -1217,8 +1217,17 @@ class HmscFit:
         known_codes: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        if spec.get("type") != "spatial_full":
-            raise NotImplementedError("conditional spatial prediction currently supports spatial_full only")
+        spatial_type = spec.get("type")
+        if spatial_type not in {
+            "spatial_full",
+            "spatial_gpp",
+            "gpp",
+            "spatial_nngp",
+            "nngp",
+        }:
+            raise NotImplementedError(
+                "conditional spatial prediction requires a full, GPP, or NNGP spatial random level"
+            )
         if self.model is None or self.model.study_design is None:
             raise ValueError("conditional spatial prediction requires model.study_design")
         coord_columns = spec.get("coords", ["x", "y"])
@@ -1250,14 +1259,13 @@ class HmscFit:
                 .mean()
                 .to_numpy(dtype=float)
             )
-            conditional = self._sample_full_spatial_conditional_eta(
-                level,
-                spec,
-                eta_train,
-                training_coords,
-                new_coords,
-                rng,
-            )
+            if spatial_type == "spatial_full":
+                sampler = self._sample_full_spatial_conditional_eta
+            elif spatial_type in {"spatial_gpp", "gpp"}:
+                sampler = self._sample_gpp_spatial_conditional_eta
+            else:
+                sampler = self._sample_nngp_spatial_conditional_eta
+            conditional = sampler(level, spec, eta_train, training_coords, new_coords, rng)
             eta_new[:, :, unknown_rows, :] = conditional[:, :, unknown_codes, :]
         return eta_new
 
@@ -1270,19 +1278,7 @@ class HmscFit:
         new_coords: np.ndarray,
         rng: np.random.Generator,
     ) -> np.ndarray:
-        ranges = np.asarray(spec.get("alphapw", []), dtype=float)
-        if ranges.size == 0:
-            distance = _pairwise_distance_matrix(training_coords, training_coords)
-            positive = distance[distance > 0]
-            scale = float(spec.get("alpha", np.median(positive) if positive.size else 1.0))
-            ranges = np.asarray([[scale, 1.0]], dtype=float)
-        ranges = np.atleast_2d(ranges)
-        try:
-            alpha = self.alpha_samples(level)
-        except ValueError:
-            alpha = np.zeros((*eta_train.shape[:2], eta_train.shape[-1]), dtype=int)
-        if alpha.shape != (*eta_train.shape[:2], eta_train.shape[-1]):
-            raise ValueError("posterior Alpha and Eta factor dimensions do not match")
+        ranges, alpha = self._spatial_ranges_and_alpha(level, spec, eta_train, training_coords)
 
         train_distance = _pairwise_distance_matrix(training_coords, training_coords)
         cross_distance = _pairwise_distance_matrix(new_coords, training_coords)
@@ -1313,6 +1309,151 @@ class HmscFit:
                 candidate = means + noise
                 selected = alpha[..., factor] == alpha_index
                 target[selected] = candidate[selected]
+        return output
+
+    def _sample_gpp_spatial_conditional_eta(
+        self,
+        level: int,
+        spec: dict[str, Any],
+        eta_train: np.ndarray,
+        training_coords: np.ndarray,
+        new_coords: np.ndarray,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        ranges, alpha = self._spatial_ranges_and_alpha(level, spec, eta_train, training_coords)
+        knots_value = spec.get("knots")
+        if knots_value is not None:
+            knots = np.asarray(knots_value, dtype=float)
+            if knots.ndim != 2 or knots.shape[1] != training_coords.shape[1]:
+                raise ValueError("GPP knot coordinates do not match spatial coordinate dimensions")
+        else:
+            default_count = min(max(2, int(np.sqrt(len(training_coords)))), len(training_coords))
+            knot_count = int(spec.get("nKnots", spec.get("n_knots", default_count)))
+            knots = _select_gpp_knots(training_coords, knot_count)
+
+        train_knot_distance = _pairwise_distance_matrix(training_coords, knots)
+        new_knot_distance = _pairwise_distance_matrix(new_coords, knots)
+        knot_distance = _pairwise_distance_matrix(knots, knots)
+        output = np.empty((*eta_train.shape[:2], len(new_coords), eta_train.shape[-1]), dtype=float)
+        for factor in range(eta_train.shape[-1]):
+            target = output[..., factor]
+            for alpha_index in np.unique(alpha[..., factor]):
+                if alpha_index < 0 or alpha_index >= len(ranges):
+                    raise ValueError(f"posterior Alpha index {alpha_index} is outside alphapw")
+                scale = float(ranges[alpha_index, 0])
+                if scale <= 0:
+                    scale = 1.0
+                knot_cov = np.exp(-knot_distance / scale)
+                knot_cov = knot_cov + np.eye(len(knots)) * 1e-8
+                inverse_knot_cov = np.linalg.solve(knot_cov, np.eye(len(knots)))
+                train_knot_cov = np.exp(-train_knot_distance / scale)
+                new_knot_cov = np.exp(-new_knot_distance / scale)
+
+                train_low_rank = train_knot_cov @ inverse_knot_cov @ train_knot_cov.T
+                train_residual = np.maximum(1.0 - np.diag(train_low_rank), np.finfo(float).eps)
+                train_cov = train_low_rank + np.diag(train_residual)
+                train_cov = train_cov + np.eye(len(training_coords)) * 1e-8
+                cross_cov = new_knot_cov @ inverse_knot_cov @ train_knot_cov.T
+                new_low_rank = new_knot_cov @ inverse_knot_cov @ new_knot_cov.T
+                new_residual = np.maximum(1.0 - np.diag(new_low_rank), np.finfo(float).eps)
+                new_cov = new_low_rank + np.diag(new_residual)
+
+                solved = np.linalg.solve(train_cov, cross_cov.T)
+                projection = solved.T
+                conditional_cov = new_cov - cross_cov @ solved
+                conditional_root = _positive_semidefinite_root(conditional_cov)
+                means = np.einsum("nt,cdt->cdn", projection, eta_train[..., factor])
+                noise = np.einsum(
+                    "ij,cdj->cdi",
+                    conditional_root,
+                    rng.normal(size=means.shape),
+                )
+                candidate = means + noise
+                selected = alpha[..., factor] == alpha_index
+                target[selected] = candidate[selected]
+        return output
+
+    def _spatial_ranges_and_alpha(
+        self,
+        level: int,
+        spec: dict[str, Any],
+        eta_train: np.ndarray,
+        training_coords: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        ranges = np.asarray(spec.get("alphapw", []), dtype=float)
+        if ranges.size == 0:
+            distance = _pairwise_distance_matrix(training_coords, training_coords)
+            positive = distance[distance > 0]
+            scale = float(spec.get("alpha", np.median(positive) if positive.size else 1.0))
+            ranges = np.asarray([[scale, 1.0]], dtype=float)
+        ranges = np.atleast_2d(ranges)
+        try:
+            alpha = self.alpha_samples(level)
+        except ValueError:
+            alpha = np.zeros((*eta_train.shape[:2], eta_train.shape[-1]), dtype=int)
+        if alpha.shape != (*eta_train.shape[:2], eta_train.shape[-1]):
+            raise ValueError("posterior Alpha and Eta factor dimensions do not match")
+        return ranges, alpha
+
+    def _sample_nngp_spatial_conditional_eta(
+        self,
+        level: int,
+        spec: dict[str, Any],
+        eta_train: np.ndarray,
+        training_coords: np.ndarray,
+        new_coords: np.ndarray,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        ranges, alpha = self._spatial_ranges_and_alpha(level, spec, eta_train, training_coords)
+        default_neighbors = min(10, max(1, len(training_coords) - 1))
+        neighbor_count = int(spec.get("nNeighbors", spec.get("n_neighbors", default_neighbors)))
+        if neighbor_count <= 0:
+            raise ValueError("spatial_nngp n_neighbors must be positive")
+
+        all_coords = np.concatenate([training_coords, new_coords], axis=0)
+        training_count = len(training_coords)
+        output = np.empty((*eta_train.shape[:2], len(new_coords), eta_train.shape[-1]), dtype=float)
+        for factor in range(eta_train.shape[-1]):
+            values = np.empty((*eta_train.shape[:2], len(all_coords)), dtype=float)
+            values[:, :, :training_count] = eta_train[..., factor]
+            for new_index in range(len(new_coords)):
+                unit = training_count + new_index
+                distances = np.sqrt(np.sum((all_coords[:unit] - all_coords[unit]) ** 2, axis=1))
+                order = np.argsort(distances, kind="mergesort")
+                neighbors = order[: min(neighbor_count, unit)]
+                target = values[:, :, unit]
+                for alpha_index in np.unique(alpha[..., factor]):
+                    if alpha_index < 0 or alpha_index >= len(ranges):
+                        raise ValueError(f"posterior Alpha index {alpha_index} is outside alphapw")
+                    scale = float(ranges[alpha_index, 0])
+                    if scale == 0 or len(neighbors) == 0:
+                        conditional_mean = np.zeros(eta_train.shape[:2], dtype=float)
+                        conditional_variance = 1.0
+                    else:
+                        if scale < 0:
+                            scale = 1.0
+                        neighbor_coords = all_coords[neighbors]
+                        neighbor_cov = np.exp(
+                            -_pairwise_distance_matrix(neighbor_coords, neighbor_coords) / scale
+                        )
+                        neighbor_cov = neighbor_cov + np.eye(len(neighbors)) * 1e-8
+                        cross_cov = np.exp(-distances[neighbors] / scale)
+                        coefficients = np.linalg.solve(neighbor_cov, cross_cov)
+                        conditional_mean = np.einsum(
+                            "n,cdn->cd",
+                            coefficients,
+                            values[:, :, neighbors],
+                        )
+                        conditional_variance = max(
+                            1.0 - float(cross_cov @ coefficients),
+                            np.finfo(float).eps,
+                        )
+                    candidate = conditional_mean + np.sqrt(conditional_variance) * rng.normal(
+                        size=eta_train.shape[:2]
+                    )
+                    selected = alpha[..., factor] == alpha_index
+                    target[selected] = candidate[selected]
+            output[..., factor] = values[:, :, training_count:]
         return output
 
     def _prediction_random_level_spec(self, level: int, spec: dict[str, Any]) -> dict[str, Any]:
@@ -1692,6 +1833,25 @@ def _resolve_random_effect_mode(random_effects: str, include_random_effects: boo
 def _pairwise_distance_matrix(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     delta = left[:, None, :] - right[None, :, :]
     return np.sqrt(np.sum(delta * delta, axis=-1))
+
+
+def _select_gpp_knots(coords: np.ndarray, n_knots: int) -> np.ndarray:
+    if n_knots <= 0:
+        raise ValueError("spatial_gpp n_knots must be positive")
+    if n_knots >= len(coords):
+        return coords.copy()
+    center = coords.mean(axis=0)
+    first = int(np.argmin(np.sum((coords - center) ** 2, axis=1)))
+    selected = [first]
+    min_distance = np.sum((coords - coords[first]) ** 2, axis=1)
+    while len(selected) < n_knots:
+        next_index = int(np.argmax(min_distance))
+        selected.append(next_index)
+        min_distance = np.minimum(
+            min_distance,
+            np.sum((coords - coords[next_index]) ** 2, axis=1),
+        )
+    return coords[selected]
 
 
 def _positive_semidefinite_root(matrix: np.ndarray) -> np.ndarray:

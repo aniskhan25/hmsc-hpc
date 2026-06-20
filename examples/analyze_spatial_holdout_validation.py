@@ -24,7 +24,9 @@ MODEL_CONFIGS = {
     "spatial_full": "model_spatial_full.yaml",
     "spatial_full_conditional": "model_spatial_full.yaml",
     "spatial_gpp": "model_spatial_gpp.yaml",
+    "spatial_gpp_conditional": "model_spatial_gpp.yaml",
     "spatial_nngp": "model_spatial_nngp.yaml",
+    "spatial_nngp_conditional": "model_spatial_nngp.yaml",
 }
 
 
@@ -116,7 +118,11 @@ def _interval_metrics(
         coords = pd.read_csv(project / "data/test/coords.csv", index_col=0)
         random_effects = "known"
         unseen_groups = "nearest"
-        if name == "spatial_full_conditional":
+        if name in {
+            "spatial_full_conditional",
+            "spatial_gpp_conditional",
+            "spatial_nngp_conditional",
+        }:
             spatial_prediction = "conditional"
     interval = _predict_interval_compat(
         fit,
@@ -211,8 +217,8 @@ def _build_report(project: Path, metrics: pd.DataFrame, level: float) -> str:
         "",
         "Nearest spatial predictions reuse the closest sampled random-effect unit; "
         "they are a baseline rather than conditional spatial interpolation.",
-        "Full conditional spatial predictions sample held-out Eta values from the "
-        "Gaussian conditional distribution for each posterior draw.",
+        "Conditional spatial predictions sample held-out Eta values from the "
+        "method-specific conditional distribution for each posterior draw.",
     ]
     return "\n".join(lines) + "\n"
 

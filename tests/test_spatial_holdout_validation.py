@@ -17,7 +17,9 @@ MODEL_NAMES = [
     "spatial_full",
     "spatial_full_conditional",
     "spatial_gpp",
+    "spatial_gpp_conditional",
     "spatial_nngp",
+    "spatial_nngp_conditional",
 ]
 
 
@@ -57,7 +59,7 @@ def test_spatial_holdout_project_matches_generator():
 
 def test_spatial_holdout_configs_compile_and_validate(tmp_path):
     for name in MODEL_NAMES:
-        config_name = "spatial_full" if name == "spatial_full_conditional" else name
+        config_name = name.removesuffix("_conditional")
         config_path = PROJECT / f"model_{config_name}.yaml"
         model, config = model_from_config(config_path)
         compiled = model.compile(tmp_path / name, chains=config["chains"])
@@ -86,7 +88,9 @@ def test_spatial_holdout_analyzer_metrics_and_report(tmp_path):
         "spatial_full": 0.1,
         "spatial_full_conditional": 0.05,
         "spatial_gpp": 0.2,
+        "spatial_gpp_conditional": 0.15,
         "spatial_nngp": 0.3,
+        "spatial_nngp_conditional": 0.25,
     }
     predictions = {}
     for name, offset in offsets.items():
@@ -97,9 +101,11 @@ def test_spatial_holdout_analyzer_metrics_and_report(tmp_path):
     metrics = build_metrics_table(PROJECT, predictions)
 
     assert list(metrics["model"]) == MODEL_NAMES
-    np.testing.assert_allclose(metrics["rmse"], [0.5, 0.1, 0.05, 0.2, 0.3])
-    np.testing.assert_allclose(metrics["mae"], [0.5, 0.1, 0.05, 0.2, 0.3])
-    np.testing.assert_allclose(metrics["rmse_improvement_vs_fixed"], [0.0, 0.4, 0.45, 0.3, 0.2])
+    np.testing.assert_allclose(metrics["rmse"], [0.5, 0.1, 0.05, 0.2, 0.15, 0.3, 0.25])
+    np.testing.assert_allclose(metrics["mae"], [0.5, 0.1, 0.05, 0.2, 0.15, 0.3, 0.25])
+    np.testing.assert_allclose(
+        metrics["rmse_improvement_vs_fixed"], [0.0, 0.4, 0.45, 0.3, 0.35, 0.2, 0.25]
+    )
 
     output = tmp_path / "report.txt"
     args = [

@@ -493,8 +493,24 @@ at unseen coordinates for every posterior chain, draw, and factor. Prediction
 uses the posterior `Alpha` range-grid index and the same exponential covariance
 as the sampler. Known groups retain their sampled `Eta` values.
 
-The immediate validation target is to resume
-`spatial_holdout_validation_real`, reuse its existing full-spatial posterior,
-and compare conditional point accuracy and interval coverage with the recorded
-nearest-unit baseline. Conditional GPP and NNGP prediction are subsequent
-targets and require method-specific covariance conditioning.
+LUMI job `19381199` resumed `spatial_holdout_validation_real`, reused the
+existing full-spatial posterior, and completed in 19 seconds. Over 20 held-out
+sites and 6 species, conditional prediction achieved correlation `0.927548`,
+RMSE `0.504639`, MAE `0.384153`, 95% interval coverage `0.975000`, and mean
+interval width `2.397476`. The nearest-unit full-spatial baseline had
+correlation `0.818042`, RMSE `0.777394`, coverage `0.250000`, and mean interval
+width `0.439665`.
+
+This validation completes the full-spatial conditional prediction milestone.
+Conditional GPP prediction uses the modified predictive-process covariance,
+including its knot projection and diagonal residual variance. Conditional NNGP
+prediction extends the directed neighbor graph in deterministic group order and
+samples each held-out `Eta` from its nearest previous training or held-out
+neighbors.
+
+LUMI job `19387238` completed both held-out comparisons in 48 seconds. GPP
+conditional prediction achieved correlation `0.882362`, RMSE `0.626497`, and
+coverage `1.000000`; NNGP conditional prediction achieved correlation
+`0.925759`, RMSE `0.510099`, and coverage `1.000000`. This completes conditional
+held-out prediction support and deterministic validation for all three spatial
+methods.

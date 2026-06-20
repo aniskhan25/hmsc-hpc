@@ -309,7 +309,7 @@ pred = fit.predict(
 )
 ```
 
-For a full spatial random level, conditional prediction instead samples the
+For full spatial, GPP, and NNGP random levels, conditional prediction instead samples the
 held-out latent `Eta` values from their Gaussian conditional distribution for
 every posterior draw. It uses the sampled spatial range index and propagates
 new-location uncertainty through `Lambda`:
@@ -326,8 +326,8 @@ pred = fit.predict(
 ```
 
 The equivalent CLI options are `--spatial-prediction conditional --seed 17`.
-Conditional prediction currently supports `spatial_full`; GPP and NNGP use the
-nearest-unit baseline.
+Conditional prediction supports `spatial_full`, `spatial_gpp`, and
+`spatial_nngp`.
 
 The same random-effect-aware prediction path is available from the CLI:
 
@@ -366,8 +366,8 @@ analyzer reports held-out correlation, RMSE, MAE, credible-interval coverage,
 and improvement relative to the fixed-effects baseline. Reuse the same
 `RUN_NAME` with `MODELS="spatial_gpp spatial_nngp"` to resume an incomplete run.
 The workflow compares nearest-unit predictions for all spatial methods with
-conditional Gaussian interpolation for the full spatial model. It does not yet
-claim conditional GPP or NNGP interpolation.
+conditional interpolation for full spatial, GPP, and NNGP models. Full-spatial
+validation is recorded below; GPP and NNGP validation results are pending.
 
 Validated LUMI run `spatial_holdout_validation_real` fit all four models in job
 `19367647`. Sampling completed, but the first job failed in the analyzer because
@@ -378,16 +378,37 @@ in 58 seconds.
 
 Held-out results over 20 sites and 6 species were:
 
-- fixed: correlation `0.666523`, RMSE `0.992220`, coverage `0.325000`;
-- full spatial nearest: correlation `0.818042`, RMSE `0.777394`, coverage `0.250000`;
-- GPP nearest: correlation `0.816411`, RMSE `0.784542`, coverage `0.116667`;
-- NNGP nearest: correlation `0.817900`, RMSE `0.778055`, coverage `0.116667`.
+- fixed: correlation `0.666523`, RMSE `0.992220`, MAE `0.684956`, coverage
+  `0.325000`, and mean interval width `0.564914`;
+- full spatial nearest: correlation `0.818042`, RMSE `0.777394`, MAE
+  `0.585206`, coverage `0.250000`, and mean interval width `0.439665`;
+- full spatial conditional: correlation `0.927548`, RMSE `0.504639`, MAE
+  `0.384153`, coverage `0.975000`, and mean interval width `2.397476`;
+- GPP nearest: correlation `0.816411`, RMSE `0.784542`, MAE `0.589060`,
+  coverage `0.275000`, and mean interval width `0.435005`;
+- GPP conditional: correlation `0.882362`, RMSE `0.626497`, MAE `0.450791`,
+  coverage `1.000000`, and mean interval width `2.549525`;
+- NNGP nearest: correlation `0.817900`, RMSE `0.778055`, MAE `0.585704`,
+  coverage `0.233333`, and mean interval width `0.421810`.
+- NNGP conditional: correlation `0.925759`, RMSE `0.510099`, MAE `0.383430`,
+  coverage `1.000000`, and mean interval width `2.399664`.
 
-Thus nearest-unit spatial prediction improved RMSE by approximately `0.21` and
-raised correlation from `0.67` to `0.82`, but its posterior intervals were much
-too narrow for nominal 95% coverage. This motivated the conditional
-full-spatial Eta implementation. Its updated held-out LUMI comparison is
-pending; the values above remain the nearest-unit baseline.
+Final resume job `19381199` reused the existing posterior and completed the
+combined prediction and analysis workflow in 19 seconds. Conditional
+full-spatial prediction reduced RMSE by `0.487581` relative to fixed effects and
+by `0.272755` relative to nearest-unit full-spatial prediction. Its `0.975`
+coverage is consistent with the nominal `0.95` target in this small 120-value
+validation set, while the larger interval width shows that the method now
+propagates held-out spatial uncertainty rather than treating a nearest sampled
+unit as known.
+
+LUMI job `19387238` reused the GPP and NNGP posteriors and completed their
+conditional comparison in 48 seconds. Conditional GPP reduced RMSE by
+`0.158045` relative to its nearest-unit baseline. Conditional NNGP reduced RMSE
+by `0.267956` and closely matched the full-spatial conditional result. Coverage
+was `1.000` for both approximations; their mean interval widths around `2.4` to
+`2.55` should be interpreted with the small validation size rather than as
+evidence of exact calibration.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,

@@ -23,9 +23,9 @@
 | HDF5 posterior merge | Supported |
 | Posterior predictive checks | Supported |
 | Known random-effect posterior predictive checks | Supported when the fit is loaded with its model config; prediction accepts separate `study_design` and `coords` frames |
-| Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, nearest-neighbor projection, and conditional full-spatial Eta sampling at unseen coordinates; conditional GPP/NNGP prediction remains pending |
+| Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, nearest-neighbor projection, and conditional full-spatial/GPP/NNGP Eta sampling at unseen coordinates |
 | Spatial held-out prediction simulator | Supported with deterministic 80/20 train/test split and distinct test coordinates |
-| Spatial held-out prediction validation | Nearest-unit LUMI baseline completed; workflow now compares conditional full-spatial prediction using the same posterior, with updated LUMI results pending |
+| Spatial held-out prediction validation | Completed on LUMI for full, GPP, and NNGP conditional prediction; correlations 0.928/0.882/0.926, RMSE 0.505/0.626/0.510, and coverage 0.975/1.000/1.000 |
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
