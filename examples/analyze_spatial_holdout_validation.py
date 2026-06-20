@@ -11,8 +11,9 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(os.environ.get("PYHMSC_REPO_ROOT", Path(__file__).resolve().parents[1]))
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+root_path = str(ROOT)
+sys.path = [path for path in sys.path if path != root_path]
+sys.path.insert(0, root_path)
 
 from pyhmsc.config import model_from_config
 from pyhmsc.posterior import HmscFit
