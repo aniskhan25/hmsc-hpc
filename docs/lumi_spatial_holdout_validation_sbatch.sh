@@ -28,6 +28,7 @@ USER_WORK="/scratch/${PROJECT_ID}/anisrahm"
 VENV="${USER_WORK}/venvs/hmsc_tf_env"
 PYTHON="${VENV}/bin/python3"
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+REPO_IMPORT_DIR="${PYHMSC_REPO_ROOT:-${USER_WORK}/hmsc-hpc}"
 RUN_NAME="${RUN_NAME:-spatial_holdout_validation_${SLURM_JOB_ID:-manual}}"
 RUN_ROOT="${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}"
 PROJECT_DIR="${PROJECT_DIR:-${REPO_DIR}/examples/projects/simulated_spatial_holdout_validation}"
@@ -41,7 +42,8 @@ module use /appl/local/csc/modulefiles
 module load tensorflow/2.16
 source "${VENV}/bin/activate"
 cd "${REPO_DIR}"
-export PYTHONPATH="${REPO_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYHMSC_REPO_ROOT="${REPO_IMPORT_DIR}"
+export PYTHONPATH="${REPO_IMPORT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
 
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
@@ -49,6 +51,7 @@ echo "Project: ${PROJECT_DIR}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
 "${PYTHON}" -c "import h5py, pyhmsc; print('h5py:', h5py.__version__); print('pyhmsc import: ok')"
+"${PYTHON}" -c "import inspect, pyhmsc.posterior as p; print('pyhmsc posterior:', p.__file__); print('predict_ci:', inspect.signature(p.HmscFit.predict_ci))"
 
 run_model() {
   local name="$1"
