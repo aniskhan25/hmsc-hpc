@@ -28,15 +28,26 @@ if [[ "${task_count}" -le 0 ]]; then
   echo "Generated manifest contains no tasks." >&2
   exit 2
 fi
+tasks_per_seed=6
+if ((task_count % tasks_per_seed != 0)); then
+  echo "Task count ${task_count} is not divisible by ${tasks_per_seed}." >&2
+  exit 2
+fi
+seed_count=$((task_count / tasks_per_seed))
+seed_array="${SEED_ARRAY:-0-$((seed_count > 1 ? 1 : 0))}"
 array_job=$(sbatch --parsable \
-  --array="0-$((task_count - 1))%${MAX_CONCURRENT:-3}" \
+  --array="${seed_array}%${MAX_CONCURRENT:-2}" \
   --export=ALL,RUN_NAME="${RUN_NAME}",PROJECT_ROOT="${PROJECT_ROOT}" \
   docs/lumi_replicated_spatial_holdout_array_sbatch.sh)
-analysis_job=$(sbatch --parsable \
-  --dependency="afterok:${array_job}" \
-  --export=ALL,RUN_NAME="${RUN_NAME}",PROJECT_ROOT="${PROJECT_ROOT}" \
-  docs/lumi_replicated_spatial_holdout_analyze_sbatch.sh)
 
 echo "Array job: ${array_job}"
-echo "Analysis job: ${analysis_job}"
+if [[ "${SUBMIT_ANALYSIS:-0}" == "1" ]]; then
+  analysis_job=$(sbatch --parsable \
+    --dependency="afterok:${array_job}" \
+    --export=ALL,RUN_NAME="${RUN_NAME}",PROJECT_ROOT="${PROJECT_ROOT}" \
+    docs/lumi_replicated_spatial_holdout_analyze_sbatch.sh)
+  echo "Analysis job: ${analysis_job}"
+else
+  echo "Analysis job not submitted. Submit the final seed wave with SUBMIT_ANALYSIS=1."
+fi
 echo "Run root: ${RUN_ROOT}"

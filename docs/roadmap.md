@@ -523,9 +523,20 @@ and NNGP models. Reverse and deterministic random orderings fit additional NNGP
 models while preserving observations, covariates, coordinates, truth, row
 order, and train/test membership.
 
-The default manifest contains 18 independent tasks. The LUMI launcher submits
-them as a throttled GPU array and schedules a dependent CPU analysis job. The
-analyzer writes raw per-task metrics, across-seed means and standard deviations,
-coverage bias and replicate bounds, and per-seed NNGP deltas from canonical
-ordering. Local deterministic structure and aggregation tests are complete; the
-replicated LUMI run remains pending.
+The default manifest contains 18 logical tasks. Each GPU array element runs one
+seed's six tasks sequentially. Because the project association permits two
+submitted `dev-g` jobs, the launcher supports staged `SEED_ARRAY` waves and an
+optional dependent CPU analysis job. The analyzer writes raw per-task metrics,
+across-seed means and standard deviations, coverage bias and replicate bounds,
+and per-seed NNGP deltas from canonical ordering.
+
+LUMI arrays `19388069` and `19388409` completed all tasks, and analysis job
+`19388410` completed in 18 seconds. Conditional full-spatial, GPP, and canonical
+NNGP coverage averaged `0.947222`, `0.938889`, and `0.944444`, demonstrating
+that the original single-run `1.000` coverage was not persistent. Mean RMSE was
+`0.624202`, `0.753345`, and `0.634689`.
+
+Reverse and deterministic random NNGP orderings had mean RMSE `0.628314` and
+`0.630734`, compared with `0.634689` canonical. The largest absolute per-seed
+ordering delta was `0.019124` RMSE and `0.016154` correlation. This completes
+the replicated calibration and ordering-sensitivity milestone.

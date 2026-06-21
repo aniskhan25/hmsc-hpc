@@ -26,8 +26,8 @@
 | Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, nearest-neighbor projection, and conditional full-spatial/GPP/NNGP Eta sampling at unseen coordinates |
 | Spatial held-out prediction simulator | Supported with deterministic 80/20 train/test split and distinct test coordinates |
 | Spatial held-out prediction validation | Completed on LUMI for full, GPP, and NNGP conditional prediction; correlations 0.928/0.882/0.926, RMSE 0.505/0.626/0.510, and coverage 0.975/1.000/1.000 |
-| Replicated spatial hold-out validation | Implemented as a manifest-driven three-seed LUMI array with across-seed summaries; LUMI results pending |
-| NNGP ordering sensitivity | Implemented with canonical, reverse, and deterministic random group orderings that preserve data, coordinates, truth, and train/test membership; LUMI results pending |
+| Replicated spatial hold-out validation | Completed across three LUMI seeds; full/GPP/NNGP conditional coverage 0.947/0.939/0.944 and RMSE 0.624/0.753/0.635 |
+| NNGP ordering sensitivity | Completed for canonical, reverse, and deterministic random orderings; largest absolute per-seed RMSE delta was 0.0191 |
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |

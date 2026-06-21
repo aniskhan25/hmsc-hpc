@@ -111,3 +111,8 @@ def test_replicated_lumi_scripts_have_valid_shell_syntax():
     ]
     for script in scripts:
         subprocess.run(["bash", "-n", str(script)], check=True)
+    array_script = scripts[0].read_text(encoding="utf-8")
+    submit_script = scripts[2].read_text(encoding="utf-8")
+    assert "TASKS_PER_SEED=6" in array_script
+    assert 'seed_array="${SEED_ARRAY:-' in submit_script
+    assert '"${SUBMIT_ANALYSIS:-0}" == "1"' in submit_script

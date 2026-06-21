@@ -73,6 +73,7 @@ def _aggregate_metrics(raw: pd.DataFrame, nominal_level: float = 0.95) -> pd.Dat
         .reset_index(drop=True)
     )
     summary["coverage_bias"] = summary["interval_coverage_mean"] - nominal_level
+    summary.loc[summary["coverage_bias"].abs() < 1e-12, "coverage_bias"] = 0.0
     summary["coverage_min"] = coverage_bounds["min"].to_numpy()
     summary["coverage_max"] = coverage_bounds["max"].to_numpy()
     return summary

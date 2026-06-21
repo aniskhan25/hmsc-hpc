@@ -415,26 +415,29 @@ evidence of exact calibration.
 The replicated workflow evaluates seed robustness and NNGP ordering
 sensitivity. By default it generates seeds `321`, `654`, and `987`. Each seed
 has canonical fixed, full-spatial, GPP, and NNGP tasks, plus reverse-order and
-deterministic random-order NNGP tasks, for 18 GPU-array tasks total.
+deterministic random-order NNGP tasks, for 18 logical tasks total. Each GPU
+array element runs one seed's six tasks sequentially within one allocation.
 
-On LUMI, launch the generated projects, array, and dependent analysis job with:
+The project account permits two submitted `dev-g` jobs at once. Launch seeds
+321 and 654 first:
 
 ```bash
 RUN_NAME=replicated_spatial_holdout_validation \
+  SEED_ARRAY=0-1 \
   bash docs/lumi_replicated_spatial_holdout_submit.sh
 ```
 
-Override seeds or concurrency without editing the scripts:
+After that array completes, launch seed 987 and its dependent analyzer:
 
 ```bash
-SEEDS="321 654 987 1234" MAX_CONCURRENT=2 \
-  RUN_NAME=replicated_spatial_holdout_validation_v2 \
+RUN_NAME=replicated_spatial_holdout_validation \
+  SEED_ARRAY=2 SUBMIT_ANALYSIS=1 \
   bash docs/lumi_replicated_spatial_holdout_submit.sh
 ```
 
 The launcher writes generated projects and `tasks.csv` under the run directory,
-submits one isolated task per manifest row, and schedules aggregation with an
-`afterok` dependency. Outputs include:
+keeps one isolated output directory per manifest row, and optionally schedules
+aggregation with an `afterok` dependency. Outputs include:
 
 ```text
 replicated_spatial_holdout_report.txt
@@ -450,6 +453,19 @@ and interval width deltas from canonical NNGP ordering. Positive RMSE deltas
 mean the tested ordering performed worse. Only plot labels change between
 ordering variants; responses, covariates, coordinates, truth, row order, and
 split are identical.
+
+Validated run `replicated_spatial_holdout_validation_real` used array jobs
+`19388069` and `19388409`; dependent analysis job `19388410` completed in 18
+seconds. Across three seeds, conditional full-spatial, GPP, and canonical NNGP
+coverage was `0.947222`, `0.938889`, and `0.944444`, respectively. Corresponding
+coverage biases from `0.95` were `-0.002778`, `-0.011111`, and `-0.005556`, so
+the single-run `1.000` coverage did not persist. Mean RMSE was `0.624202` full,
+`0.753345` GPP, and `0.634689` canonical NNGP.
+
+NNGP ordering effects were small. Reverse and deterministic random ordering had
+mean RMSE `0.628314` and `0.630734`, versus `0.634689` canonical. Across all
+seed/order comparisons, the largest absolute RMSE delta was `0.019124`; the
+largest absolute correlation delta was `0.016154`.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,
