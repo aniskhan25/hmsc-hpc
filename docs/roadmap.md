@@ -59,17 +59,34 @@ Validated real-data target:
 - ecological signal remained stable: richness decreases along TMG and
   community-weighted CN increases along TMG
 
-Remaining hardening:
+Validation hardening now available:
 
-- run occasional longer or 4-chain validation jobs before publication-grade
-  inference
+- use `examples/plan_long_validation.py` to decide whether a result actually
+  needs a longer or 4-chain follow-up before publication-grade inference
+- use `docs/lumi_targeted_long_validation_sbatch.sh` for focused LUMI reruns
+  of only the flagged diagnostic targets
 
 ## Later milestones
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
-- Harden optional Zarr posterior output on large runs
+- Release-qualification storage stress tests for large optional Zarr/HDF5
+  posterior stores
 - More robust simulation recovery tests with longer optional `slow` runs
 
 ## Implemented After Milestone 4
+
+The following infrastructure has been added after the initial native
+traits/phylogeny/random-effect milestone:
+
+- species association summaries and diagnostics from identifiable
+  `Lambda.T @ Lambda` association samples
+- `Eta` and `Lambda` posterior summaries, diagnostics, and optional post-hoc
+  latent-factor alignment
+- one-time optional R model-construction parity checks through
+  `examples/run_r_parity_checks.py`
+- targeted long-validation planning through `examples/plan_long_validation.py`
+  and LUMI profile script `docs/lumi_targeted_long_validation_sbatch.sh`
+- posterior storage inspection through `pyhmsc storage-info`
+- nested chain-status validation through `chain-status --expected-draws`
 
 Species association summaries are available from sampled random-level `Lambda`.
 They can be returned as mean association matrices, credible interval matrices,
@@ -208,7 +225,7 @@ Longer four-chain spatial-only association run
 - post-hoc aligned latent diagnostics were much better than raw `Eta`/`Lambda`
   diagnostics, but aligned factors still had low ESS
 
-## Recommended Next Implementation Target
+## Completed New-Feature Validation
 
 The current implementation is validated for predictive behavior, iid random
 slopes, full spatial random intercepts, and GPP spatial random intercepts.
@@ -301,10 +318,9 @@ samples, 1000 transient iterations, and thin 10. Results:
 This confirms that the weak Lambda slope recovery in the baseline validation was
 signal-limited rather than an obvious sampler-path failure. The remaining
 scientific caveat is lower NNGP Eta recovery relative to full spatial and GPP,
-so a focused NNGP latent-recovery validation is the next useful spatial
-diagnostic if we want to keep tightening spatial approximations.
+which is tracked as an interpretation caveat rather than an active blocker.
 
-That focused spatial Eta validation workflow is now implemented as:
+The focused spatial Eta validation workflow is implemented as:
 
 ```text
 examples/projects/simulated_spatial_eta_validation/
@@ -540,3 +556,106 @@ Reverse and deterministic random NNGP orderings had mean RMSE `0.628314` and
 `0.630734`, compared with `0.634689` canonical. The largest absolute per-seed
 ordering delta was `0.019124` RMSE and `0.016154` correlation. This completes
 the replicated calibration and ordering-sensitivity milestone.
+
+## Real-Data Spatial Hold-Out and Resource Benchmark
+
+The real-data spatial hold-out benchmark is implemented for the existing
+400-site, 40-species big-spatial plant project. A deterministic spatial block
+split uses 319 sites for fitting and 81 sites for evaluation. Fixed,
+full-spatial, GPP, and NNGP probit models share the same observations,
+covariates, and split. Conditional spatial prediction is used at every held-out
+coordinate.
+
+The workflow consists of:
+
+```text
+examples/generate_big_spatial_holdout_validation.py
+examples/analyze_big_spatial_holdout_validation.py
+docs/lumi_big_spatial_holdout_validation_sbatch.sh
+```
+
+In addition to Brier score, log loss, macro AUC, prevalence MAE, and richness
+MAE, the LUMI workflow records elapsed sampler time, peak RSS, compiled model
+size, and posterior size for each model. The completed LUMI run provides the
+first real-data performance and resource comparison for all four methods.
+
+LUMI job `19435459` completed the benchmark in 14 minutes 32 seconds using two
+chains, 250 saved draws, 250 transient iterations, and thin 5. GPP had the
+lowest Brier score (`0.069072`), lowest log loss (`0.243408`), and highest macro
+AUC (`0.732161`). Fixed, full-spatial, and NNGP Brier scores were `0.070486`,
+`0.072041`, and `0.074632`. These differences are modest and should be treated
+as provisional out-of-sample evidence.
+
+Sampler-only runtime was 5.1 seconds fixed, 31.6 seconds full spatial, 15.7
+seconds GPP, and 613.1 seconds NNGP. Peak process RSS was between 1.9 and 2.3
+GB. The benchmark therefore identifies NNGP Eta updating as a major scaling
+bottleneck in the current upstream sampler implementation. This should be
+reported upstream rather than optimized opportunistically in the Python-native
+wrapper.
+
+Short-run Beta convergence was not publication-grade: spatial median ESS was
+77-83, 88-111 of 200 coefficients exceeded R-hat 1.01, and 174-184 were below
+ESS 200. The run validates finite end-to-end held-out prediction and provides a
+resource profile, but does not establish stable parameter inference.
+
+The follow-up trait/phylogeny held-out validation is complete and documented
+below. The combined trait/phylogeny plus random-level sampler path remains an
+upstream compatibility issue.
+
+## Trait and Phylogeny Hold-Out Validation
+
+The Whittaker plant hold-out workflow is implemented with 40 training sites and
+12 deterministic TMG-stratified test sites. Site selection preserves at least
+one training occurrence for every one of the 75 species. The fixed probit model
+retains the CN trait formula and phylogenetic covariance matrix. The iid
+site-level probit model is environment-only so this validation does not depend
+on the currently failing traits + latent random-effect path in the original
+`hmsc` updater code.
+
+The Python prediction layer now samples a new standard-normal iid latent effect
+for each unseen group and posterior draw during marginal prediction. Repeated
+rows belonging to the same new group share the same draw, and `rng_seed`
+provides reproducibility. This replaces the previous approximation based on
+the mean fitted Eta across training groups.
+
+Python-native validation now guards trait/phylogeny-structured models with
+random levels as not sampler-ready. The guard triggers from `validate-init
+--strict`, `pyhmsc sample`, and direct `HmscModel.sample(init="python-native")`
+before TensorFlow starts. Remove it only after the upstream `hmsc`
+`updateBetaLambda` path supports that combined model.
+
+The validation workflow consists of:
+
+```text
+examples/generate_whittaker_holdout_validation.py
+examples/analyze_whittaker_holdout_validation.py
+docs/lumi_whittaker_holdout_validation_sbatch.sh
+```
+
+LUMI job `19468166` completed `whittaker_holdout_validation_real_v2` in
+`00:04:07` on `dev-g`. The fixed trait/phylogeny model produced Brier score
+`0.0742`, log loss `0.2648`, macro AUC `0.5518`, and positive `TMG x CN` Gamma
+mean `0.182` with 95% CI `0.047-0.318`. The environment-only iid marginal model
+produced Brier score `0.0734`, log loss `0.2607`, and macro AUC `0.5495`. Both
+models recovered the expected negative held-out richness slope and positive
+community-weighted CN slope.
+
+## Current Remaining Roadmap
+
+The Python-only path now covers fixed effects, traits, phylogeny, iid random
+effects, spatial full/GPP/NNGP effects, random slopes, held-out prediction,
+diagnostics, LUMI workflows, recovery/retry helpers, optional R parity tooling,
+targeted long-validation planning, and posterior storage inspection. Remaining
+work is mostly upstream compatibility and release qualification:
+
+- report or fix the upstream `hmsc` `updateBetaLambda` failure for
+  trait/phylogeny-structured models with random levels, then remove the
+  Python-native sampler-readiness guard
+- run `examples/run_r_parity_checks.py` on an R-enabled machine and archive the
+  report as one-time parity evidence for fixed, trait/phylogeny, and
+  environment-only random-effect model construction
+- report the observed NNGP Eta-update runtime bottleneck upstream
+- run targeted longer/4-chain validation only when
+  `examples/plan_long_validation.py` flags diagnostics that matter for the
+  intended inference target
+- reserve larger optional Zarr/HDF5 stress tests for release qualification

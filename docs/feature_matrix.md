@@ -9,7 +9,7 @@
 | Phylogenetic covariance matrix | Supported |
 | Newick tree parsing | Optional `phylo` extra |
 | iid random intercepts | Supported |
-| iid random-intercept real-data validation | Supported; Whittaker plant iid site-level run validated on LUMI |
+| iid random-intercept real-data validation | Supported for environment-only random levels; Whittaker plant held-out iid marginal run validated on LUMI |
 | Full spatial random intercepts | Supported |
 | iid random slopes | Supported for native TensorFlow sampling |
 | Full spatial random slopes | Supported for native TensorFlow sampling; deterministic and strong-signal LUMI validation completed |
@@ -21,6 +21,7 @@
 | Zarr posterior output | Optional extra |
 | Posterior metadata preservation | Supported for native HDF5/Zarr output |
 | HDF5 posterior merge | Supported |
+| Posterior storage inspection | Supported for HDF5 and optional Zarr via `pyhmsc storage-info`; reports dataset shapes, chunks, byte size, chain/draw counts, and metadata presence |
 | Posterior predictive checks | Supported |
 | Known random-effect posterior predictive checks | Supported when the fit is loaded with its model config; prediction accepts separate `study_design` and `coords` frames |
 | Random-effect/spatial-aware prediction | Supported for known iid/spatial groups, random slopes, nearest-neighbor projection, and conditional full-spatial/GPP/NNGP Eta sampling at unseen coordinates |
@@ -28,9 +29,13 @@
 | Spatial held-out prediction validation | Completed on LUMI for full, GPP, and NNGP conditional prediction; correlations 0.928/0.882/0.926, RMSE 0.505/0.626/0.510, and coverage 0.975/1.000/1.000 |
 | Replicated spatial hold-out validation | Completed across three LUMI seeds; full/GPP/NNGP conditional coverage 0.947/0.939/0.944 and RMSE 0.624/0.753/0.635 |
 | NNGP ordering sensitivity | Completed for canonical, reverse, and deterministic random orderings; largest absolute per-seed RMSE delta was 0.0191 |
+| Real-data spatial hold-out benchmark | Completed on LUMI for the big-spatial plant data with a deterministic blocked 319/81 train/test split; GPP had the best Brier score (0.0691) and macro AUC (0.7322), but differences were small and the short-run Beta diagnostics were not publication-grade |
+| Spatial runtime and memory benchmark | Completed on LUMI; sampler-only times were 5s fixed, 32s full, 16s GPP, and 613s NNGP, with peak process RSS of 1.9-2.3 GB |
 | Site richness posterior predictive checks | Supported |
 | Covariate gradient summaries | Supported for richness and response-weighted traits |
 | Trait-effect posterior summaries | Supported for Gamma mean/interval tables |
+| Trait/phylogeny-aware real-data hold-out | Completed on LUMI for the Whittaker plant data with 40 training and 12 TMG-stratified held-out sites; fixed trait/phylogeny Brier 0.0742, iid marginal Brier 0.0734, fixed `TMG x CN` Gamma mean 0.182 with 95% CI 0.047-0.318 |
+| Trait/phylogeny plus random levels | Guarded as not sampler-ready in Python-native validation until the upstream `hmsc` updater path is fixed |
 | Species association summaries | Supported from random-level `Lambda` samples |
 | Species association diagnostics | Supported for identifiable `Lambda.T @ Lambda` association samples |
 | Random-effect posterior summaries | Supported for `Eta` and random-intercept `Lambda`; random-slope `Lambda` requires `x_index` |
@@ -53,6 +58,9 @@
 | Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
 | CLI compile/sample/summarize/predict/validate | Supported; `predict` accepts `--model-config`, `--study-design`, `--coords`, and random-effect options; LUMI end-to-end prediction validation completed |
 | CLI init validation | Supported |
+| Optional R parity checks | Supported via `examples/run_r_parity_checks.py` for fixed, trait/phylogeny, and environment-only iid random-intercept model-construction parity |
+| Targeted longer validation planner | Supported via `examples/plan_long_validation.py`; recommends longer/4-chain follow-up only for diagnostics that fail configured R-hat/ESS thresholds |
+| Targeted LUMI long-validation workflow | Supported via `docs/lumi_targeted_long_validation_sbatch.sh` with `associations`, `beta`, `latent`, and `all` profiles |
 | No-R example smoke runner | Supported |
 | ArviZ diagnostics | Optional extra |
 
@@ -202,14 +210,16 @@ and qualitative behavior rather than strict coefficient recovery.
 Follow-up run `new_features_nngp_validation_codex` added NNGP to the same
 workflow. It completed in 13 minutes 5 seconds on `dev-g` and validated NNGP
 runtime compatibility and PPC behavior, but latent recovery was weak on the
-small 36-site dataset. Treat NNGP latent-effect summaries as provisional until
-a larger or replicated spatial validation run is completed.
+small 36-site dataset. Later replicated hold-out and aligned Eta validations
+provide the stronger evidence for NNGP interpretation; raw NNGP factor means
+remain provisional because of latent-factor non-identifiability.
 
-## Main Pending Features
+## Remaining Work
 
-| Feature | Next work |
+| Area | Next work |
 | --- | --- |
-| Association validation | Run an even longer or replicated 4-chain spatial association validation if publication-grade association estimates are needed |
-| Random slopes | Improve latent recovery for spatial random-slope slope loadings if stronger recovery is needed |
-| NNGP spatial effects | Add larger or replicated validation to assess latent recovery beyond runtime/PPC behavior |
-| R parity checks | Compare selected Python-native models against equivalent R Hmsc outputs as one-time validation |
+| Upstream sampler compatibility | Report or fix the original `hmsc` `updateBetaLambda` path for trait/phylogeny-structured models with random levels, then remove the Python-native validation guard |
+| R parity checks | Run `examples/run_r_parity_checks.py` on an R-enabled machine and archive the report as one-time validation evidence |
+| Publication-grade association inference | Use `examples/plan_long_validation.py` first; run `docs/lumi_targeted_long_validation_sbatch.sh` only for flagged association diagnostics |
+| NNGP performance | Report the observed NNGP Eta-update runtime bottleneck upstream; avoid wrapper-side optimization until the sampler issue is understood |
+| Storage release qualification | Use implemented `pyhmsc storage-info` and nested `chain-status --expected-draws`; run larger Zarr/merge stress tests only before a release |
