@@ -68,8 +68,8 @@ Validation hardening now available:
 
 ## Later milestones
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
-- Release-qualification storage stress tests for large optional Zarr/HDF5
-  posterior stores
+- Optional Zarr release-qualification run in an environment where the `zarr`
+  extra is installed
 - More robust simulation recovery tests with longer optional `slow` runs
 
 ## Implemented After Milestone 4
@@ -88,6 +88,10 @@ traits/phylogeny/random-effect milestone:
   and LUMI profile script `docs/lumi_targeted_long_validation_sbatch.sh`
 - posterior storage inspection through `pyhmsc storage-info`
 - nested chain-status validation through `chain-status --expected-draws`
+- storage release qualification through
+  `examples/run_storage_release_qualification.py`
+- release-polish cleanup through `.gitignore` rules for `.DS_Store`, root
+  `/output/`, and root `/run_*/`
 
 Species association summaries are available from sampled random-level `Lambda`.
 They can be returned as mean association matrices, credible interval matrices,
@@ -647,18 +651,19 @@ The Python-only path now covers fixed effects, traits, phylogeny, iid random
 effects, spatial full/GPP/NNGP effects, random slopes, held-out prediction,
 diagnostics, LUMI workflows, recovery/retry helpers, archived optional R parity
 evidence, targeted long-validation planning, and posterior storage inspection.
-Remaining work is mostly upstream compatibility and release qualification:
+Remaining work is mostly external upstream coordination and optional
+publication/release follow-up:
 
-- report or fix the upstream `hmsc` `updateBetaLambda` failure for
-  trait/phylogeny-structured models with random levels using the prepared report
-  in `docs/upstream_issue_reports.md`, then remove the Python-native
-  sampler-readiness guard after upstream support exists
-- submit the prepared NNGP Eta-update runtime report from
-  `docs/upstream_issue_reports.md`
+- submit the prepared upstream reports in `docs/upstream_issue_reports.md` once
+  GitHub authentication is available: `updateBetaLambda` trait/phylogeny plus
+  random-level failure, NNGP Eta runtime bottleneck, and multi-factor NNGP Eta
+  ordering fix
+- remove the Python-native sampler-readiness guard for trait/phylogeny plus
+  random levels only after upstream sampler support exists
 - run targeted longer/4-chain validation only when
   `examples/plan_long_validation.py` flags diagnostics that matter for the
   intended inference target
-- run `examples/run_storage_release_qualification.py` before release to stress
-  larger HDF5 stores, optional Zarr stores, nested chain-status checks, and
-  merge compatibility; the 2026-06-24 HDF5 qualification result is archived in
+- optionally rerun `examples/run_storage_release_qualification.py` with `zarr`
+  installed to exercise the optional Zarr store path; the 2026-06-24 HDF5
+  qualification result is already archived in
   `docs/storage_release_qualification_2026-06-24.md`

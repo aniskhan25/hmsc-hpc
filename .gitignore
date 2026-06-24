@@ -1,4 +1,6 @@
 *__pycache__
+.DS_Store
+**/.DS_Store
 *.json
 *.rds
 *.RData
@@ -7,3 +9,5 @@ build/
 hmsc.egg-info/
 .ipynb_checkpoints
 .spyproject/
+/output/
+/run_*/

@@ -1,0 +1,9 @@
+response: data/Y.csv
+covariates: data/X.csv
+formula:
+  X: "~ forest_cover + elevation_scaled + wetland"
+distribution: poisson
+chains: 2
+samples: 1000
+transient: 500
+thin: 10
