@@ -143,6 +143,29 @@ def _check_required_dimensions(metadata: dict[str, Any]) -> ValidationResult:
 
 def _check_sampler_supported(metadata: dict[str, Any]) -> ValidationResult:
     unsupported = []
+    capabilities = metadata.get("capabilities", {})
+    has_random_levels = bool(metadata.get("random_levels", []))
+    has_trait_or_phylo_structure = bool(capabilities.get("traits")) or bool(
+        capabilities.get("phylogeny")
+    )
+    if has_random_levels and has_trait_or_phylo_structure:
+        unsupported.append(
+            {
+                "feature": "traits_phylogeny_with_random_levels",
+                "reason": (
+                    "native sampling for trait/phylogeny-structured models with random levels "
+                    "currently reaches an unsupported upstream updateBetaLambda path; fit the "
+                    "trait/phylogeny model without random levels or fit an environment-only "
+                    "random-level model until the upstream sampler path is fixed"
+                ),
+                "traits": bool(capabilities.get("traits")),
+                "phylogeny": bool(capabilities.get("phylogeny")),
+                "random_levels": [
+                    level.get("name")
+                    for level in metadata.get("random_levels", [])
+                ],
+            }
+        )
     for level in metadata.get("random_levels", []):
         if int(level.get("xDim", 0)) > 0 and level.get("type") not in {
             "iid",

@@ -154,7 +154,8 @@ a clean upstream patch series.
 2. Create a clean upstream patch branch containing only `hmsc/` changes.
 3. Split broad commits, especially `9568764`, into focused upstream-reviewable
    patches.
-4. Open an upstream issue or pull request first for the multi-factor NNGP Eta
-   ordering fix, because it is the clearest correctness issue.
+4. Submit the prepared upstream reports in `docs/upstream_issue_reports.md`.
+   Start with the NNGP runtime comment for issue #29 and the multi-factor NNGP
+   Eta ordering fix, because those are the clearest sampler-facing items.
 5. Keep the Python-native feature branch carrying only `pyhmsc/`, examples,
    docs, sbatch scripts, and tests when possible.

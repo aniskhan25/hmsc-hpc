@@ -13,6 +13,7 @@ from pyhmsc.formulas import covariate_names_from_formula, normalize_formula
 from pyhmsc.posterior import HmscFit
 from pyhmsc.r_bridge import make_init_with_r
 from pyhmsc.runner import run_gibbs_sampler
+from pyhmsc.validation import validate_compiled_native_model
 
 
 class HmscModel:
@@ -168,6 +169,7 @@ class HmscModel:
             )
         else:
             compiled = self.compile(run_dir, chains=chains)
+            _raise_if_not_sampler_ready(compiled.init_json)
             init_file = compiled.init_json
             post_file = Path(runner_kwargs.pop("output_file", run_dir / "posterior.h5"))
         run_gibbs_sampler(
@@ -185,3 +187,14 @@ class HmscModel:
         fit.output_file = post_file
         fit.workdir = run_dir
         return fit
+
+
+def _raise_if_not_sampler_ready(init_json: Path) -> None:
+    failed = [
+        result
+        for result in validate_compiled_native_model(init_json)
+        if not result.passed
+    ]
+    if failed:
+        details = "; ".join(f"{result.name}: {result.details}" for result in failed)
+        raise NotImplementedError(f"Compiled native model is not sampler-ready: {details}")

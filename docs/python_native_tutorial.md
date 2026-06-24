@@ -83,11 +83,52 @@ To safely resubmit an array without overwriting completed chains:
 RUN_NAME=fixed_poisson_array SKIP_EXISTING=1 sbatch docs/lumi_python_native_array_sbatch.sh
 ```
 
+Inspect posterior storage before merge, resume, or archival:
+
+```bash
+python -m pyhmsc storage-info run/posterior.h5
+python -m pyhmsc storage-info run/posterior.h5 --json \
+  > run/posterior_storage.json
+```
+
+`storage-info` supports HDF5 and optional Zarr stores. It reports dataset
+shapes, dtypes, chunks, byte sizes, inferred chain/draw counts, and whether
+native metadata is present.
+
 Run the opt-in slow recovery suite on LUMI:
 
 ```bash
 sbatch docs/lumi_python_native_recovery_tests_sbatch.sh
 ```
+
+Plan longer or 4-chain validation from an existing posterior before spending
+extra GPU time:
+
+```bash
+python examples/plan_long_validation.py run/posterior.h5 \
+  --include-latent \
+  --output run/targeted_long_validation_plan.txt
+```
+
+If the plan flags a specific diagnostic, run only that profile on LUMI:
+
+```bash
+RUN_NAME=big_spatial_assoc_long \
+DIAGNOSTIC_PROFILE=associations \
+CHAINS=4 SAMPLES=2500 TRANSIENT=1000 THIN=10 \
+sbatch docs/lumi_targeted_long_validation_sbatch.sh
+```
+
+Run optional one-time R parity checks on a machine with `Rscript`:
+
+```bash
+python examples/run_r_parity_checks.py --output run/r_parity_checks
+```
+
+This compares selected Python-native compiled artifacts against base R
+`model.matrix` and factor encodings for fixed, trait/phylogeny, and
+environment-only iid random-intercept models. It is validation evidence only;
+normal Python-native sampling does not depend on R.
 
 Known working LUMI environment:
 
@@ -256,6 +297,43 @@ under 10 minutes on `dev-g` with TensorFlow 2.16 and an MI250X GPU. It produced
 species occupancy PPC coverage `75 / 75` and site richness PPC coverage
 `52 / 52`, improving the fixed-effect Whittaker baseline site richness coverage
 of `40 / 52`.
+
+### Whittaker Held-Out Sites
+
+For out-of-sample validation with traits and phylogeny, generate a deterministic
+TMG-stratified split. The selector protects every species from being removed
+entirely from the training data:
+
+```bash
+python examples/generate_whittaker_holdout_validation.py
+```
+
+Run a fixed trait/phylogeny model and an environment-only iid site-level model
+on LUMI:
+
+```bash
+mkdir -p output
+RUN_NAME=whittaker_holdout_validation_real \
+  sbatch docs/lumi_whittaker_holdout_validation_sbatch.sh
+```
+
+The resulting project has 40 training sites, 12 held-out sites, and all 75
+species retained in training. The iid model draws a new standard-normal latent
+effect for each unseen site and posterior draw, sharing it across repeated rows
+from the same site. This is distinct from reusing fitted site effects. The
+traits + latent random-effect sampler combination is not run here because it
+currently fails inside the original `hmsc` updater path. The analyzer compares
+fixed and iid Brier score, log loss, macro AUC, prevalence and richness errors,
+TMG richness and community-weighted CN slopes, the fixed-model `TMG x CN`
+Gamma effect, diagnostics, runtime, and memory.
+
+Validated LUMI run `whittaker_holdout_validation_real_v2` completed as job
+`19468166` in `00:04:07` on `dev-g`. The fixed trait/phylogeny model had Brier
+score `0.0742`, log loss `0.2648`, macro AUC `0.5518`, and positive
+`TMG x CN` Gamma mean `0.182` with 95% CI `0.047-0.318`. The environment-only
+iid marginal model had Brier score `0.0734`, log loss `0.2607`, and macro AUC
+`0.5495`. Both models recovered the expected negative richness slope and
+positive community-weighted CN slope across held-out sites.
 
 For models with random-level `Lambda` samples, export residual species
 associations as a pair table:
@@ -466,6 +544,62 @@ NNGP ordering effects were small. Reverse and deterministic random ordering had
 mean RMSE `0.628314` and `0.630734`, versus `0.634689` canonical. Across all
 seed/order comparisons, the largest absolute RMSE delta was `0.019124`; the
 largest absolute correlation delta was `0.016154`.
+
+## Real-Data Spatial Hold-Out Benchmark
+
+The big-spatial plant data can also be evaluated with a deterministic blocked
+hold-out instead of an in-sample posterior predictive check. The generator
+partitions the existing 400 sites into 319 training and 81 held-out sites while
+retaining presences and absences for every species in training:
+
+```bash
+python examples/generate_big_spatial_holdout_validation.py
+```
+
+Run the complete fixed, full-spatial, GPP, and NNGP comparison on LUMI:
+
+```bash
+mkdir -p output
+RUN_NAME=big_spatial_holdout_validation_real \
+  sbatch docs/lumi_big_spatial_holdout_validation_sbatch.sh
+```
+
+The generated model project is kept under the scratch run directory. Spatial
+models predict the unseen coordinates conditionally; the fixed model provides
+the no-random-effect baseline. The report contains Brier score, log loss,
+macro AUC, prevalence MAE, and richness MAE. It also records sampler elapsed
+time, peak resident memory, compiled artifact size, and posterior size for each
+model. Lower Brier score, log loss, and MAE are better; higher AUC is better.
+Use the simulated replicated benchmark for coverage and latent-recovery claims,
+because the real observations do not provide known latent truth.
+
+Validated LUMI run `big_spatial_holdout_validation_short` completed as job
+`19435459` in 14 minutes 32 seconds. All four models used two chains, 250 saved
+draws, 250 transient iterations, and thin 5. Held-out results were:
+
+| Model | Brier | Log loss | Macro AUC | Prevalence MAE | Richness MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| fixed | 0.070486 | 0.252927 | 0.707860 | 0.031006 | 2.403053 |
+| full spatial | 0.072041 | 0.253960 | 0.717235 | 0.042356 | 2.581421 |
+| GPP | 0.069072 | 0.243408 | 0.732161 | 0.029803 | 2.447239 |
+| NNGP | 0.074632 | 0.260229 | 0.718871 | 0.048426 | 2.691171 |
+
+GPP was the only spatial model to improve both Brier score and log loss over
+the fixed model. The differences were small, so this is evidence that
+conditional prediction works on real held-out observations rather than proof
+that one spatial approximation is universally preferable.
+
+Sampler-only times were 5.1 seconds fixed, 31.6 seconds full spatial, 15.7
+seconds GPP, and 613.1 seconds NNGP. Peak process RSS ranged from 1.9 to 2.3 GB.
+The end-to-end fixed time in `resource_metrics.txt` includes a one-time
+TensorFlow/container cold start and should not be compared directly with the
+later warm processes. NNGP remains substantially slower because its Eta update
+uses a SciPy sparse solve inside the TensorFlow routine.
+
+The short run is not sufficient for parameter inference. Median Beta ESS was
+307 fixed, 77 full, 82 GPP, and 83 NNGP; the spatial models had 88-111 of 200
+Beta coefficients above R-hat 1.01 and 174-184 below ESS 200. Use longer runs
+or chain-level jobs when coefficient or association estimates are the target.
 
 The sampler consumes the compiled `init.json` + `init_arrays.h5` artifact, not
 raw CSV files directly. This keeps file loading, formula expansion, prior setup,

@@ -58,7 +58,7 @@
 | Legacy TensorFlow updater tests | Current fixtures cover observed-response masks |
 | CLI compile/sample/summarize/predict/validate | Supported; `predict` accepts `--model-config`, `--study-design`, `--coords`, and random-effect options; LUMI end-to-end prediction validation completed |
 | CLI init validation | Supported |
-| Optional R parity checks | Supported via `examples/run_r_parity_checks.py` for fixed, trait/phylogeny, and environment-only iid random-intercept model-construction parity |
+| Optional R parity checks | Supported and archived for fixed, trait/phylogeny, and environment-only iid random-intercept model-construction parity |
 | Targeted longer validation planner | Supported via `examples/plan_long_validation.py`; recommends longer/4-chain follow-up only for diagnostics that fail configured R-hat/ESS thresholds |
 | Targeted LUMI long-validation workflow | Supported via `docs/lumi_targeted_long_validation_sbatch.sh` with `associations`, `beta`, `latent`, and `all` profiles |
 | No-R example smoke runner | Supported |
@@ -218,8 +218,7 @@ remain provisional because of latent-factor non-identifiability.
 
 | Area | Next work |
 | --- | --- |
-| Upstream sampler compatibility | Report or fix the original `hmsc` `updateBetaLambda` path for trait/phylogeny-structured models with random levels, then remove the Python-native validation guard |
-| R parity checks | Run `examples/run_r_parity_checks.py` on an R-enabled machine and archive the report as one-time validation evidence |
+| Upstream sampler compatibility | Prepared upstream report for the original `hmsc` `updateBetaLambda` path for trait/phylogeny-structured models with random levels; remove the Python-native validation guard after upstream support exists |
 | Publication-grade association inference | Use `examples/plan_long_validation.py` first; run `docs/lumi_targeted_long_validation_sbatch.sh` only for flagged association diagnostics |
-| NNGP performance | Report the observed NNGP Eta-update runtime bottleneck upstream; avoid wrapper-side optimization until the sampler issue is understood |
-| Storage release qualification | Use implemented `pyhmsc storage-info` and nested `chain-status --expected-draws`; run larger Zarr/merge stress tests only before a release |
+| NNGP performance | Prepared upstream report for the observed NNGP Eta-update runtime bottleneck; avoid wrapper-side optimization until the sampler issue is understood |
+| Storage release qualification | Supported via `examples/run_storage_release_qualification.py` for larger HDF5, optional Zarr, nested chain-status, truncation-detection, and merge checks |

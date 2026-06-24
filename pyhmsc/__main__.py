@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from pyhmsc.compiler import compile_hmsc_model
@@ -11,6 +12,7 @@ from pyhmsc.data import read_table
 from pyhmsc.merge import inspect_chain_directory, merge_hdf5_posteriors
 from pyhmsc.posterior import HmscFit
 from pyhmsc.runner import run_gibbs_sampler
+from pyhmsc.storage import inspect_posterior_storage
 from pyhmsc.validation import validate_compiled_native_model, validate_fit
 
 
@@ -74,6 +76,13 @@ def main() -> None:
     chain_status_parser.add_argument("--expected-draws", type=int)
     chain_status_parser.add_argument("--run-name", help="LUMI RUN_NAME to include in rerun commands")
     chain_status_parser.add_argument("--strict", action="store_true", help="exit non-zero if any chain failed")
+
+    storage_info_parser = subparsers.add_parser(
+        "storage-info",
+        help="inspect HDF5 or optional Zarr posterior storage",
+    )
+    storage_info_parser.add_argument("posterior")
+    storage_info_parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
 
     predict_parser = subparsers.add_parser("predict", help="predict from a posterior and covariate table")
     predict_parser.add_argument("posterior")
@@ -268,6 +277,34 @@ def main() -> None:
             print(f"failed_chains {failed_ids}")
             if args.strict:
                 raise SystemExit(1)
+    elif args.command == "storage-info":
+        info = inspect_posterior_storage(args.posterior)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "path": str(info.path),
+                        "format": info.format,
+                        "metadata_present": info.metadata_present,
+                        "n_chains": info.n_chains,
+                        "n_draws": info.n_draws,
+                        "total_nbytes": info.total_nbytes,
+                        "datasets": [
+                            {
+                                "name": dataset.name,
+                                "shape": list(dataset.shape),
+                                "dtype": dataset.dtype,
+                                "nbytes": dataset.nbytes,
+                                "chunks": list(dataset.chunks) if dataset.chunks else None,
+                            }
+                            for dataset in info.datasets
+                        ],
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(info.to_text(), end="")
     elif args.command == "predict":
         from pyhmsc.model import HmscModel
 

@@ -138,6 +138,14 @@ def inspect_chain_file(
                     f"expected {expected_draws} draws, found {int(beta.shape[1])}",
                     _read_metadata_attr(handle),
                 )
+            if expected_draws is not None:
+                for key, dataset in _iter_datasets(handle):
+                    if getattr(dataset, "ndim", 0) >= 2 and int(dataset.shape[1]) != expected_draws:
+                        return (
+                            "failed",
+                            f"{key} expected {expected_draws} draws, found {int(dataset.shape[1])}",
+                            _read_metadata_attr(handle),
+                        )
             return "passed", "ok", _read_metadata_attr(handle)
     except OSError as exc:
         return "failed", f"unreadable HDF5: {exc}", None

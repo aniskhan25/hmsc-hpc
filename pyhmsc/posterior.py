@@ -379,7 +379,10 @@ class HmscFit:
                 rng=np.random.default_rng(rng_seed),
             )
         elif random_effects == "marginal":
-            linear = linear + self._marginal_random_effect_prediction(linear.shape[2])
+            linear = linear + self._marginal_random_effect_prediction(
+                X_new,
+                np.random.default_rng(rng_seed),
+            )
         return _response_scale(linear, self._distribution()) if response else linear
 
     def predict_mean(
@@ -1486,16 +1489,32 @@ class HmscFit:
             return int(np.argmin(np.sum((known - point) ** 2, axis=1)))
         raise ValueError(f"Unsupported unseen group mode {mode!r}")
 
-    def _marginal_random_effect_prediction(self, n_new: int) -> np.ndarray:
+    def _marginal_random_effect_prediction(
+        self,
+        X_new: pd.DataFrame,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
         if self.model is None or not getattr(self.model, "random_levels", None):
             return 0
         total = 0
-        for level_idx, (_level_name, spec) in enumerate(self.model.random_levels.items()):
-            eta = self.eta_samples(level_idx).mean(axis=2, keepdims=True)
-            eta = np.repeat(eta, n_new, axis=2)
+        for level_idx, (level_name, spec) in enumerate(self.model.random_levels.items()):
             lam = self.lambda_samples(level_idx)
+            if spec.get("type", "iid") == "iid":
+                column = spec.get("column", level_name)
+                if column in X_new:
+                    codes, levels = pd.factorize(X_new[column], sort=True)
+                    n_groups = len(levels)
+                else:
+                    codes = np.arange(len(X_new), dtype=int)
+                    n_groups = len(X_new)
+                nf = lam.shape[2]
+                eta_groups = rng.normal(size=(*lam.shape[:2], n_groups, nf))
+                eta = eta_groups[:, :, codes, :]
+            else:
+                eta = self.eta_samples(level_idx).mean(axis=2, keepdims=True)
+                eta = np.repeat(eta, len(X_new), axis=2)
             if lam.ndim == 5:
-                x_mat = self._random_slope_design_for_marginal(spec, n_new)
+                x_mat = self._random_slope_design_for_marginal(spec, len(X_new))
                 total = total + np.einsum("cdnf,nk,cdfsk->cdns", eta, x_mat, lam)
             else:
                 total = total + np.einsum("cdnf,cdfs->cdns", eta, lam)

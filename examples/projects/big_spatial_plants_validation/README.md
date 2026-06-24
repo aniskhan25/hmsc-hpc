@@ -31,6 +31,28 @@ Run on LUMI with:
 RUN_NAME=big_spatial_real_validation sbatch docs/lumi_big_spatial_validation_sbatch.sh
 ```
 
+For a true out-of-sample comparison, generate the deterministic spatially
+blocked 319-site training and 81-site test project and run fixed, full-spatial,
+GPP, and NNGP models:
+
+```bash
+python examples/generate_big_spatial_holdout_validation.py
+RUN_NAME=big_spatial_holdout_validation_real \
+  sbatch docs/lumi_big_spatial_holdout_validation_sbatch.sh
+```
+
+The hold-out analyzer reports Brier score, log loss, macro AUC, prevalence and
+richness MAE, plus elapsed time, peak RSS, compiled size, and posterior size.
+The spatial models use conditional prediction at the unseen coordinates.
+
+Validated hold-out run `big_spatial_holdout_validation_short` completed on
+LUMI as job `19435459` with two chains, 250 saved draws, 250 transient
+iterations, and thin 5. GPP had the best Brier score (`0.069072`) and macro AUC
+(`0.732161`). Full-spatial and NNGP did not improve Brier score over fixed in
+this split. The differences were small, and short-run Beta convergence was not
+clean, so use this result as an end-to-end predictive validation rather than a
+publication-grade model comparison.
+
 Validated LUMI run:
 
 - run name: `big_spatial_real_validation_codex`

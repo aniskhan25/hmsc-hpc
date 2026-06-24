@@ -198,8 +198,19 @@ def test_known_random_effect_prediction_from_hdf5(tmp_path):
     )
     np.testing.assert_allclose(zero.to_numpy(), [[0.0]])
 
-    marginal = fit.predict(pd.DataFrame({"x": [0.0], "plot": ["new"]}), random_effects="marginal")
-    np.testing.assert_allclose(marginal.to_numpy(), [[0.35]])
+    marginal_input = pd.DataFrame(
+        {"x": [0.0, 0.0, 0.0], "plot": ["new_a", "new_a", "new_b"]}
+    )
+    marginal = fit.predict_samples(
+        marginal_input,
+        response=False,
+        random_effects="marginal",
+        rng_seed=17,
+    )
+    expected_groups = np.random.default_rng(17).normal(size=(1, 1, 2, 1))
+    np.testing.assert_allclose(marginal[:, :, 0, :], expected_groups[:, :, 0, :])
+    np.testing.assert_allclose(marginal[:, :, 1, :], expected_groups[:, :, 0, :])
+    np.testing.assert_allclose(marginal[:, :, 2, :], expected_groups[:, :, 1, :])
 
 
 def test_known_random_effect_prediction_accepts_separate_study_design():

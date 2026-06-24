@@ -64,3 +64,33 @@ The original HMSC Section 6.7 scripts state these expected qualitative results:
 
 Those are the comparison targets for confirming the Python-only HMSC path against
 published/example HMSC analyses.
+
+## Held-Out-Site Validation
+
+Generate a deterministic 40-site training and 12-site test project that keeps
+every species represented in training while spanning the full TMG range:
+
+```bash
+python examples/generate_whittaker_holdout_validation.py
+```
+
+The hold-out workflow compares a fixed trait/phylogeny model with an
+environment-only iid site-level model. The iid model uses marginal prediction
+for genuinely unseen site effects. The traits + latent random-effect sampler
+combination is intentionally not exercised here because that path currently
+fails inside the original `hmsc` updater code:
+
+```bash
+RUN_NAME=whittaker_holdout_validation_real \
+  sbatch docs/lumi_whittaker_holdout_validation_sbatch.sh
+```
+
+The report includes Brier score, log loss, macro AUC, occupancy and richness
+errors, observed and predicted TMG richness/CN slopes, the fixed-model
+posterior `TMG x CN` Gamma effect, Beta diagnostics, runtime, and memory.
+
+Validated LUMI run `whittaker_holdout_validation_real_v2` completed as job
+`19468166` in `00:04:07`. The fixed trait/phylogeny model had Brier score
+`0.0742`, log loss `0.2648`, macro AUC `0.5518`, and positive `TMG x CN` Gamma
+mean `0.182` with 95% CI `0.047-0.318`. The environment-only iid marginal model
+had Brier score `0.0734`, log loss `0.2607`, and macro AUC `0.5495`.

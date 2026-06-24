@@ -82,7 +82,8 @@ traits/phylogeny/random-effect milestone:
 - `Eta` and `Lambda` posterior summaries, diagnostics, and optional post-hoc
   latent-factor alignment
 - one-time optional R model-construction parity checks through
-  `examples/run_r_parity_checks.py`
+  `examples/run_r_parity_checks.py`; the default report is archived in
+  `docs/r_parity_checks_2026-06-23.md`
 - targeted long-validation planning through `examples/plan_long_validation.py`
   and LUMI profile script `docs/lumi_targeted_long_validation_sbatch.sh`
 - posterior storage inspection through `pyhmsc storage-info`
@@ -644,18 +645,20 @@ community-weighted CN slope.
 
 The Python-only path now covers fixed effects, traits, phylogeny, iid random
 effects, spatial full/GPP/NNGP effects, random slopes, held-out prediction,
-diagnostics, LUMI workflows, recovery/retry helpers, optional R parity tooling,
-targeted long-validation planning, and posterior storage inspection. Remaining
-work is mostly upstream compatibility and release qualification:
+diagnostics, LUMI workflows, recovery/retry helpers, archived optional R parity
+evidence, targeted long-validation planning, and posterior storage inspection.
+Remaining work is mostly upstream compatibility and release qualification:
 
 - report or fix the upstream `hmsc` `updateBetaLambda` failure for
-  trait/phylogeny-structured models with random levels, then remove the
-  Python-native sampler-readiness guard
-- run `examples/run_r_parity_checks.py` on an R-enabled machine and archive the
-  report as one-time parity evidence for fixed, trait/phylogeny, and
-  environment-only random-effect model construction
-- report the observed NNGP Eta-update runtime bottleneck upstream
+  trait/phylogeny-structured models with random levels using the prepared report
+  in `docs/upstream_issue_reports.md`, then remove the Python-native
+  sampler-readiness guard after upstream support exists
+- submit the prepared NNGP Eta-update runtime report from
+  `docs/upstream_issue_reports.md`
 - run targeted longer/4-chain validation only when
   `examples/plan_long_validation.py` flags diagnostics that matter for the
   intended inference target
-- reserve larger optional Zarr/HDF5 stress tests for release qualification
+- run `examples/run_storage_release_qualification.py` before release to stress
+  larger HDF5 stores, optional Zarr stores, nested chain-status checks, and
+  merge compatibility; the 2026-06-24 HDF5 qualification result is archived in
+  `docs/storage_release_qualification_2026-06-24.md`
