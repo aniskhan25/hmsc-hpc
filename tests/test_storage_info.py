@@ -68,9 +68,9 @@ def test_zarr_storage_info_when_available(tmp_path):
     posterior = tmp_path / "posterior.zarr"
     root = zarr.open_group(str(posterior), mode="w")
     root.attrs["pyhmsc_metadata"] = {"names": {"species": ["sp1"]}}
-    root.create_array("Beta", data=np.ones((2, 3, 1, 1)), overwrite=True)
+    _create_zarr_array(root, "Beta", np.ones((2, 3, 1, 1)))
     level = root.create_group("random_levels").create_group("0")
-    level.create_array("Lambda", data=np.ones((2, 3, 1, 1)), overwrite=True)
+    _create_zarr_array(level, "Lambda", np.ones((2, 3, 1, 1)))
 
     info = inspect_posterior_storage(posterior)
     names = [dataset.name for dataset in info.datasets]
@@ -80,6 +80,14 @@ def test_zarr_storage_info_when_available(tmp_path):
     assert info.n_chains == 2
     assert "Beta" in names
     assert "random_levels/0/Lambda" in names
+
+
+def _create_zarr_array(group, name, data):
+    """Create a Zarr array with either the v3 or v2 group API."""
+    if hasattr(group, "create_array"):
+        group.create_array(name, data=data, overwrite=True)
+    else:
+        group.create_dataset(name, data=data, overwrite=True)
 
 
 def test_chain_inspection_checks_nested_expected_draws(tmp_path):

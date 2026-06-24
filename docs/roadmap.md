@@ -68,8 +68,6 @@ Validation hardening now available:
 
 ## Later milestones
 - Trait-related posterior summaries beyond the core `Beta`/`Gamma` samples
-- Optional Zarr release-qualification run in an environment where the `zarr`
-  extra is installed
 - More robust simulation recovery tests with longer optional `slow` runs
 
 ## Implemented After Milestone 4
@@ -90,6 +88,8 @@ traits/phylogeny/random-effect milestone:
 - nested chain-status validation through `chain-status --expected-draws`
 - storage release qualification through
   `examples/run_storage_release_qualification.py`
+- optional Zarr release qualification archived in
+  `docs/storage_zarr_release_qualification_2026-06-24.md`
 - release-polish cleanup through `.gitignore` rules for `.DS_Store`, root
   `/output/`, and root `/run_*/`
 
@@ -663,7 +663,7 @@ publication/release follow-up:
 - run targeted longer/4-chain validation only when
   `examples/plan_long_validation.py` flags diagnostics that matter for the
   intended inference target
-- optionally rerun `examples/run_storage_release_qualification.py` with `zarr`
-  installed to exercise the optional Zarr store path; the 2026-06-24 HDF5
-  qualification result is already archived in
-  `docs/storage_release_qualification_2026-06-24.md`
+- rerun storage release qualification only when storage dependencies or output
+  formats change; HDF5 and optional Zarr results are archived in
+  `docs/storage_release_qualification_2026-06-24.md` and
+  `docs/storage_zarr_release_qualification_2026-06-24.md`

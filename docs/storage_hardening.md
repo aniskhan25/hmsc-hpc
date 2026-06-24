@@ -65,6 +65,7 @@ This creates deterministic synthetic posterior stores and checks:
 Archived qualification result:
 
 - [Storage release qualification: 2026-06-24](storage_release_qualification_2026-06-24.md)
+- [Zarr storage release qualification: 2026-06-24](storage_zarr_release_qualification_2026-06-24.md)
 
 For constrained environments, reduce dimensions explicitly:
 

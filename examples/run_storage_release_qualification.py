@@ -297,12 +297,20 @@ def _check_zarr(
 
     root = zarr.open_group(str(path), mode="w")
     root.attrs["pyhmsc_metadata"] = metadata
-    root.create_array("Beta", data=rng.normal(size=(chains, draws, covariates, species)), overwrite=True)
-    root.create_array("sigma", data=np.abs(rng.normal(size=(chains, draws, species))) + 0.1, overwrite=True)
+    _create_zarr_array(root, "Beta", rng.normal(size=(chains, draws, covariates, species)))
+    _create_zarr_array(root, "sigma", np.abs(rng.normal(size=(chains, draws, species))) + 0.1)
     level = root.create_group("random_levels").create_group("0")
-    level.create_array("Eta", data=rng.normal(size=(chains, draws, sites, factors)), overwrite=True)
-    level.create_array("Lambda", data=rng.normal(size=(chains, draws, species, factors)), overwrite=True)
+    _create_zarr_array(level, "Eta", rng.normal(size=(chains, draws, sites, factors)))
+    _create_zarr_array(level, "Lambda", rng.normal(size=(chains, draws, species, factors)))
     return _check_storage_info(path, "zarr", chains, draws)
+
+
+def _create_zarr_array(group: Any, name: str, data: np.ndarray) -> None:
+    """Create a Zarr array with either the v3 or v2 group API."""
+    if hasattr(group, "create_array"):
+        group.create_array(name, data=data, overwrite=True)
+    else:
+        group.create_dataset(name, data=data, overwrite=True)
 
 
 def _write_report(path: Path, checks: list[QualificationCheck]) -> None:

@@ -222,4 +222,4 @@ remain provisional because of latent-factor non-identifiability.
 | Upstream sampler compatibility | Prepared upstream report for the original `hmsc` `updateBetaLambda` path for trait/phylogeny-structured models with random levels; submit when GitHub auth is available and remove the Python-native validation guard after upstream support exists |
 | Publication-grade association inference | Use `examples/plan_long_validation.py` first; run `docs/lumi_targeted_long_validation_sbatch.sh` only for flagged association diagnostics |
 | NNGP performance | Prepared upstream report for the observed NNGP Eta-update runtime bottleneck; submit when GitHub auth is available and avoid wrapper-side optimization until the sampler issue is understood |
-| Optional Zarr release qualification | Run `examples/run_storage_release_qualification.py` in an environment with `zarr` installed if release scope includes Zarr artifacts |
+| Optional Zarr release qualification | Completed with `zarr 2.18.7`; archived in `docs/storage_zarr_release_qualification_2026-06-24.md` |
