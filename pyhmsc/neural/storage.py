@@ -8,6 +8,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from pyhmsc.neural.calibration import BetaScaleCalibration, calibration_metadata
 from pyhmsc.neural.posterior_heads import BetaPosterior
 
 
@@ -23,6 +24,7 @@ def write_beta_posterior_hdf5(
     draws: int = 100,
     seed: int | None = None,
     metadata: dict[str, Any] | None = None,
+    calibration: BetaScaleCalibration | dict[str, Any] | None = None,
 ) -> Path:
     """Write a neural Beta posterior to HDF5 using pyhmsc posterior shapes.
 
@@ -62,6 +64,7 @@ def write_beta_posterior_hdf5(
         draws=draws,
         seed=seed,
         metadata=metadata,
+        calibration=calibration,
     )
 
     try:
@@ -86,6 +89,7 @@ def _neural_metadata(
     draws: int,
     seed: int | None,
     metadata: dict[str, Any] | None,
+    calibration: BetaScaleCalibration | dict[str, Any] | None,
 ) -> dict[str, Any]:
     base = {
         "model_type": "neural-hmsc",
@@ -105,6 +109,8 @@ def _neural_metadata(
         "formula": {"X": formula},
         "distribution": str(distribution),
     }
+    if calibration is not None:
+        base["calibration"] = calibration_metadata(calibration)
     if metadata:
         extra = dict(metadata)
         extra_names = extra.pop("names", {})
@@ -134,6 +140,8 @@ def _neural_metadata(
                 "seed": None if seed is None else int(seed),
             }
         )
+        if calibration is not None:
+            base["calibration"] = calibration_metadata(calibration)
     return base
 
 

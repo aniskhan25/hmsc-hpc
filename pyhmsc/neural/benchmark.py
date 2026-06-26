@@ -70,6 +70,7 @@ def compare_beta_posteriors(
         "mcmc_chains": int(mcmc_samples.shape[0]),
         "mcmc_draws": int(mcmc_samples.shape[1]),
     }
+    row.update(_calibration_report_fields(neural_fit, prefix="neural"))
 
     neural_mean = neural_samples.mean(axis=(0, 1))
     mcmc_mean = mcmc_samples.mean(axis=(0, 1))
@@ -197,10 +198,15 @@ def render_benchmark_markdown(
         raise ValueError("rows must contain at least one benchmark result")
     preferred = [
         "dataset",
+        "posterior_variant",
         "distribution",
         "beta_mean_rmse_mcmc",
         "beta_sd_rmse_mcmc",
         "beta_ci_overlap_95",
+        "neural_calibration_method",
+        "neural_calibration_scale_multiplier",
+        "neural_calibration_uncalibrated_coverage",
+        "neural_calibration_calibrated_coverage",
         "neural_beta_mean_rmse_truth",
         "mcmc_beta_mean_rmse_truth",
         "neural_posterior_predictive_mean_rmse",
@@ -358,6 +364,30 @@ def _fit_formula(fit: HmscFit) -> str | None:
     if isinstance(formula, dict) and formula.get("X"):
         return str(formula["X"])
     return None
+
+
+def _calibration_report_fields(fit: HmscFit, *, prefix: str) -> dict[str, Any]:
+    metadata = fit.metadata if isinstance(fit.metadata, dict) else {}
+    calibration = metadata.get("calibration")
+    if not isinstance(calibration, dict):
+        return {}
+    fields: dict[str, Any] = {}
+    for source, target in [
+        ("method", "method"),
+        ("scale_multiplier", "scale_multiplier"),
+        ("nominal_level", "nominal_level"),
+        ("uncalibrated_coverage", "uncalibrated_coverage"),
+        ("calibrated_coverage", "calibrated_coverage"),
+        ("n_observations", "n_observations"),
+    ]:
+        if source in calibration:
+            fields[f"{prefix}_calibration_{target}"] = calibration[source]
+    domain = calibration.get("domain")
+    if isinstance(domain, dict):
+        for source in ["distribution", "n_covariates", "n_species"]:
+            if source in domain:
+                fields[f"{prefix}_calibration_domain_{source}"] = domain[source]
+    return fields
 
 
 def _rmse(left: np.ndarray, right: np.ndarray) -> float:

@@ -110,3 +110,12 @@ def test_benchmark_configs_generate_tiny_corpora(tmp_path):
         compiled_metadata, arrays = read_compiled_model(dataset_dir / "compiled" / "init.json")
         assert compiled_metadata["distribution"] in {"normal", "probit", "poisson"}
         assert arrays["Y"].shape[1] in {2, 4, 8}
+
+
+def test_benchmark_configs_define_calibration_split():
+    for name in ["gaussian", "probit", "poisson"]:
+        config_path = Path(f"examples/projects/neural_hmsc_fixed_{name}/benchmark.yaml")
+        config = load_benchmark_config(config_path)
+
+        assert config["simulation"]["corpus_sizes"]["smoke"]["calibration"] > 0
+        assert config["simulation"]["corpus_sizes"]["default"]["calibration"] > 0

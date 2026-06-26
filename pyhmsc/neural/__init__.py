@@ -15,11 +15,15 @@ __all__ = [
     "FixedEffectDataset",
     "FixedShapeBetaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
+    "BetaScaleCalibration",
+    "apply_beta_scale_calibration",
+    "calibration_metadata",
     "compare_beta_posterior_files",
     "compare_beta_posteriors",
     "evaluate_beta_posterior",
     "evaluate_masked_beta_posterior",
     "fixed_shape_training_data",
+    "fit_beta_scale_calibration",
     "generate_fixed_effect_corpus",
     "predict_beta_posterior",
     "predict_variable_beta_posterior",
@@ -75,6 +79,25 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.storage import write_beta_posterior_hdf5
 
         return write_beta_posterior_hdf5
+    if name in {
+        "BetaScaleCalibration",
+        "apply_beta_scale_calibration",
+        "calibration_metadata",
+        "fit_beta_scale_calibration",
+    }:
+        from pyhmsc.neural.calibration import (
+            BetaScaleCalibration,
+            apply_beta_scale_calibration,
+            calibration_metadata,
+            fit_beta_scale_calibration,
+        )
+
+        return {
+            "BetaScaleCalibration": BetaScaleCalibration,
+            "apply_beta_scale_calibration": apply_beta_scale_calibration,
+            "calibration_metadata": calibration_metadata,
+            "fit_beta_scale_calibration": fit_beta_scale_calibration,
+        }[name]
     if name in {"compare_beta_posterior_files", "compare_beta_posteriors", "write_benchmark_report"}:
         from pyhmsc.neural.benchmark import (
             compare_beta_posterior_files,

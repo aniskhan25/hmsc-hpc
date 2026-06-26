@@ -52,10 +52,12 @@ simulation:
   corpus_sizes:
     smoke:
       train: 16
+      calibration: 4
       validation: 4
       test: 4
     default:
       train: 512
+      calibration: 128
       validation: 128
       test: 128
 

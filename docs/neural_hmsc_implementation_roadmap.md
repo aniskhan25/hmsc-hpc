@@ -460,6 +460,24 @@ Purpose:
 Improve uncertainty behavior after the neural posterior model learns useful
 means but imperfect intervals.
 
+Status:
+
+Implemented in this feature branch for post-hoc scalar temperature/scale
+calibration of diagonal Normal fixed-effect `Beta` posteriors:
+
+```text
+pyhmsc/neural/calibration.py
+tests/test_neural_hmsc_calibration.py
+```
+
+The calibrator fits a posterior scale multiplier on a calibration split using
+standardized absolute `Beta` errors at a requested nominal credible level. It
+preserves posterior means, rescales posterior standard deviations, stores
+calibration method/domain/coverage metadata in neural HDF5 output, and raises
+on response-family or shape mismatches. The benchmark runner writes both
+uncalibrated and calibrated posterior files and exposes calibration metadata in
+CSV/Markdown reports.
+
 Candidate methods:
 
 - temperature/scale calibration of posterior standard deviations

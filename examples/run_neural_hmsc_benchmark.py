@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
+os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
 import tensorflow as tf
 
@@ -19,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pyhmsc.model import HmscModel
 from pyhmsc.neural.benchmark import compare_beta_posteriors, write_benchmark_report
+from pyhmsc.neural.calibration import apply_beta_scale_calibration, fit_beta_scale_calibration
 from pyhmsc.neural.evaluation import predict_beta_posterior
 from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
 from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
@@ -42,11 +47,13 @@ def main() -> None:
     parser.add_argument("--n-sites", type=int, default=32)
     parser.add_argument("--n-species", type=int, default=3)
     parser.add_argument("--train-datasets", type=int, default=32)
+    parser.add_argument("--calibration-datasets", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--seed", type=int, default=20260626)
     parser.add_argument("--neural-chains", type=int, default=2)
     parser.add_argument("--neural-draws", type=int, default=200)
+    parser.add_argument("--disable-calibration", action="store_true")
     parser.add_argument("--run-mcmc-reference", action="store_true")
     parser.add_argument("--mcmc-chains", type=int, default=2)
     parser.add_argument("--mcmc-samples", type=int, default=200)
@@ -65,7 +72,9 @@ def main() -> None:
         "n_sites": args.n_sites,
         "n_species": args.n_species,
         "train_datasets": args.train_datasets,
+        "calibration_datasets": args.calibration_datasets,
         "epochs": args.epochs,
+        "calibration_enabled": not bool(args.disable_calibration),
         "run_mcmc_reference": bool(args.run_mcmc_reference),
         "datasets": [],
     }
@@ -78,6 +87,13 @@ def main() -> None:
             n_species=args.n_species,
             distribution=distribution,
             seed=args.seed + 1000 * suite_idx,
+        )
+        calibration = _datasets(
+            count=args.calibration_datasets,
+            n_sites=args.n_sites,
+            n_species=args.n_species,
+            distribution=distribution,
+            seed=args.seed + 1000 * suite_idx + 500,
         )
         test = simulate_fixed_effect_dataset(
             n_sites=args.n_sites,
@@ -102,10 +118,10 @@ def main() -> None:
 
         test_data = fixed_shape_training_data([test])
         start = time.perf_counter()
-        posterior = predict_beta_posterior(model, test_data)
-        neural_path = write_beta_posterior_hdf5(
-            posterior,
-            dataset_dir / "neural_posterior.h5",
+        uncalibrated_posterior = predict_beta_posterior(model, test_data)
+        uncalibrated_path = write_beta_posterior_hdf5(
+            uncalibrated_posterior,
+            dataset_dir / "neural_posterior_uncalibrated.h5",
             covariate_names=list(test.truth_beta.index),
             species_names=list(test.truth_beta.columns),
             distribution=distribution,
@@ -115,14 +131,47 @@ def main() -> None:
             seed=args.seed + suite_idx,
             metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
         )
+        if args.disable_calibration:
+            calibration_result = None
+            posterior = uncalibrated_posterior
+        else:
+            calibration_data = fixed_shape_training_data(calibration)
+            calibration_posterior = predict_beta_posterior(model, calibration_data)
+            calibration_result = fit_beta_scale_calibration(
+                calibration_posterior,
+                calibration_data.Beta,
+                nominal_level=0.95,
+                distribution=distribution,
+            )
+            posterior = apply_beta_scale_calibration(
+                uncalibrated_posterior,
+                calibration_result,
+                distribution=distribution,
+            )
+        neural_path = write_beta_posterior_hdf5(
+            posterior,
+            dataset_dir / "neural_posterior.h5",
+            covariate_names=list(test.truth_beta.index),
+            species_names=list(test.truth_beta.columns),
+            distribution=distribution,
+            formula="~ x1 + x2",
+            chains=args.neural_chains,
+            draws=args.neural_draws,
+            seed=args.seed + suite_idx + 100,
+            metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
+            calibration=calibration_result,
+        )
         neural_seconds = time.perf_counter() - start
 
         record: dict[str, object] = {
             "distribution": distribution,
             "neural_posterior": str(neural_path),
+            "neural_posterior_uncalibrated": str(uncalibrated_path),
             "data_dir": str(dataset_dir),
             "neural_inference_wall_time_seconds": neural_seconds,
         }
+        if calibration_result is not None:
+            record["calibration"] = calibration_result.to_metadata()
         if args.run_mcmc_reference:
             mcmc_path = dataset_dir / "mcmc_reference.h5"
             mcmc_seconds = _run_mcmc_reference(
@@ -135,7 +184,20 @@ def main() -> None:
                 chains=args.mcmc_chains,
                 verbose=args.mcmc_verbose,
             )
-            row = compare_beta_posteriors(
+            uncalibrated_row = compare_beta_posteriors(
+                HmscFit.from_file(uncalibrated_path),
+                HmscFit.from_file(mcmc_path),
+                truth_beta=test.truth_beta,
+                dataset=distribution,
+                distribution=distribution,
+                neural_seconds=neural_seconds,
+                mcmc_seconds=mcmc_seconds,
+                X=test.X,
+                Y=test.Y,
+                formula="~ x1 + x2",
+            )
+            uncalibrated_row["posterior_variant"] = "uncalibrated"
+            calibrated_row = compare_beta_posteriors(
                 HmscFit.from_file(neural_path),
                 HmscFit.from_file(mcmc_path),
                 truth_beta=test.truth_beta,
@@ -147,7 +209,8 @@ def main() -> None:
                 Y=test.Y,
                 formula="~ x1 + x2",
             )
-            rows.append(row)
+            calibrated_row["posterior_variant"] = "calibrated"
+            rows.extend([uncalibrated_row, calibrated_row])
             record["mcmc_posterior"] = str(mcmc_path)
             record["mcmc_wall_time_seconds"] = mcmc_seconds
         manifest["datasets"].append(record)  # type: ignore[index]
@@ -202,6 +265,8 @@ def _run_mcmc_reference(
     chains: int,
     verbose: int,
 ) -> float:
+    from pyhmsc.model import HmscModel
+
     model = HmscModel(
         Y=dataset.Y,
         X=dataset.X,

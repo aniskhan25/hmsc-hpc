@@ -121,7 +121,33 @@ def test_write_benchmark_report_writes_csv_and_markdown(tmp_path):
     assert pd.read_csv(paths.csv).loc[0, "dataset"] == "normal"
 
 
-def _write_posterior(path, beta_samples):
+def test_benchmark_report_exposes_neural_calibration_metadata(tmp_path):
+    samples = np.array([[[[0.0], [1.0]], [[0.1], [0.9]], [[-0.1], [1.1]]]], dtype=float)
+    calibration = {
+        "method": "temperature_scale",
+        "scale_multiplier": 1.5,
+        "nominal_level": 0.95,
+        "uncalibrated_coverage": 0.5,
+        "calibrated_coverage": 0.95,
+        "n_observations": 4,
+        "domain": {"distribution": "normal", "n_covariates": 2, "n_species": 1},
+    }
+    neural_path = _write_posterior(tmp_path / "neural.h5", samples, calibration=calibration)
+    mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples)
+
+    row = compare_beta_posterior_files(
+        neural_posterior=neural_path,
+        mcmc_posterior=mcmc_path,
+        dataset="calibrated",
+    )
+
+    assert row["neural_calibration_method"] == "temperature_scale"
+    assert row["neural_calibration_scale_multiplier"] == 1.5
+    assert row["neural_calibration_calibrated_coverage"] == 0.95
+    assert row["neural_calibration_domain_distribution"] == "normal"
+
+
+def _write_posterior(path, beta_samples, calibration=None):
     metadata = {
         "names": {
             "covariates": ["Intercept", "x1"][: beta_samples.shape[2]],
@@ -131,6 +157,8 @@ def _write_posterior(path, beta_samples):
         "formula": {"X": "~ x1"},
         "distribution": "normal",
     }
+    if calibration is not None:
+        metadata["calibration"] = calibration
     with h5py.File(path, "w") as handle:
         handle.create_dataset("Beta", data=beta_samples)
         handle.attrs["nChains"] = int(beta_samples.shape[0])
