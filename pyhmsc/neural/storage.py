@@ -9,7 +9,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from pyhmsc.neural.calibration import BetaScaleCalibration, calibration_metadata
-from pyhmsc.neural.posterior_heads import BetaPosterior
+from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior
 
 
 def write_beta_posterior_hdf5(
@@ -73,6 +73,76 @@ def write_beta_posterior_hdf5(
         raise RuntimeError("Install h5py to write Neural-HMSC posterior files") from exc
     with h5py.File(output, "w") as handle:
         handle.create_dataset("Beta", data=beta)
+        handle.attrs["nChains"] = int(chains)
+        handle.attrs["nDraws"] = int(draws)
+        handle.attrs["pyhmsc_metadata"] = json.dumps(posterior_metadata)
+    return output
+
+
+def write_gamma_posterior_hdf5(
+    posterior: GammaPosterior,
+    output: str | Path,
+    *,
+    covariate_names: Sequence[str],
+    trait_names: Sequence[str],
+    distribution: str = "normal",
+    formula: str = "~ x1 + x2",
+    trait_formula: str = "~ body",
+    chains: int = 1,
+    draws: int = 100,
+    seed: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
+    """Write a neural Gamma posterior to HDF5 using pyhmsc posterior shapes."""
+    if chains <= 0:
+        raise ValueError("chains must be positive")
+    if draws <= 0:
+        raise ValueError("draws must be positive")
+    mean = _as_numpy(posterior.mean)
+    scale = _as_numpy(posterior.scale)
+    if mean.ndim != 3 or mean.shape[0] != 1:
+        raise ValueError("write_gamma_posterior_hdf5 currently supports one posterior dataset at a time")
+    if scale.shape != mean.shape:
+        raise ValueError("posterior mean and scale must have the same shape")
+    gamma_mean = mean[0]
+    gamma_scale = scale[0]
+    if gamma_mean.shape != (len(covariate_names), len(trait_names)):
+        raise ValueError("covariate/trait names do not match posterior Gamma shape")
+
+    rng = np.random.default_rng(seed)
+    gamma = rng.normal(
+        loc=gamma_mean[None, None, :, :],
+        scale=gamma_scale[None, None, :, :],
+        size=(chains, draws) + gamma_mean.shape,
+    )
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    gamma_metadata = dict(metadata or {})
+    gamma_formula = dict(gamma_metadata.get("formula", {}))
+    gamma_formula["T"] = trait_formula
+    gamma_metadata["formula"] = gamma_formula
+    gamma_names = dict(gamma_metadata.get("names", {}))
+    gamma_names["traits"] = [str(name) for name in trait_names]
+    gamma_metadata["names"] = gamma_names
+    posterior_metadata = _neural_metadata(
+        covariate_names=covariate_names,
+        species_names=[],
+        distribution=distribution,
+        formula=formula,
+        chains=chains,
+        draws=draws,
+        seed=seed,
+        metadata=gamma_metadata,
+        calibration=None,
+    )
+    posterior_metadata["inference"]["parameter"] = "Gamma"
+
+    try:
+        import h5py  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install h5py to write Neural-HMSC posterior files") from exc
+    with h5py.File(output, "w") as handle:
+        handle.create_dataset("Gamma", data=gamma)
         handle.attrs["nChains"] = int(chains)
         handle.attrs["nDraws"] = int(draws)
         handle.attrs["pyhmsc_metadata"] = json.dumps(posterior_metadata)

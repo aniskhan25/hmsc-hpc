@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 import tensorflow as tf
 
-from pyhmsc.neural.posterior_heads import BetaPosterior
-from pyhmsc.neural.train import FixedShapeTrainingData, VariableShapeTrainingData
+from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior
+from pyhmsc.neural.train import FixedShapeTrainingData, TraitEffectTrainingData, VariableShapeTrainingData
 
 
 @dataclass(frozen=True)
@@ -24,9 +24,27 @@ class BetaPosteriorMetrics:
     zero_baseline_rmse_truth: float
 
 
+@dataclass(frozen=True)
+class GammaPosteriorMetrics:
+    """Basic trait-effect Gamma posterior metrics."""
+
+    gamma_mean_rmse_truth: float
+    gamma_mean_mae_truth: float
+    gamma_interval_coverage_truth_95: float
+    gamma_interval_width_mean_95: float
+    gamma_scale_min: float
+    gamma_scale_mean: float
+    zero_baseline_rmse_truth: float
+
+
 def predict_beta_posterior(model: tf.keras.Model, data: FixedShapeTrainingData) -> BetaPosterior:
     """Run a fixed-shape Beta model on prepared arrays."""
     return model({"X": data.X, "Y": data.Y}, training=False)
+
+
+def predict_gamma_posterior(model: tf.keras.Model, data: TraitEffectTrainingData) -> GammaPosterior:
+    """Run a trait-mediated Gamma model on prepared arrays."""
+    return model({"X": data.X, "Y": data.Y, "T": data.T}, training=False)
 
 
 def predict_variable_beta_posterior(model: tf.keras.Model, data: VariableShapeTrainingData) -> BetaPosterior:
@@ -39,6 +57,31 @@ def predict_variable_beta_posterior(model: tf.keras.Model, data: VariableShapeTr
             "species_mask": data.species_mask,
         },
         training=False,
+    )
+
+
+def evaluate_gamma_posterior(
+    posterior: GammaPosterior,
+    gamma_true: np.ndarray,
+    *,
+    z_value: float = 1.959963984540054,
+) -> GammaPosteriorMetrics:
+    """Evaluate Gamma posterior mean and interval behavior against truth."""
+    mean = posterior.mean.numpy()
+    scale = posterior.scale.numpy()
+    gamma_true = np.asarray(gamma_true, dtype=np.float32)
+    error = mean - gamma_true
+    lower = mean - z_value * scale
+    upper = mean + z_value * scale
+    covered = (gamma_true >= lower) & (gamma_true <= upper)
+    return GammaPosteriorMetrics(
+        gamma_mean_rmse_truth=float(np.sqrt(np.mean(error**2))),
+        gamma_mean_mae_truth=float(np.mean(np.abs(error))),
+        gamma_interval_coverage_truth_95=float(np.mean(covered)),
+        gamma_interval_width_mean_95=float(np.mean(upper - lower)),
+        gamma_scale_min=float(np.min(scale)),
+        gamma_scale_mean=float(np.mean(scale)),
+        zero_baseline_rmse_truth=float(np.sqrt(np.mean(gamma_true**2))),
     )
 
 

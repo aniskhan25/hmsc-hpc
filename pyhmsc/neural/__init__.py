@@ -7,31 +7,44 @@ posterior inference.
 
 from pyhmsc.neural.simulator import (
     FixedEffectDataset,
+    TraitEffectDataset,
     generate_fixed_effect_corpus,
     simulate_fixed_effect_dataset,
+    simulate_trait_effect_dataset,
 )
 
 __all__ = [
     "FixedEffectDataset",
     "FixedShapeBetaPosteriorModel",
+    "TraitEffectDataset",
+    "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
     "BetaScaleCalibration",
     "apply_beta_scale_calibration",
     "calibration_metadata",
+    "compiled_trait_effect_training_data",
     "compare_beta_posterior_files",
     "compare_beta_posteriors",
+    "compare_gamma_posterior_files",
+    "compare_gamma_posteriors",
     "evaluate_beta_posterior",
+    "evaluate_gamma_posterior",
     "evaluate_masked_beta_posterior",
     "fixed_shape_training_data",
     "fit_beta_scale_calibration",
     "generate_fixed_effect_corpus",
     "predict_beta_posterior",
+    "predict_gamma_posterior",
     "predict_variable_beta_posterior",
     "simulate_fixed_effect_dataset",
+    "simulate_trait_effect_dataset",
     "train_fixed_shape_beta_model",
+    "train_trait_gamma_model",
+    "trait_effect_training_data",
     "variable_shape_training_data",
     "write_benchmark_report",
     "write_beta_posterior_hdf5",
+    "write_gamma_posterior_hdf5",
 ]
 
 
@@ -44,41 +57,68 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.models import VariableShapeBetaPosteriorModel
 
         return VariableShapeBetaPosteriorModel
-    if name in {"fixed_shape_training_data", "train_fixed_shape_beta_model", "variable_shape_training_data"}:
+    if name == "TraitGammaPosteriorModel":
+        from pyhmsc.neural.models import TraitGammaPosteriorModel
+
+        return TraitGammaPosteriorModel
+    if name in {
+        "fixed_shape_training_data",
+        "compiled_trait_effect_training_data",
+        "train_fixed_shape_beta_model",
+        "train_trait_gamma_model",
+        "trait_effect_training_data",
+        "variable_shape_training_data",
+    }:
         from pyhmsc.neural.train import (
+            compiled_trait_effect_training_data,
             fixed_shape_training_data,
             train_fixed_shape_beta_model,
+            train_trait_gamma_model,
+            trait_effect_training_data,
             variable_shape_training_data,
         )
 
         return {
             "fixed_shape_training_data": fixed_shape_training_data,
+            "compiled_trait_effect_training_data": compiled_trait_effect_training_data,
             "train_fixed_shape_beta_model": train_fixed_shape_beta_model,
+            "train_trait_gamma_model": train_trait_gamma_model,
+            "trait_effect_training_data": trait_effect_training_data,
             "variable_shape_training_data": variable_shape_training_data,
         }[name]
     if name in {
         "evaluate_beta_posterior",
+        "evaluate_gamma_posterior",
         "evaluate_masked_beta_posterior",
         "predict_beta_posterior",
+        "predict_gamma_posterior",
         "predict_variable_beta_posterior",
     }:
         from pyhmsc.neural.evaluation import (
             evaluate_beta_posterior,
+            evaluate_gamma_posterior,
             evaluate_masked_beta_posterior,
             predict_beta_posterior,
+            predict_gamma_posterior,
             predict_variable_beta_posterior,
         )
 
         return {
             "evaluate_beta_posterior": evaluate_beta_posterior,
+            "evaluate_gamma_posterior": evaluate_gamma_posterior,
             "evaluate_masked_beta_posterior": evaluate_masked_beta_posterior,
             "predict_beta_posterior": predict_beta_posterior,
+            "predict_gamma_posterior": predict_gamma_posterior,
             "predict_variable_beta_posterior": predict_variable_beta_posterior,
         }[name]
     if name == "write_beta_posterior_hdf5":
         from pyhmsc.neural.storage import write_beta_posterior_hdf5
 
         return write_beta_posterior_hdf5
+    if name == "write_gamma_posterior_hdf5":
+        from pyhmsc.neural.storage import write_gamma_posterior_hdf5
+
+        return write_gamma_posterior_hdf5
     if name in {
         "BetaScaleCalibration",
         "apply_beta_scale_calibration",
@@ -98,16 +138,26 @@ def __getattr__(name: str) -> object:
             "calibration_metadata": calibration_metadata,
             "fit_beta_scale_calibration": fit_beta_scale_calibration,
         }[name]
-    if name in {"compare_beta_posterior_files", "compare_beta_posteriors", "write_benchmark_report"}:
+    if name in {
+        "compare_beta_posterior_files",
+        "compare_beta_posteriors",
+        "compare_gamma_posterior_files",
+        "compare_gamma_posteriors",
+        "write_benchmark_report",
+    }:
         from pyhmsc.neural.benchmark import (
             compare_beta_posterior_files,
             compare_beta_posteriors,
+            compare_gamma_posterior_files,
+            compare_gamma_posteriors,
             write_benchmark_report,
         )
 
         return {
             "compare_beta_posterior_files": compare_beta_posterior_files,
             "compare_beta_posteriors": compare_beta_posteriors,
+            "compare_gamma_posterior_files": compare_gamma_posterior_files,
+            "compare_gamma_posteriors": compare_gamma_posteriors,
             "write_benchmark_report": write_benchmark_report,
         }[name]
     raise AttributeError(f"module 'pyhmsc.neural' has no attribute {name!r}")

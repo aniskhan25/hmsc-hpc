@@ -167,6 +167,79 @@ def compare_beta_posterior_files(
     )
 
 
+def compare_gamma_posteriors(
+    neural_fit: HmscFit,
+    mcmc_fit: HmscFit,
+    *,
+    truth_gamma: pd.DataFrame | np.ndarray | None = None,
+    dataset: str = "dataset",
+    distribution: str | None = None,
+    credible_levels: Sequence[float] = DEFAULT_CREDIBLE_LEVELS,
+) -> dict[str, Any]:
+    """Compare a neural ``Gamma`` posterior against an MCMC reference."""
+    _validate_levels(credible_levels)
+    neural_samples = np.asarray(neural_fit.gamma_samples(), dtype=float)
+    mcmc_samples = np.asarray(mcmc_fit.gamma_samples(), dtype=float)
+    if neural_samples.shape[2:] != mcmc_samples.shape[2:]:
+        raise ValueError(
+            "neural and MCMC Gamma samples must share covariate/trait shape; "
+            f"got {neural_samples.shape[2:]} and {mcmc_samples.shape[2:]}"
+        )
+    distribution = distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
+    neural_mean = neural_samples.mean(axis=(0, 1))
+    mcmc_mean = mcmc_samples.mean(axis=(0, 1))
+    neural_sd = _posterior_sd(neural_samples)
+    mcmc_sd = _posterior_sd(mcmc_samples)
+    row: dict[str, Any] = {
+        "dataset": dataset,
+        "parameter": "Gamma",
+        "distribution": distribution,
+        "n_covariates": int(neural_samples.shape[2]),
+        "n_traits": int(neural_samples.shape[3]),
+        "neural_chains": int(neural_samples.shape[0]),
+        "neural_draws": int(neural_samples.shape[1]),
+        "mcmc_chains": int(mcmc_samples.shape[0]),
+        "mcmc_draws": int(mcmc_samples.shape[1]),
+        "gamma_mean_rmse_mcmc": _rmse(neural_mean, mcmc_mean),
+        "gamma_mean_mae_mcmc": _mae(neural_mean, mcmc_mean),
+        "gamma_sd_rmse_mcmc": _rmse(neural_sd, mcmc_sd),
+        "gamma_posterior_mean_correlation": _correlation(neural_mean, mcmc_mean),
+    }
+    for level in credible_levels:
+        suffix = _level_suffix(level)
+        n_lo, n_hi = _interval_arrays(neural_samples, level)
+        m_lo, m_hi = _interval_arrays(mcmc_samples, level)
+        row[f"gamma_ci_overlap_{suffix}"] = _mean_interval_overlap(n_lo, n_hi, m_lo, m_hi)
+        row[f"neural_gamma_interval_width_mean_{suffix}"] = float(np.mean(n_hi - n_lo))
+        row[f"mcmc_gamma_interval_width_mean_{suffix}"] = float(np.mean(m_hi - m_lo))
+    if truth_gamma is not None:
+        truth = _align_truth_gamma(truth_gamma, neural_fit, neural_samples.shape[2:])
+        row.update(_gamma_truth_metrics("neural", neural_samples, truth, credible_levels))
+        row.update(_gamma_truth_metrics("mcmc", mcmc_samples, truth, credible_levels))
+    return row
+
+
+def compare_gamma_posterior_files(
+    *,
+    neural_posterior: str | Path,
+    mcmc_posterior: str | Path,
+    truth_gamma: str | Path | pd.DataFrame | np.ndarray | None = None,
+    dataset: str = "dataset",
+    distribution: str | None = None,
+    credible_levels: Sequence[float] = DEFAULT_CREDIBLE_LEVELS,
+) -> dict[str, Any]:
+    """Load posterior files and return one Gamma benchmark metric row."""
+    truth = _read_optional_frame(truth_gamma)
+    return compare_gamma_posteriors(
+        HmscFit.from_file(neural_posterior),
+        HmscFit.from_file(mcmc_posterior),
+        truth_gamma=truth,
+        dataset=dataset,
+        distribution=distribution,
+        credible_levels=credible_levels,
+    )
+
+
 def write_benchmark_report(
     rows: Iterable[dict[str, Any]],
     output_dir: str | Path,
@@ -203,6 +276,9 @@ def render_benchmark_markdown(
         "beta_mean_rmse_mcmc",
         "beta_sd_rmse_mcmc",
         "beta_ci_overlap_95",
+        "gamma_mean_rmse_mcmc",
+        "gamma_sd_rmse_mcmc",
+        "gamma_ci_overlap_95",
         "neural_calibration_method",
         "neural_calibration_scale_multiplier",
         "neural_calibration_uncalibrated_coverage",
@@ -253,6 +329,24 @@ def _truth_metrics(
         suffix = _level_suffix(level)
         lo, hi = _interval_arrays(samples, level)
         metrics[f"{prefix}_beta_interval_coverage_truth_{suffix}"] = float(np.mean((truth >= lo) & (truth <= hi)))
+    return metrics
+
+
+def _gamma_truth_metrics(
+    prefix: str,
+    samples: np.ndarray,
+    truth: np.ndarray,
+    credible_levels: Sequence[float],
+) -> dict[str, float]:
+    mean = samples.mean(axis=(0, 1))
+    metrics = {
+        f"{prefix}_gamma_mean_rmse_truth": _rmse(mean, truth),
+        f"{prefix}_gamma_mean_mae_truth": _mae(mean, truth),
+    }
+    for level in credible_levels:
+        suffix = _level_suffix(level)
+        lo, hi = _interval_arrays(samples, level)
+        metrics[f"{prefix}_gamma_interval_coverage_truth_{suffix}"] = float(np.mean((truth >= lo) & (truth <= hi)))
     return metrics
 
 
@@ -312,6 +406,24 @@ def _align_truth_beta(
         truth = np.asarray(truth_beta, dtype=float)
     if truth.shape != shape:
         raise ValueError(f"truth_beta shape {truth.shape} does not match Beta shape {shape}")
+    return truth
+
+
+def _align_truth_gamma(
+    truth_gamma: pd.DataFrame | np.ndarray,
+    fit: HmscFit,
+    shape: tuple[int, int],
+) -> np.ndarray:
+    if isinstance(truth_gamma, pd.DataFrame):
+        gamma_mean = fit.gamma_mean()
+        if set(gamma_mean.index).issubset(set(truth_gamma.index)) and set(gamma_mean.columns).issubset(set(truth_gamma.columns)):
+            truth = truth_gamma.loc[gamma_mean.index, gamma_mean.columns].to_numpy(dtype=float)
+        else:
+            truth = truth_gamma.to_numpy(dtype=float)
+    else:
+        truth = np.asarray(truth_gamma, dtype=float)
+    if truth.shape != shape:
+        raise ValueError(f"truth_gamma shape {truth.shape} does not match Gamma shape {shape}")
     return truth
 
 

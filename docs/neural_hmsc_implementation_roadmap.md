@@ -505,6 +505,25 @@ Purpose:
 Extend the approximate posterior from species-specific fixed effects to
 trait-mediated structure.
 
+Status:
+
+Implemented in this feature branch for fixed-shape trait-mediated `Gamma`
+posterior prototypes:
+
+```text
+pyhmsc/neural/simulator.py
+pyhmsc/neural/models.py
+pyhmsc/neural/storage.py
+tests/test_neural_hmsc_traits_gamma.py
+```
+
+The implementation simulates species traits with `Beta = Gamma @ T.T`, reads
+compiler-emitted `T` arrays into neural training data, predicts a diagonal
+Normal `Gamma` posterior with a trait encoder, writes `Gamma` samples in the
+existing `chains x draws x covariates x traits` HDF5 shape, and compares neural
+`Gamma` summaries against MCMC-style reference posterior files. Phylogenetic
+covariance remains explicitly deferred.
+
 Target:
 
 ```text

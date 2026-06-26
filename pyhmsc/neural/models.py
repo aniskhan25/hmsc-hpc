@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import tensorflow as tf
 
-from pyhmsc.neural.posterior_heads import BetaPosterior, DiagonalNormalBetaHead
+from pyhmsc.neural.posterior_heads import (
+    BetaPosterior,
+    DiagonalNormalBetaHead,
+    DiagonalNormalGammaHead,
+    GammaPosterior,
+)
 
 
 class FixedShapeBetaPosteriorModel(tf.keras.Model):
@@ -133,6 +138,77 @@ class VariableShapeBetaPosteriorModel(tf.keras.Model):
         )
 
 
+class TraitGammaPosteriorModel(tf.keras.Model):
+    """Fixed-shape trait-mediated posterior model for Gamma."""
+
+    def __init__(
+        self,
+        n_sites: int,
+        n_covariates: int,
+        n_species: int,
+        n_traits: int,
+        hidden_units: tuple[int, ...] = (64, 64),
+        min_scale: float = 1e-3,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.n_sites = int(n_sites)
+        self.n_covariates = int(n_covariates)
+        self.n_species = int(n_species)
+        self.n_traits = int(n_traits)
+        self.encoder_layers = [
+            tf.keras.layers.Dense(units, activation="relu")
+            for units in hidden_units
+        ]
+        self.head = DiagonalNormalGammaHead(
+            n_covariates=self.n_covariates,
+            n_traits=self.n_traits,
+            min_scale=min_scale,
+        )
+
+    def call(self, inputs: dict[str, tf.Tensor]) -> GammaPosterior:
+        design = tf.cast(inputs["X"], tf.float32)
+        response = tf.cast(inputs["Y"], tf.float32)
+        traits = tf.cast(inputs["T"], tf.float32)
+        _assert_trait_shape(
+            design,
+            response,
+            traits,
+            self.n_sites,
+            self.n_covariates,
+            self.n_species,
+            self.n_traits,
+        )
+
+        xty = tf.einsum("bnk,bns->bks", design, response) / tf.cast(self.n_sites, tf.float32)
+        xtx = tf.einsum("bnk,bnl->bkl", design, design) / tf.cast(self.n_sites, tf.float32)
+        beta_ridge = _ridge_beta_estimate(xtx, xty)
+        gamma_ridge = _ridge_gamma_estimate(beta_ridge, traits)
+        ttt = tf.einsum("bst,bsu->btu", traits, traits) / tf.cast(self.n_species, tf.float32)
+        y_mean = tf.reduce_mean(response, axis=1)
+        y_sd = tf.math.reduce_std(response, axis=1)
+        trait_mean = tf.reduce_mean(traits, axis=1)
+        trait_sd = tf.math.reduce_std(traits, axis=1)
+        features = tf.concat(
+            [
+                tf.reshape(xty, (tf.shape(design)[0], -1)),
+                tf.reshape(xtx, (tf.shape(design)[0], -1)),
+                tf.reshape(beta_ridge, (tf.shape(design)[0], -1)),
+                tf.reshape(gamma_ridge, (tf.shape(design)[0], -1)),
+                tf.reshape(ttt, (tf.shape(design)[0], -1)),
+                y_mean,
+                y_sd,
+                trait_mean,
+                trait_sd,
+            ],
+            axis=-1,
+        )
+        for layer in self.encoder_layers:
+            features = layer(features)
+        residual = self.head(features)
+        return GammaPosterior(mean=gamma_ridge + residual.mean, scale=residual.scale)
+
+
 def _assert_fixed_shape(
     design: tf.Tensor,
     response: tf.Tensor,
@@ -146,6 +222,25 @@ def _assert_fixed_shape(
         raise ValueError(f"X must have trailing shape {(n_sites, n_covariates)}")
     if response.shape[1:] != (n_sites, n_species):
         raise ValueError(f"Y must have trailing shape {(n_sites, n_species)}")
+
+
+def _assert_trait_shape(
+    design: tf.Tensor,
+    response: tf.Tensor,
+    traits: tf.Tensor,
+    n_sites: int,
+    n_covariates: int,
+    n_species: int,
+    n_traits: int,
+) -> None:
+    if design.shape.rank != 3 or response.shape.rank != 3 or traits.shape.rank != 3:
+        raise ValueError("TraitGammaPosteriorModel expects rank-3 X, Y, and T tensors")
+    if design.shape[1:] != (n_sites, n_covariates):
+        raise ValueError(f"X must have trailing shape {(n_sites, n_covariates)}")
+    if response.shape[1:] != (n_sites, n_species):
+        raise ValueError(f"Y must have trailing shape {(n_sites, n_species)}")
+    if traits.shape[1:] != (n_species, n_traits):
+        raise ValueError(f"T must have trailing shape {(n_species, n_traits)}")
 
 
 def _assert_variable_shape(
@@ -173,3 +268,12 @@ def _ridge_beta_estimate(xtx: tf.Tensor, xty: tf.Tensor, ridge: float = 1e-4) ->
     n_covariates = tf.shape(xtx)[-1]
     penalty = tf.eye(n_covariates, batch_shape=[tf.shape(xtx)[0]], dtype=xtx.dtype) * ridge
     return tf.linalg.solve(xtx + penalty, xty)
+
+
+def _ridge_gamma_estimate(beta: tf.Tensor, traits: tf.Tensor, ridge: float = 1e-4) -> tf.Tensor:
+    n_traits = tf.shape(traits)[-1]
+    ttt = tf.einsum("bst,bsu->btu", traits, traits)
+    penalty = tf.eye(n_traits, batch_shape=[tf.shape(traits)[0]], dtype=traits.dtype) * ridge
+    beta_t = tf.einsum("bks,bst->bkt", beta, traits)
+    solution = tf.linalg.solve(ttt + penalty, tf.transpose(beta_t, [0, 2, 1]))
+    return tf.transpose(solution, [0, 2, 1])

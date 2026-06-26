@@ -25,6 +25,15 @@ class FixedEffectDataset:
     metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class TraitEffectDataset(FixedEffectDataset):
+    """One simulated trait-mediated fixed-effect dataset."""
+
+    traits: pd.DataFrame
+    trait_design: pd.DataFrame
+    truth_gamma: pd.DataFrame
+
+
 def simulate_fixed_effect_dataset(
     *,
     n_sites: int,
@@ -105,6 +114,101 @@ def simulate_fixed_effect_dataset(
         truth_beta=truth_beta,
         linear_predictor=linear_predictor,
         metadata=metadata,
+    )
+
+
+def simulate_trait_effect_dataset(
+    *,
+    n_sites: int,
+    n_species: int,
+    distribution: str,
+    seed: int,
+    gamma_scale: float = 0.75,
+    beta_residual_scale: float = 0.05,
+    gaussian_sigma: float = 0.35,
+    poisson_eta_clip: tuple[float, float] = (-6.0, 6.0),
+) -> TraitEffectDataset:
+    """Simulate a fixed-effect dataset where species traits mediate Beta.
+
+    The trait design is ``Intercept, body`` and the environmental design is
+    ``Intercept, x1, x2``. Truth follows ``Beta = Gamma @ T.T + residual``.
+    """
+    if n_sites <= 0:
+        raise ValueError("n_sites must be positive")
+    if n_species <= 1:
+        raise ValueError("n_species must be greater than one for trait effects")
+    if gamma_scale <= 0:
+        raise ValueError("gamma_scale must be positive")
+    if beta_residual_scale < 0:
+        raise ValueError("beta_residual_scale must be non-negative")
+    if gaussian_sigma <= 0:
+        raise ValueError("gaussian_sigma must be positive")
+    if poisson_eta_clip[0] >= poisson_eta_clip[1]:
+        raise ValueError("poisson_eta_clip must be ordered as (low, high)")
+
+    rng = np.random.default_rng(seed)
+    site_names = [f"site_{idx + 1:04d}" for idx in range(n_sites)]
+    species_names = [f"sp{idx + 1}" for idx in range(n_species)]
+    covariate_names = ["Intercept", "x1", "x2"]
+    trait_names = ["Intercept", "body"]
+
+    x1 = rng.normal(size=n_sites)
+    x2 = rng.normal(size=n_sites)
+    X = pd.DataFrame({"x1": x1, "x2": x2}, index=site_names)
+    design = np.column_stack([np.ones(n_sites), x1, x2])
+
+    body = np.linspace(-1.0, 1.0, n_species) + rng.normal(scale=0.15, size=n_species)
+    traits = pd.DataFrame({"body": body}, index=species_names)
+    trait_design = pd.DataFrame(
+        {"Intercept": np.ones(n_species), "body": body},
+        index=species_names,
+    )
+    gamma = rng.normal(loc=0.0, scale=gamma_scale, size=(len(covariate_names), len(trait_names)))
+    beta = gamma @ trait_design.to_numpy(dtype=float).T
+    if beta_residual_scale > 0:
+        beta = beta + rng.normal(scale=beta_residual_scale, size=beta.shape)
+    linear = design @ beta
+
+    key = _normalize_distribution(distribution)
+    if key == "normal":
+        Y_values = linear + rng.normal(scale=gaussian_sigma, size=linear.shape)
+    elif key == "probit":
+        Y_values = rng.binomial(1, ndtr(linear))
+    elif key == "poisson":
+        low, high = poisson_eta_clip
+        Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
+    else:
+        raise ValueError(f"Unsupported trait-effect benchmark distribution {distribution!r}")
+
+    Y = pd.DataFrame(Y_values, index=site_names, columns=species_names)
+    truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
+    truth_gamma = pd.DataFrame(gamma, index=covariate_names, columns=trait_names)
+    linear_predictor = pd.DataFrame(linear, index=site_names, columns=species_names)
+    metadata = {
+        "distribution": key,
+        "seed": int(seed),
+        "n_sites": int(n_sites),
+        "n_species": int(n_species),
+        "n_covariates": len(covariate_names),
+        "n_traits": len(trait_names),
+        "formula": "~ x1 + x2",
+        "trait_formula": "~ body",
+        "gamma_scale": float(gamma_scale),
+        "beta_residual_scale": float(beta_residual_scale),
+    }
+    if key == "normal":
+        metadata["gaussian_sigma"] = float(gaussian_sigma)
+    if key == "poisson":
+        metadata["poisson_eta_clip"] = [float(poisson_eta_clip[0]), float(poisson_eta_clip[1])]
+    return TraitEffectDataset(
+        Y=Y,
+        X=X,
+        truth_beta=truth_beta,
+        linear_predictor=linear_predictor,
+        metadata=metadata,
+        traits=traits,
+        trait_design=trait_design,
+        truth_gamma=truth_gamma,
     )
 
 
@@ -275,4 +379,3 @@ def _normalize_distribution(distribution: str) -> str:
     if key == "poisson":
         return "poisson"
     raise ValueError(f"Unsupported distribution {distribution!r}")
-
