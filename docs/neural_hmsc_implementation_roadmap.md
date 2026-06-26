@@ -357,6 +357,21 @@ Purpose:
 
 Make neural posterior samples usable by existing pyhmsc analysis tools.
 
+Status:
+
+Implemented in this feature branch for single-dataset fixed-effect `Beta`
+posterior storage:
+
+```text
+pyhmsc/neural/storage.py
+tests/test_neural_hmsc_storage.py
+```
+
+The adapter samples from a neural diagonal Normal `Beta` posterior, writes HDF5
+using the existing `chains x draws x covariates x species` shape, records
+neural inference metadata in `pyhmsc_metadata`, and verifies that `HmscFit` plus
+storage inspection can read the result.
+
 Tasks:
 
 - define a minimal neural posterior HDF5 schema compatible with `HmscFit`

@@ -24,6 +24,7 @@ __all__ = [
     "simulate_fixed_effect_dataset",
     "train_fixed_shape_beta_model",
     "variable_shape_training_data",
+    "write_beta_posterior_hdf5",
 ]
 
 
@@ -67,4 +68,8 @@ def __getattr__(name: str) -> object:
             "predict_beta_posterior": predict_beta_posterior,
             "predict_variable_beta_posterior": predict_variable_beta_posterior,
         }[name]
+    if name == "write_beta_posterior_hdf5":
+        from pyhmsc.neural.storage import write_beta_posterior_hdf5
+
+        return write_beta_posterior_hdf5
     raise AttributeError(f"module 'pyhmsc.neural' has no attribute {name!r}")
