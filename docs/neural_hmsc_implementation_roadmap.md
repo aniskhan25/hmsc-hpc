@@ -229,6 +229,24 @@ Purpose:
 
 Prove the basic inference idea on the simplest possible task.
 
+Status:
+
+Implemented in this feature branch for fixed-shape Gaussian `Beta` posterior
+prototyping:
+
+```text
+pyhmsc/neural/posterior_heads.py
+pyhmsc/neural/models.py
+pyhmsc/neural/train.py
+pyhmsc/neural/evaluation.py
+tests/test_neural_hmsc_beta_fixed_shape.py
+```
+
+The prototype consumes fixed-shape design/response tensors, encodes `X'Y`,
+`X'X`, and response summaries, predicts a diagonal Normal posterior over
+`Beta`, trains against simulated truth, and verifies non-collapsed posterior
+scales plus improvement over the zero-mean baseline.
+
 Scope:
 
 ```text
