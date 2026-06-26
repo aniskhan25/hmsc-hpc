@@ -7,8 +7,10 @@ posterior inference.
 
 from pyhmsc.neural.simulator import (
     FixedEffectDataset,
+    IidLatentEffectDataset,
     TraitEffectDataset,
     generate_fixed_effect_corpus,
+    simulate_iid_latent_effect_dataset,
     simulate_fixed_effect_dataset,
     simulate_trait_effect_dataset,
 )
@@ -16,6 +18,8 @@ from pyhmsc.neural.simulator import (
 __all__ = [
     "FixedEffectDataset",
     "FixedShapeBetaPosteriorModel",
+    "IidLatentEffectDataset",
+    "IidLatentFactorPosteriorModel",
     "TraitEffectDataset",
     "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
@@ -27,16 +31,22 @@ __all__ = [
     "compare_beta_posteriors",
     "compare_gamma_posterior_files",
     "compare_gamma_posteriors",
+    "compare_iid_association_posterior_files",
+    "compare_iid_association_posteriors",
     "evaluate_beta_posterior",
     "evaluate_gamma_posterior",
+    "evaluate_iid_latent_posterior",
     "evaluate_masked_beta_posterior",
     "fixed_shape_training_data",
     "fit_beta_scale_calibration",
     "generate_fixed_effect_corpus",
+    "iid_latent_training_data",
     "predict_beta_posterior",
     "predict_gamma_posterior",
+    "predict_iid_latent_posterior",
     "predict_variable_beta_posterior",
     "simulate_fixed_effect_dataset",
+    "simulate_iid_latent_effect_dataset",
     "simulate_trait_effect_dataset",
     "train_fixed_shape_beta_model",
     "train_trait_gamma_model",
@@ -45,6 +55,7 @@ __all__ = [
     "write_benchmark_report",
     "write_beta_posterior_hdf5",
     "write_gamma_posterior_hdf5",
+    "write_iid_latent_posterior_hdf5",
 ]
 
 
@@ -61,9 +72,14 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.models import TraitGammaPosteriorModel
 
         return TraitGammaPosteriorModel
+    if name == "IidLatentFactorPosteriorModel":
+        from pyhmsc.neural.models import IidLatentFactorPosteriorModel
+
+        return IidLatentFactorPosteriorModel
     if name in {
         "fixed_shape_training_data",
         "compiled_trait_effect_training_data",
+        "iid_latent_training_data",
         "train_fixed_shape_beta_model",
         "train_trait_gamma_model",
         "trait_effect_training_data",
@@ -72,6 +88,7 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.train import (
             compiled_trait_effect_training_data,
             fixed_shape_training_data,
+            iid_latent_training_data,
             train_fixed_shape_beta_model,
             train_trait_gamma_model,
             trait_effect_training_data,
@@ -81,6 +98,7 @@ def __getattr__(name: str) -> object:
         return {
             "fixed_shape_training_data": fixed_shape_training_data,
             "compiled_trait_effect_training_data": compiled_trait_effect_training_data,
+            "iid_latent_training_data": iid_latent_training_data,
             "train_fixed_shape_beta_model": train_fixed_shape_beta_model,
             "train_trait_gamma_model": train_trait_gamma_model,
             "trait_effect_training_data": trait_effect_training_data,
@@ -89,26 +107,32 @@ def __getattr__(name: str) -> object:
     if name in {
         "evaluate_beta_posterior",
         "evaluate_gamma_posterior",
+        "evaluate_iid_latent_posterior",
         "evaluate_masked_beta_posterior",
         "predict_beta_posterior",
         "predict_gamma_posterior",
+        "predict_iid_latent_posterior",
         "predict_variable_beta_posterior",
     }:
         from pyhmsc.neural.evaluation import (
             evaluate_beta_posterior,
             evaluate_gamma_posterior,
+            evaluate_iid_latent_posterior,
             evaluate_masked_beta_posterior,
             predict_beta_posterior,
             predict_gamma_posterior,
+            predict_iid_latent_posterior,
             predict_variable_beta_posterior,
         )
 
         return {
             "evaluate_beta_posterior": evaluate_beta_posterior,
             "evaluate_gamma_posterior": evaluate_gamma_posterior,
+            "evaluate_iid_latent_posterior": evaluate_iid_latent_posterior,
             "evaluate_masked_beta_posterior": evaluate_masked_beta_posterior,
             "predict_beta_posterior": predict_beta_posterior,
             "predict_gamma_posterior": predict_gamma_posterior,
+            "predict_iid_latent_posterior": predict_iid_latent_posterior,
             "predict_variable_beta_posterior": predict_variable_beta_posterior,
         }[name]
     if name == "write_beta_posterior_hdf5":
@@ -119,6 +143,10 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.storage import write_gamma_posterior_hdf5
 
         return write_gamma_posterior_hdf5
+    if name == "write_iid_latent_posterior_hdf5":
+        from pyhmsc.neural.storage import write_iid_latent_posterior_hdf5
+
+        return write_iid_latent_posterior_hdf5
     if name in {
         "BetaScaleCalibration",
         "apply_beta_scale_calibration",
@@ -143,6 +171,8 @@ def __getattr__(name: str) -> object:
         "compare_beta_posteriors",
         "compare_gamma_posterior_files",
         "compare_gamma_posteriors",
+        "compare_iid_association_posterior_files",
+        "compare_iid_association_posteriors",
         "write_benchmark_report",
     }:
         from pyhmsc.neural.benchmark import (
@@ -150,6 +180,8 @@ def __getattr__(name: str) -> object:
             compare_beta_posteriors,
             compare_gamma_posterior_files,
             compare_gamma_posteriors,
+            compare_iid_association_posterior_files,
+            compare_iid_association_posteriors,
             write_benchmark_report,
         )
 
@@ -158,6 +190,8 @@ def __getattr__(name: str) -> object:
             "compare_beta_posteriors": compare_beta_posteriors,
             "compare_gamma_posterior_files": compare_gamma_posterior_files,
             "compare_gamma_posteriors": compare_gamma_posteriors,
+            "compare_iid_association_posterior_files": compare_iid_association_posterior_files,
+            "compare_iid_association_posteriors": compare_iid_association_posteriors,
             "write_benchmark_report": write_benchmark_report,
         }[name]
     raise AttributeError(f"module 'pyhmsc.neural' has no attribute {name!r}")

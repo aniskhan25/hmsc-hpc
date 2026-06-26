@@ -9,7 +9,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from pyhmsc.neural.calibration import BetaScaleCalibration, calibration_metadata
-from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior
+from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior, IidLatentPosterior
 
 
 def write_beta_posterior_hdf5(
@@ -149,6 +149,99 @@ def write_gamma_posterior_hdf5(
     return output
 
 
+def write_iid_latent_posterior_hdf5(
+    posterior: IidLatentPosterior,
+    output: str | Path,
+    *,
+    covariate_names: Sequence[str],
+    species_names: Sequence[str],
+    group_names: Sequence[str],
+    distribution: str = "normal",
+    formula: str = "~ x1 + x2",
+    random_level_name: str = "plot",
+    chains: int = 1,
+    draws: int = 100,
+    seed: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
+    """Write neural iid latent-factor posterior samples to HDF5."""
+    if chains <= 0:
+        raise ValueError("chains must be positive")
+    if draws <= 0:
+        raise ValueError("draws must be positive")
+    beta_mean = _single_posterior_array(posterior.beta_mean, "beta_mean")
+    beta_scale = _single_posterior_array(posterior.beta_scale, "beta_scale")
+    eta_mean = _single_posterior_array(posterior.eta_mean, "eta_mean")
+    eta_scale = _single_posterior_array(posterior.eta_scale, "eta_scale")
+    lambda_mean = _single_posterior_array(posterior.lambda_mean, "lambda_mean")
+    lambda_scale = _single_posterior_array(posterior.lambda_scale, "lambda_scale")
+    if beta_scale.shape != beta_mean.shape or eta_scale.shape != eta_mean.shape or lambda_scale.shape != lambda_mean.shape:
+        raise ValueError("posterior means and scales must have matching shapes")
+    if beta_mean.shape != (len(covariate_names), len(species_names)):
+        raise ValueError("covariate/species names do not match posterior Beta shape")
+    if eta_mean.shape[0] != len(group_names):
+        raise ValueError("group names do not match posterior Eta shape")
+    if lambda_mean.shape[1] != len(species_names):
+        raise ValueError("species names do not match posterior Lambda shape")
+    if eta_mean.shape[1] != lambda_mean.shape[0]:
+        raise ValueError("Eta and Lambda factor dimensions do not match")
+
+    rng = np.random.default_rng(seed)
+    beta = rng.normal(
+        loc=beta_mean[None, None, :, :],
+        scale=beta_scale[None, None, :, :],
+        size=(chains, draws) + beta_mean.shape,
+    )
+    eta = rng.normal(
+        loc=eta_mean[None, None, :, :],
+        scale=eta_scale[None, None, :, :],
+        size=(chains, draws) + eta_mean.shape,
+    )
+    loadings = rng.normal(
+        loc=lambda_mean[None, None, :, :],
+        scale=lambda_scale[None, None, :, :],
+        size=(chains, draws) + lambda_mean.shape,
+    )
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    posterior_metadata = _neural_metadata(
+        covariate_names=covariate_names,
+        species_names=species_names,
+        distribution=distribution,
+        formula=formula,
+        chains=chains,
+        draws=draws,
+        seed=seed,
+        metadata=metadata,
+        calibration=None,
+    )
+    posterior_metadata["inference"]["parameter"] = "Beta+Eta+Lambda"
+    posterior_metadata["random_levels"] = [
+        {
+            "name": str(random_level_name),
+            "column": str(random_level_name),
+            "type": "iid",
+            "levels": [str(name) for name in group_names],
+            "nf": int(eta_mean.shape[1]),
+        }
+    ]
+
+    try:
+        import h5py  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install h5py to write Neural-HMSC posterior files") from exc
+    with h5py.File(output, "w") as handle:
+        handle.create_dataset("Beta", data=beta)
+        random_levels = handle.create_group("random_levels")
+        level = random_levels.create_group("0")
+        level.create_dataset("Eta", data=eta)
+        level.create_dataset("Lambda", data=loadings)
+        handle.attrs["nChains"] = int(chains)
+        handle.attrs["nDraws"] = int(draws)
+        handle.attrs["pyhmsc_metadata"] = json.dumps(posterior_metadata)
+    return output
+
+
 def _neural_metadata(
     *,
     covariate_names: Sequence[str],
@@ -219,3 +312,10 @@ def _as_numpy(value: Any) -> np.ndarray:
     if hasattr(value, "numpy"):
         value = value.numpy()
     return np.asarray(value, dtype=float)
+
+
+def _single_posterior_array(value: Any, name: str) -> np.ndarray:
+    array = _as_numpy(value)
+    if array.ndim != 3 or array.shape[0] != 1:
+        raise ValueError(f"{name} currently supports one posterior dataset at a time")
+    return array[0]

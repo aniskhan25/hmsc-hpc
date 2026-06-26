@@ -23,6 +23,18 @@ class GammaPosterior:
     scale: tf.Tensor
 
 
+@dataclass(frozen=True)
+class IidLatentPosterior:
+    """Diagonal Normal posterior approximation for iid latent factors."""
+
+    beta_mean: tf.Tensor
+    beta_scale: tf.Tensor
+    eta_mean: tf.Tensor
+    eta_scale: tf.Tensor
+    lambda_mean: tf.Tensor
+    lambda_scale: tf.Tensor
+
+
 class DiagonalNormalBetaHead(tf.keras.layers.Layer):
     """Map encoder features to a diagonal Normal posterior over Beta."""
 

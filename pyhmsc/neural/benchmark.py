@@ -240,6 +240,70 @@ def compare_gamma_posterior_files(
     )
 
 
+def compare_iid_association_posteriors(
+    neural_fit: HmscFit,
+    mcmc_fit: HmscFit,
+    *,
+    truth_lambda: pd.DataFrame | np.ndarray | None = None,
+    dataset: str = "dataset",
+    level: int = 0,
+) -> dict[str, Any]:
+    """Compare identifiable iid species associations from Lambda samples."""
+    neural_samples = neural_fit.species_association_samples(level=level, correlation=False)
+    mcmc_samples = mcmc_fit.species_association_samples(level=level, correlation=False)
+    if neural_samples.shape[2:] != mcmc_samples.shape[2:]:
+        raise ValueError(
+            "neural and MCMC association samples must share species shape; "
+            f"got {neural_samples.shape[2:]} and {mcmc_samples.shape[2:]}"
+        )
+    neural_mean = neural_samples.mean(axis=(0, 1))
+    mcmc_mean = mcmc_samples.mean(axis=(0, 1))
+    row: dict[str, Any] = {
+        "dataset": dataset,
+        "parameter": "Associations",
+        "random_level": int(level),
+        "n_species": int(neural_samples.shape[-1]),
+        "neural_chains": int(neural_samples.shape[0]),
+        "neural_draws": int(neural_samples.shape[1]),
+        "mcmc_chains": int(mcmc_samples.shape[0]),
+        "mcmc_draws": int(mcmc_samples.shape[1]),
+        "association_rmse_mcmc": _rmse(neural_mean, mcmc_mean),
+        "association_mae_mcmc": _mae(neural_mean, mcmc_mean),
+        "association_correlation_mcmc": _correlation(neural_mean, mcmc_mean),
+    }
+    if truth_lambda is not None:
+        truth_loadings = truth_lambda.to_numpy(dtype=float) if isinstance(truth_lambda, pd.DataFrame) else np.asarray(truth_lambda, dtype=float)
+        truth_association = truth_loadings.T @ truth_loadings
+        if truth_association.shape != neural_mean.shape:
+            raise ValueError(
+                f"truth association shape {truth_association.shape} does not match posterior shape {neural_mean.shape}"
+            )
+        row["neural_association_rmse_truth"] = _rmse(neural_mean, truth_association)
+        row["mcmc_association_rmse_truth"] = _rmse(mcmc_mean, truth_association)
+        row["neural_association_correlation_truth"] = _correlation(neural_mean, truth_association)
+        row["mcmc_association_correlation_truth"] = _correlation(mcmc_mean, truth_association)
+    return row
+
+
+def compare_iid_association_posterior_files(
+    *,
+    neural_posterior: str | Path,
+    mcmc_posterior: str | Path,
+    truth_lambda: str | Path | pd.DataFrame | np.ndarray | None = None,
+    dataset: str = "dataset",
+    level: int = 0,
+) -> dict[str, Any]:
+    """Load posterior files and compare iid association summaries."""
+    truth = _read_optional_frame(truth_lambda)
+    return compare_iid_association_posteriors(
+        HmscFit.from_file(neural_posterior),
+        HmscFit.from_file(mcmc_posterior),
+        truth_lambda=truth,
+        dataset=dataset,
+        level=level,
+    )
+
+
 def write_benchmark_report(
     rows: Iterable[dict[str, Any]],
     output_dir: str | Path,
@@ -279,6 +343,10 @@ def render_benchmark_markdown(
         "gamma_mean_rmse_mcmc",
         "gamma_sd_rmse_mcmc",
         "gamma_ci_overlap_95",
+        "association_rmse_mcmc",
+        "association_correlation_mcmc",
+        "neural_association_rmse_truth",
+        "neural_association_correlation_truth",
         "neural_calibration_method",
         "neural_calibration_scale_multiplier",
         "neural_calibration_uncalibrated_coverage",

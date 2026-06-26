@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import numpy as np
 import tensorflow as tf
 
-from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior
-from pyhmsc.neural.train import FixedShapeTrainingData, TraitEffectTrainingData, VariableShapeTrainingData
+from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior, IidLatentPosterior
+from pyhmsc.neural.train import FixedShapeTrainingData, IidLatentTrainingData, TraitEffectTrainingData, VariableShapeTrainingData
 
 
 @dataclass(frozen=True)
@@ -37,9 +37,25 @@ class GammaPosteriorMetrics:
     zero_baseline_rmse_truth: float
 
 
+@dataclass(frozen=True)
+class IidLatentMetrics:
+    """Invariant iid latent-factor recovery metrics."""
+
+    random_effect_rmse_truth: float
+    association_rmse_truth: float
+    association_correlation_truth: float
+    eta_scale_mean: float
+    lambda_scale_mean: float
+
+
 def predict_beta_posterior(model: tf.keras.Model, data: FixedShapeTrainingData) -> BetaPosterior:
     """Run a fixed-shape Beta model on prepared arrays."""
     return model({"X": data.X, "Y": data.Y}, training=False)
+
+
+def predict_iid_latent_posterior(model: tf.keras.Model, data: IidLatentTrainingData) -> IidLatentPosterior:
+    """Run an iid latent-factor model on prepared arrays."""
+    return model({"X": data.X, "Y": data.Y, "group_codes": data.group_codes}, training=False)
 
 
 def predict_gamma_posterior(model: tf.keras.Model, data: TraitEffectTrainingData) -> GammaPosterior:
@@ -57,6 +73,32 @@ def predict_variable_beta_posterior(model: tf.keras.Model, data: VariableShapeTr
             "species_mask": data.species_mask,
         },
         training=False,
+    )
+
+
+def evaluate_iid_latent_posterior(
+    posterior: IidLatentPosterior,
+    data: IidLatentTrainingData,
+) -> IidLatentMetrics:
+    """Evaluate iid latent factors through identifiable invariant summaries."""
+    eta = posterior.eta_mean.numpy()
+    loadings = posterior.lambda_mean.numpy()
+    predicted_group_effect = np.einsum("bgf,bfs->bgs", eta, loadings)
+    predicted_site_effect = np.stack(
+        [
+            predicted_group_effect[batch_idx, data.group_codes[batch_idx]]
+            for batch_idx in range(predicted_group_effect.shape[0])
+        ],
+        axis=0,
+    )
+    truth_association = np.einsum("bfs,bft->bst", data.Lambda, data.Lambda)
+    predicted_association = np.einsum("bfs,bft->bst", loadings, loadings)
+    return IidLatentMetrics(
+        random_effect_rmse_truth=float(np.sqrt(np.mean((predicted_site_effect - data.random_effect) ** 2))),
+        association_rmse_truth=float(np.sqrt(np.mean((predicted_association - truth_association) ** 2))),
+        association_correlation_truth=_flat_correlation(predicted_association, truth_association),
+        eta_scale_mean=float(np.mean(posterior.eta_scale.numpy())),
+        lambda_scale_mean=float(np.mean(posterior.lambda_scale.numpy())),
     )
 
 
@@ -83,6 +125,14 @@ def evaluate_gamma_posterior(
         gamma_scale_mean=float(np.mean(scale)),
         zero_baseline_rmse_truth=float(np.sqrt(np.mean(gamma_true**2))),
     )
+
+
+def _flat_correlation(left: np.ndarray, right: np.ndarray) -> float:
+    left_flat = np.asarray(left, dtype=float).ravel()
+    right_flat = np.asarray(right, dtype=float).ravel()
+    if left_flat.size < 2 or np.std(left_flat) == 0.0 or np.std(right_flat) == 0.0:
+        return float("nan")
+    return float(np.corrcoef(left_flat, right_flat)[0, 1])
 
 
 def evaluate_beta_posterior(

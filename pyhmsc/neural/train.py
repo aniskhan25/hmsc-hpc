@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from pyhmsc.neural.posterior_heads import beta_negative_log_probability, gamma_negative_log_probability
-from pyhmsc.neural.simulator import FixedEffectDataset, TraitEffectDataset
+from pyhmsc.neural.simulator import FixedEffectDataset, IidLatentEffectDataset, TraitEffectDataset
 from pyhmsc.serialization import read_compiled_model
 
 
@@ -43,6 +43,19 @@ class TraitEffectTrainingData:
     T: np.ndarray
     Beta: np.ndarray
     Gamma: np.ndarray
+
+
+@dataclass(frozen=True)
+class IidLatentTrainingData:
+    """Tensor arrays for fixed-shape iid latent-factor posterior work."""
+
+    X: np.ndarray
+    Y: np.ndarray
+    group_codes: np.ndarray
+    Beta: np.ndarray
+    Eta: np.ndarray
+    Lambda: np.ndarray
+    random_effect: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -164,6 +177,57 @@ def trait_effect_training_data(datasets: Sequence[TraitEffectDataset]) -> TraitE
         T=np.stack(T_arrays).astype(np.float32),
         Beta=np.stack(beta_arrays).astype(np.float32),
         Gamma=np.stack(gamma_arrays).astype(np.float32),
+    )
+
+
+def iid_latent_training_data(datasets: Sequence[IidLatentEffectDataset]) -> IidLatentTrainingData:
+    """Convert same-shape iid latent datasets to model-ready arrays."""
+    if not datasets:
+        raise ValueError("datasets must not be empty")
+    X_arrays = []
+    Y_arrays = []
+    code_arrays = []
+    beta_arrays = []
+    eta_arrays = []
+    lambda_arrays = []
+    effect_arrays = []
+    expected_shape = None
+    for dataset in datasets:
+        n_sites = len(dataset.X)
+        design = np.column_stack(
+            [
+                np.ones(n_sites, dtype=np.float32),
+                dataset.X[["x1", "x2"]].to_numpy(dtype=np.float32),
+            ]
+        )
+        Y = dataset.Y.to_numpy(dtype=np.float32)
+        codes = np.asarray(dataset.group_codes, dtype=np.int32)
+        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
+        eta = dataset.truth_eta.to_numpy(dtype=np.float32)
+        loadings = dataset.truth_lambda.to_numpy(dtype=np.float32)
+        random_effect = dataset.truth_random_effect.to_numpy(dtype=np.float32)
+        shape = (design.shape, Y.shape, codes.shape, beta.shape, eta.shape, loadings.shape, random_effect.shape)
+        if expected_shape is None:
+            expected_shape = shape
+        elif shape != expected_shape:
+            raise ValueError("all iid latent datasets must have the same fixed shapes")
+        if codes.min(initial=0) < 0 or codes.max(initial=0) >= eta.shape[0]:
+            raise ValueError("group codes must index Eta rows")
+        X_arrays.append(design)
+        Y_arrays.append(Y)
+        code_arrays.append(codes)
+        beta_arrays.append(beta)
+        eta_arrays.append(eta)
+        lambda_arrays.append(loadings)
+        effect_arrays.append(random_effect)
+    return IidLatentTrainingData(
+        X=np.stack(X_arrays).astype(np.float32),
+        Y=np.stack(Y_arrays).astype(np.float32),
+        group_codes=np.stack(code_arrays).astype(np.int32),
+        Beta=np.stack(beta_arrays).astype(np.float32),
+        Eta=np.stack(eta_arrays).astype(np.float32),
+        Lambda=np.stack(lambda_arrays).astype(np.float32),
+        random_effect=np.stack(effect_arrays).astype(np.float32),
     )
 
 

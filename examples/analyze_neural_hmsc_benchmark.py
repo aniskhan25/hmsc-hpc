@@ -10,16 +10,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pyhmsc.neural.benchmark import compare_beta_posterior_files, compare_gamma_posterior_files, write_benchmark_report
+from pyhmsc.neural.benchmark import (
+    compare_beta_posterior_files,
+    compare_gamma_posterior_files,
+    compare_iid_association_posterior_files,
+    write_benchmark_report,
+)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--parameter", choices=["Beta", "Gamma"], default="Beta")
+    parser.add_argument("--parameter", choices=["Beta", "Gamma", "Associations"], default="Beta")
     parser.add_argument("--neural-posterior", required=True, help="Neural posterior .h5 path")
     parser.add_argument("--mcmc-posterior", required=True, help="MCMC reference posterior .h5 path")
     parser.add_argument("--truth-beta", help="truth_beta.csv path")
     parser.add_argument("--truth-gamma", help="truth_gamma.csv path")
+    parser.add_argument("--truth-lambda", help="truth_lambda.csv path for association metrics")
+    parser.add_argument("--random-level", type=int, default=0)
     parser.add_argument("--X", help="covariate CSV path for predictive metrics")
     parser.add_argument("--Y", help="response CSV path for predictive metrics")
     parser.add_argument("--formula", default="~ x1 + x2")
@@ -31,7 +38,15 @@ def main() -> None:
     parser.add_argument("--stem", default="neural_hmsc_mcmc_reference")
     args = parser.parse_args()
 
-    if args.parameter == "Gamma":
+    if args.parameter == "Associations":
+        row = compare_iid_association_posterior_files(
+            neural_posterior=args.neural_posterior,
+            mcmc_posterior=args.mcmc_posterior,
+            truth_lambda=args.truth_lambda,
+            dataset=args.dataset,
+            level=args.random_level,
+        )
+    elif args.parameter == "Gamma":
         row = compare_gamma_posterior_files(
             neural_posterior=args.neural_posterior,
             mcmc_posterior=args.mcmc_posterior,

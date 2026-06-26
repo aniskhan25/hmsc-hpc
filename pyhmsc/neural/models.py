@@ -9,6 +9,7 @@ from pyhmsc.neural.posterior_heads import (
     DiagonalNormalBetaHead,
     DiagonalNormalGammaHead,
     GammaPosterior,
+    IidLatentPosterior,
 )
 
 
@@ -209,6 +210,69 @@ class TraitGammaPosteriorModel(tf.keras.Model):
         return GammaPosterior(mean=gamma_ridge + residual.mean, scale=residual.scale)
 
 
+class IidLatentFactorPosteriorModel(tf.keras.Model):
+    """Fixed-shape iid random-intercept latent-factor posterior model."""
+
+    def __init__(
+        self,
+        n_sites: int,
+        n_covariates: int,
+        n_species: int,
+        n_groups: int,
+        n_factors: int = 1,
+        beta_scale: float = 0.05,
+        eta_scale: float = 0.05,
+        lambda_scale: float = 0.05,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.n_sites = int(n_sites)
+        self.n_covariates = int(n_covariates)
+        self.n_species = int(n_species)
+        self.n_groups = int(n_groups)
+        self.n_factors = int(n_factors)
+        self.beta_scale = float(beta_scale)
+        self.eta_scale = float(eta_scale)
+        self.lambda_scale = float(lambda_scale)
+
+    def call(self, inputs: dict[str, tf.Tensor]) -> IidLatentPosterior:
+        design = tf.cast(inputs["X"], tf.float32)
+        response = tf.cast(inputs["Y"], tf.float32)
+        group_codes = tf.cast(inputs["group_codes"], tf.int32)
+        _assert_iid_latent_shape(
+            design,
+            response,
+            group_codes,
+            self.n_sites,
+            self.n_covariates,
+            self.n_species,
+        )
+
+        xty = tf.einsum("bnk,bns->bks", design, response) / tf.cast(self.n_sites, tf.float32)
+        xtx = tf.einsum("bnk,bnl->bkl", design, design) / tf.cast(self.n_sites, tf.float32)
+        beta_ridge = _ridge_beta_estimate(xtx, xty)
+        residual = response - tf.einsum("bnk,bks->bns", design, beta_ridge)
+        group_residual = _group_means(residual, group_codes, self.n_groups)
+        singular_values, left, right = tf.linalg.svd(group_residual, full_matrices=False)
+        keep = min(self.n_factors, int(group_residual.shape[-1]), int(group_residual.shape[-2]))
+        singular_values = singular_values[:, :keep]
+        left = left[:, :, :keep]
+        right = right[:, :, :keep]
+        root = tf.sqrt(tf.maximum(singular_values, 0.0))
+        eta_mean = left * root[:, None, :]
+        lambda_mean = tf.transpose(right * root[:, None, :], [0, 2, 1])
+        eta_mean = _pad_factor_axis(eta_mean, self.n_factors, axis=2)
+        lambda_mean = _pad_factor_axis(lambda_mean, self.n_factors, axis=1)
+        return IidLatentPosterior(
+            beta_mean=beta_ridge,
+            beta_scale=tf.ones_like(beta_ridge) * tf.cast(self.beta_scale, beta_ridge.dtype),
+            eta_mean=eta_mean,
+            eta_scale=tf.ones_like(eta_mean) * tf.cast(self.eta_scale, eta_mean.dtype),
+            lambda_mean=lambda_mean,
+            lambda_scale=tf.ones_like(lambda_mean) * tf.cast(self.lambda_scale, lambda_mean.dtype),
+        )
+
+
 def _assert_fixed_shape(
     design: tf.Tensor,
     response: tf.Tensor,
@@ -241,6 +305,26 @@ def _assert_trait_shape(
         raise ValueError(f"Y must have trailing shape {(n_sites, n_species)}")
     if traits.shape[1:] != (n_species, n_traits):
         raise ValueError(f"T must have trailing shape {(n_species, n_traits)}")
+
+
+def _assert_iid_latent_shape(
+    design: tf.Tensor,
+    response: tf.Tensor,
+    group_codes: tf.Tensor,
+    n_sites: int,
+    n_covariates: int,
+    n_species: int,
+) -> None:
+    if design.shape.rank != 3 or response.shape.rank != 3:
+        raise ValueError("IidLatentFactorPosteriorModel expects rank-3 X and Y tensors")
+    if group_codes.shape.rank != 2:
+        raise ValueError("group_codes must have shape batch x sites")
+    if design.shape[1:] != (n_sites, n_covariates):
+        raise ValueError(f"X must have trailing shape {(n_sites, n_covariates)}")
+    if response.shape[1:] != (n_sites, n_species):
+        raise ValueError(f"Y must have trailing shape {(n_sites, n_species)}")
+    if group_codes.shape[1:] != (n_sites,):
+        raise ValueError(f"group_codes must have trailing shape {(n_sites,)}")
 
 
 def _assert_variable_shape(
@@ -277,3 +361,19 @@ def _ridge_gamma_estimate(beta: tf.Tensor, traits: tf.Tensor, ridge: float = 1e-
     beta_t = tf.einsum("bks,bst->bkt", beta, traits)
     solution = tf.linalg.solve(ttt + penalty, tf.transpose(beta_t, [0, 2, 1]))
     return tf.transpose(solution, [0, 2, 1])
+
+
+def _group_means(values: tf.Tensor, group_codes: tf.Tensor, n_groups: int) -> tf.Tensor:
+    one_hot = tf.one_hot(group_codes, depth=n_groups, dtype=values.dtype)
+    totals = tf.einsum("bng,bns->bgs", one_hot, values)
+    counts = tf.reduce_sum(one_hot, axis=1)
+    return totals / tf.maximum(counts[:, :, None], 1.0)
+
+
+def _pad_factor_axis(values: tf.Tensor, n_factors: int, axis: int) -> tf.Tensor:
+    current = int(values.shape[axis])
+    if current == n_factors:
+        return values
+    paddings = [[0, 0] for _ in range(values.shape.rank)]
+    paddings[axis] = [0, n_factors - current]
+    return tf.pad(values, paddings)

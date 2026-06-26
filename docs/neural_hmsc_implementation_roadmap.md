@@ -552,6 +552,26 @@ Purpose:
 
 Add the first random-effect structure while avoiding spatial complexity.
 
+Status:
+
+Implemented in this feature branch for fixed-shape iid random-intercept latent
+factor prototypes:
+
+```text
+pyhmsc/neural/simulator.py
+pyhmsc/neural/models.py
+pyhmsc/neural/storage.py
+tests/test_neural_hmsc_iid_latent.py
+```
+
+The implementation simulates iid group membership, `Eta`, `Lambda`, and
+low-rank residual contributions; encodes group membership in neural training
+data; predicts `Beta`, `Eta`, and `Lambda` with an SVD-style residual encoder;
+writes samples to the existing `random_levels/0/Eta` and
+`random_levels/0/Lambda` HDF5 layout; and compares identifiable association
+summaries from `Lambda.T @ Lambda`. Raw factor sign/permutation is treated as
+non-identifiable, so tests prioritize contribution and association recovery.
+
 Target:
 
 ```text

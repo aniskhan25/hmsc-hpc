@@ -34,6 +34,17 @@ class TraitEffectDataset(FixedEffectDataset):
     truth_gamma: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class IidLatentEffectDataset(FixedEffectDataset):
+    """One simulated iid latent random-intercept dataset."""
+
+    study_design: pd.DataFrame
+    group_codes: np.ndarray
+    truth_eta: pd.DataFrame
+    truth_lambda: pd.DataFrame
+    truth_random_effect: pd.DataFrame
+
+
 def simulate_fixed_effect_dataset(
     *,
     n_sites: int,
@@ -114,6 +125,115 @@ def simulate_fixed_effect_dataset(
         truth_beta=truth_beta,
         linear_predictor=linear_predictor,
         metadata=metadata,
+    )
+
+
+def simulate_iid_latent_effect_dataset(
+    *,
+    n_sites: int,
+    n_species: int,
+    n_groups: int | None = None,
+    n_factors: int = 1,
+    distribution: str = "normal",
+    seed: int,
+    beta_scale: float = 0.35,
+    eta_scale: float = 1.0,
+    lambda_scale: float = 1.0,
+    gaussian_sigma: float = 0.15,
+    poisson_eta_clip: tuple[float, float] = (-6.0, 6.0),
+) -> IidLatentEffectDataset:
+    """Simulate fixed effects plus iid latent random intercepts."""
+    if n_sites <= 0:
+        raise ValueError("n_sites must be positive")
+    if n_species <= 1:
+        raise ValueError("n_species must be greater than one")
+    if n_factors <= 0:
+        raise ValueError("n_factors must be positive")
+    n_groups = int(n_groups if n_groups is not None else n_sites)
+    if n_groups <= 0 or n_groups > n_sites:
+        raise ValueError("n_groups must be in [1, n_sites]")
+    if n_groups < n_factors:
+        raise ValueError("n_groups must be at least n_factors")
+    if beta_scale <= 0 or eta_scale <= 0 or lambda_scale <= 0:
+        raise ValueError("beta_scale, eta_scale, and lambda_scale must be positive")
+    if gaussian_sigma <= 0:
+        raise ValueError("gaussian_sigma must be positive")
+    if poisson_eta_clip[0] >= poisson_eta_clip[1]:
+        raise ValueError("poisson_eta_clip must be ordered as (low, high)")
+
+    rng = np.random.default_rng(seed)
+    site_names = [f"site_{idx + 1:04d}" for idx in range(n_sites)]
+    species_names = [f"sp{idx + 1}" for idx in range(n_species)]
+    factor_names = [f"factor_{idx}" for idx in range(n_factors)]
+    group_names = [f"plot_{idx + 1:04d}" for idx in range(n_groups)]
+    covariate_names = ["Intercept", "x1", "x2"]
+
+    x1 = rng.normal(size=n_sites)
+    x2 = rng.normal(size=n_sites)
+    X = pd.DataFrame({"x1": x1, "x2": x2}, index=site_names)
+    design = np.column_stack([np.ones(n_sites), x1, x2])
+    group_codes = np.arange(n_sites, dtype=int) % n_groups
+    if n_groups < n_sites:
+        rng.shuffle(group_codes)
+    study_design = pd.DataFrame(
+        {"plot": [group_names[code] for code in group_codes]},
+        index=site_names,
+    )
+
+    beta = rng.normal(scale=beta_scale, size=(len(covariate_names), n_species))
+    eta_raw = rng.normal(size=(n_groups, n_factors))
+    eta, _ = np.linalg.qr(eta_raw)
+    eta = eta[:, :n_factors] * eta_scale
+    loadings = rng.normal(scale=lambda_scale, size=(n_factors, n_species))
+    random_effect = eta[group_codes] @ loadings
+    linear = design @ beta + random_effect
+
+    key = _normalize_distribution(distribution)
+    if key == "normal":
+        Y_values = linear + rng.normal(scale=gaussian_sigma, size=linear.shape)
+    elif key == "probit":
+        Y_values = rng.binomial(1, ndtr(linear))
+    elif key == "poisson":
+        low, high = poisson_eta_clip
+        Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
+    else:
+        raise ValueError(f"Unsupported iid latent benchmark distribution {distribution!r}")
+
+    Y = pd.DataFrame(Y_values, index=site_names, columns=species_names)
+    truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
+    truth_eta = pd.DataFrame(eta, index=group_names, columns=factor_names)
+    truth_lambda = pd.DataFrame(loadings, index=factor_names, columns=species_names)
+    truth_random_effect = pd.DataFrame(random_effect, index=site_names, columns=species_names)
+    linear_predictor = pd.DataFrame(linear, index=site_names, columns=species_names)
+    metadata = {
+        "distribution": key,
+        "seed": int(seed),
+        "n_sites": int(n_sites),
+        "n_species": int(n_species),
+        "n_covariates": len(covariate_names),
+        "n_groups": int(n_groups),
+        "n_factors": int(n_factors),
+        "formula": "~ x1 + x2",
+        "random_level": {"name": "plot", "column": "plot", "type": "iid"},
+        "beta_scale": float(beta_scale),
+        "eta_scale": float(eta_scale),
+        "lambda_scale": float(lambda_scale),
+    }
+    if key == "normal":
+        metadata["gaussian_sigma"] = float(gaussian_sigma)
+    if key == "poisson":
+        metadata["poisson_eta_clip"] = [float(poisson_eta_clip[0]), float(poisson_eta_clip[1])]
+    return IidLatentEffectDataset(
+        Y=Y,
+        X=X,
+        truth_beta=truth_beta,
+        linear_predictor=linear_predictor,
+        metadata=metadata,
+        study_design=study_design,
+        group_codes=group_codes,
+        truth_eta=truth_eta,
+        truth_lambda=truth_lambda,
+        truth_random_effect=truth_random_effect,
     )
 
 
