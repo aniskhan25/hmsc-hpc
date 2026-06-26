@@ -405,6 +405,26 @@ Purpose:
 Compare neural posterior approximation against real MCMC output, not only
 simulation truth.
 
+Status:
+
+Implemented in this feature branch for fixed-effect `Beta` posterior reference
+comparisons:
+
+```text
+pyhmsc/neural/benchmark.py
+examples/run_neural_hmsc_benchmark.py
+examples/analyze_neural_hmsc_benchmark.py
+tests/test_neural_hmsc_benchmark.py
+```
+
+The benchmark module compares neural posterior HDF5 files with MCMC reference
+HDF5 files through `HmscFit`, reports posterior mean/sd agreement, credible
+interval overlap, truth recovery, optional fixed-effect predictive summaries,
+runtime, and speedup. The runner can generate the small Gaussian/probit/Poisson
+suite locally and optionally launch Python-native MCMC references; the analyzer
+compares already-produced posterior files, which is the intended path for
+longer LUMI runs.
+
 Tasks:
 
 - choose a small benchmark suite:
