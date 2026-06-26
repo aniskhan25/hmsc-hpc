@@ -66,5 +66,7 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
     assert "git_commit" in metadata
     assert manifest["suite"] == ["normal"]
     assert manifest["datasets"][0]["distribution"] == "normal"
+    assert Path(record["neural_checkpoint"], "neural_checkpoint.json").exists()
+    assert Path(record["neural_checkpoint"], "weights.weights.h5").exists()
     assert Path(record["neural_posterior"]).exists()
     assert Path(record["neural_posterior_uncalibrated"]).exists()

@@ -18,14 +18,15 @@ from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
+import tensorflow as tf
+
 from pyhmsc.neural.evaluation import predict_beta_posterior
 from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
-from pyhmsc.neural.posterior_heads import beta_negative_log_probability
+from pyhmsc.neural.posterior_heads import BetaPosterior, beta_negative_log_probability
 from pyhmsc.neural.simulator import FixedEffectDataset
 from pyhmsc.neural.storage import write_beta_posterior_hdf5
 from pyhmsc.neural.train import (
@@ -240,7 +241,7 @@ class NeuralHmscInference:
     def check_compatibility(self, model_or_compiled_artifact: Any) -> dict[str, Any]:
         """Return a compatibility summary or raise a clear compatibility error."""
         data, context = self._prepare_inference_data(model_or_compiled_artifact)
-        self._check_training_data_shape(data)
+        self._check_training_data_shape(data, batch_size=1)
         return {
             "compatible": True,
             "model_family": self.model_family,
@@ -261,6 +262,7 @@ class NeuralHmscInference:
         chains: int = 1,
         seed: int | None = None,
         output: str | Path | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> HmscFit:
         """Infer a fixed-effect Beta posterior and return an ``HmscFit``."""
         if draws <= 0:
@@ -268,8 +270,11 @@ class NeuralHmscInference:
         if chains <= 0:
             raise ValueError("chains must be positive")
         data, context = self._prepare_inference_data(model_or_compiled_artifact)
-        self._check_training_data_shape(data)
+        self._check_training_data_shape(data, batch_size=1)
         posterior = predict_beta_posterior(self.model, data)
+        posterior_metadata = {"neural_api": self._manifest()}
+        if metadata:
+            posterior_metadata.update(metadata)
         if output is None:
             with tempfile.TemporaryDirectory(prefix="neural-hmsc-fit-") as tmp:
                 path = write_beta_posterior_hdf5(
@@ -282,7 +287,7 @@ class NeuralHmscInference:
                     chains=chains,
                     draws=draws,
                     seed=seed,
-                    metadata={"neural_api": self._manifest()},
+                    metadata=posterior_metadata,
                 )
                 fit = HmscFit.from_file(path)
         else:
@@ -296,13 +301,26 @@ class NeuralHmscInference:
                 chains=chains,
                 draws=draws,
                 seed=seed,
-                metadata={"neural_api": self._manifest()},
+                metadata=posterior_metadata,
             )
             fit = HmscFit.from_file(path)
             fit.output_file = path
         return fit
 
+    def predict_beta_posterior(self, model_or_compiled_artifact: Any) -> BetaPosterior:
+        """Return the raw diagonal-normal fixed-effect ``Beta`` posterior."""
+        data, _ = self._prepare_inference_data(model_or_compiled_artifact)
+        self._check_training_data_shape(data, batch_size=None)
+        return predict_beta_posterior(self.model, data)
+
     def _prepare_inference_data(self, value: Any) -> tuple[FixedShapeTrainingData, "_InferenceContext"]:
+        if isinstance(value, FixedShapeTrainingData):
+            return value, _InferenceContext(
+                distribution=self.distribution,
+                formula=self.formula,
+                covariate_names=self.covariate_names,
+                species_names=self.species_names,
+            )
         if isinstance(value, FixedEffectDataset):
             self._check_dataset_compatibility(value)
             data = fixed_shape_training_data([value])
@@ -377,13 +395,21 @@ class NeuralHmscInference:
                 f"dataset distribution {distribution!r} does not match checkpoint distribution {self.distribution!r}"
             )
 
-    def _check_training_data_shape(self, data: FixedShapeTrainingData) -> None:
-        expected = (1, self.model.n_sites, self.model.n_covariates)
-        if data.X.shape != expected:
-            raise NeuralHmscCompatibilityError(f"X shape {data.X.shape} does not match checkpoint shape {expected}")
-        expected_y = (1, self.model.n_sites, self.model.n_species)
-        if data.Y.shape != expected_y:
-            raise NeuralHmscCompatibilityError(f"Y shape {data.Y.shape} does not match checkpoint shape {expected_y}")
+    def _check_training_data_shape(self, data: FixedShapeTrainingData, *, batch_size: int | None) -> None:
+        if data.X.ndim != 3:
+            raise NeuralHmscCompatibilityError(f"X must be a 3D batch; got shape {data.X.shape}")
+        if data.Y.ndim != 3:
+            raise NeuralHmscCompatibilityError(f"Y must be a 3D batch; got shape {data.Y.shape}")
+        if batch_size is not None and data.X.shape[0] != batch_size:
+            raise NeuralHmscCompatibilityError(f"X batch size {data.X.shape[0]} does not match expected {batch_size}")
+        if batch_size is not None and data.Y.shape[0] != batch_size:
+            raise NeuralHmscCompatibilityError(f"Y batch size {data.Y.shape[0]} does not match expected {batch_size}")
+        expected_tail = (self.model.n_sites, self.model.n_covariates)
+        if data.X.shape[1:] != expected_tail:
+            raise NeuralHmscCompatibilityError(f"X shape {data.X.shape} does not match checkpoint tail {expected_tail}")
+        expected_y_tail = (self.model.n_sites, self.model.n_species)
+        if data.Y.shape[1:] != expected_y_tail:
+            raise NeuralHmscCompatibilityError(f"Y shape {data.Y.shape} does not match checkpoint tail {expected_y_tail}")
 
     def _manifest(self) -> dict[str, Any]:
         return {

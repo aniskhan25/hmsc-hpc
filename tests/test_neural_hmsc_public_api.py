@@ -56,6 +56,7 @@ def test_public_neural_hmsc_api_saves_loads_and_infers(tmp_path):
     assert list(fit.beta_mean().columns) == ["sp1", "sp2"]
     assert fit.beta_ci()["lower"].shape == (3, 2)
     assert fit.predict_mean(test.X).shape == test.Y.shape
+    assert loaded.predict_beta_posterior(test).mean.shape == (1, 3, 2)
 
 
 def test_public_neural_hmsc_api_infers_from_compiled_artifact(tmp_path):

@@ -28,11 +28,10 @@ if str(ROOT) not in sys.path:
 
 from pyhmsc.neural.benchmark import compare_beta_posteriors, write_benchmark_report
 from pyhmsc.neural.calibration import apply_beta_scale_calibration, fit_beta_scale_calibration
-from pyhmsc.neural.evaluation import predict_beta_posterior
-from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
+from pyhmsc.neural.inference import NeuralHmscInference
 from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
 from pyhmsc.neural.storage import write_beta_posterior_hdf5
-from pyhmsc.neural.train import fixed_shape_training_data, train_fixed_shape_beta_model
+from pyhmsc.neural.train import fixed_shape_training_data
 from pyhmsc.posterior import HmscFit
 
 
@@ -95,6 +94,7 @@ def main() -> None:
         neural_path = dataset_dir / "neural_posterior.h5"
         uncalibrated_path = dataset_dir / "neural_posterior_uncalibrated.h5"
         mcmc_path = dataset_dir / "mcmc_reference.h5"
+        checkpoint_dir = dataset_dir / "neural_checkpoint"
         if args.skip_existing and neural_path.exists() and uncalibrated_path.exists():
             record = _load_record(record_path)
             if record is None:
@@ -102,6 +102,7 @@ def main() -> None:
                     "distribution": distribution,
                     "neural_posterior": str(neural_path),
                     "neural_posterior_uncalibrated": str(uncalibrated_path),
+                    "neural_checkpoint": str(checkpoint_dir),
                     "data_dir": str(dataset_dir),
                     "neural_inference_wall_time_seconds": None,
                     "reused_existing": True,
@@ -159,40 +160,42 @@ def main() -> None:
         )
         _write_dataset(test, dataset_dir)
 
-        model = FixedShapeBetaPosteriorModel(
+        engine = NeuralHmscInference.for_fixed_effects(
             n_sites=args.n_sites,
-            n_covariates=3,
             n_species=args.n_species,
-            hidden_units=(96, 96),
-        )
-        train_fixed_shape_beta_model(
-            model,
-            fixed_shape_training_data(train),
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-        )
-
-        test_data = fixed_shape_training_data([test])
-        start = time.perf_counter()
-        uncalibrated_posterior = predict_beta_posterior(model, test_data)
-        uncalibrated_path = write_beta_posterior_hdf5(
-            uncalibrated_posterior,
-            uncalibrated_path,
-            covariate_names=list(test.truth_beta.index),
-            species_names=list(test.truth_beta.columns),
+            n_covariates=3,
             distribution=distribution,
             formula="~ x1 + x2",
+            covariate_names=list(test.truth_beta.index),
+            species_names=list(test.truth_beta.columns),
+            hidden_units=(96, 96),
+        )
+        training_history = engine.fit(
+            train,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            seed=args.seed + suite_idx,
+        )
+        engine.save(checkpoint_dir)
+        engine = NeuralHmscInference.load(checkpoint_dir)
+
+        start = time.perf_counter()
+        uncalibrated_fit = engine.infer(
+            test,
+            output=uncalibrated_path,
             chains=args.neural_chains,
             draws=args.neural_draws,
             seed=args.seed + suite_idx,
             metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
         )
+        uncalibrated_path = uncalibrated_fit.output_file or uncalibrated_path
+        uncalibrated_posterior = engine.predict_beta_posterior(test)
         if args.disable_calibration:
             calibration_result = None
             posterior = uncalibrated_posterior
         else:
             calibration_data = fixed_shape_training_data(calibration)
-            calibration_posterior = predict_beta_posterior(model, calibration_data)
+            calibration_posterior = engine.predict_beta_posterior(calibration_data)
             calibration_result = fit_beta_scale_calibration(
                 calibration_posterior,
                 calibration_data.Beta,
@@ -223,8 +226,14 @@ def main() -> None:
             "distribution": distribution,
             "neural_posterior": str(neural_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
+            "neural_checkpoint": str(checkpoint_dir),
             "data_dir": str(dataset_dir),
             "neural_inference_wall_time_seconds": neural_seconds,
+            "training_history": {
+                "loss": training_history.loss,
+                "beta_rmse": training_history.beta_rmse,
+                "scale_mean": training_history.scale_mean,
+            },
         }
         if calibration_result is not None:
             record["calibration"] = calibration_result.to_metadata()
