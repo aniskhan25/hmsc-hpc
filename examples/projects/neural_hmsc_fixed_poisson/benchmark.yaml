@@ -1,0 +1,116 @@
+benchmark:
+  name: neural_hmsc_fixed_poisson
+  milestone: 0
+  protocol: docs/neural_hmsc_benchmark_protocol.md
+  implementation_priority: 3
+  status: design_locked
+
+model:
+  model_type: fixed_effect
+  distribution: poisson
+  formula:
+    X: "~ x1 + x2"
+  response: generated
+  covariates: generated
+  target_parameters:
+    - Beta
+  unsupported:
+    traits: true
+    phylogeny: true
+    random_levels: true
+    spatial: true
+
+simulation:
+  generator: pyhmsc.neural.simulator.fixed_effect_corpus
+  seed: 73001
+  dimensions:
+    n_sites:
+      values: [24, 40, 64]
+    n_species:
+      values: [2, 4, 8]
+    n_covariates:
+      value: 3
+      includes_intercept: true
+  covariates:
+    names: [Intercept, x1, x2]
+    x1:
+      distribution: normal
+      mean: 0.0
+      sd: 1.0
+    x2:
+      distribution: normal
+      mean: 0.0
+      sd: 1.0
+  beta:
+    distribution: normal
+    mean: 0.0
+    sd: 0.75
+    zero_probability: 0.0
+  response:
+    inverse_link: exp
+    eta_clip: [-6.0, 6.0]
+  corpus_sizes:
+    smoke:
+      train: 16
+      validation: 4
+      test: 4
+    default:
+      train: 512
+      validation: 128
+      test: 128
+
+mcmc_reference:
+  enabled_for_subset: true
+  local:
+    chains: 2
+    samples: 500
+    transient: 250
+    thin: 5
+  publication:
+    chains: 4
+    samples: 2000
+    transient: 1000
+    thin: 10
+  subset_sizes:
+    validation: 16
+    test: 32
+
+neural_target:
+  posterior_family: diagonal_normal
+  parameter: Beta
+  output_shape: n_covariates_x_n_species
+  sample_shape: chains_x_draws_x_n_covariates_x_n_species
+  training_objective:
+    primary: negative_log_probability_of_true_beta
+    auxiliary:
+      - beta_mean_mse
+      - scale_collapse_penalty
+
+metrics:
+  posterior_truth:
+    - beta_mean_rmse_truth
+    - beta_mean_mae_truth
+    - beta_interval_coverage_truth_80
+    - beta_interval_coverage_truth_90
+    - beta_interval_coverage_truth_95
+    - beta_interval_width_mean
+  posterior_mcmc:
+    - beta_mean_rmse_mcmc
+    - beta_sd_rmse_mcmc
+    - beta_ci_overlap_90
+    - beta_ci_overlap_95
+    - posterior_sample_mean_correlation
+  predictive:
+    - heldout_log_likelihood
+    - posterior_predictive_mean_rmse
+    - species_ppc_coverage
+    - site_total_count_ppc_coverage
+  operational:
+    - neural_inference_wall_time_seconds
+    - mcmc_wall_time_seconds
+    - speedup_factor
+
+baselines:
+  - zero_prior_mean
+  - per_species_poisson_glm
+  - mcmc_reference_subset

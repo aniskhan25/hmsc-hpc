@@ -121,6 +121,18 @@ Purpose:
 Confirm the smallest viable target and freeze the benchmark protocol before
 adding neural code.
 
+Status:
+
+Implemented in this feature branch as the benchmark protocol and three
+fixed-effect benchmark configuration directories:
+
+```text
+docs/neural_hmsc_benchmark_protocol.md
+examples/projects/neural_hmsc_fixed_gaussian/
+examples/projects/neural_hmsc_fixed_probit/
+examples/projects/neural_hmsc_fixed_poisson/
+```
+
 Tasks:
 
 - document the exact fixed-effect model family to target first
