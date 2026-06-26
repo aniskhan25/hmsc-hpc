@@ -170,6 +170,22 @@ Purpose:
 Create many small HMSC-like datasets with known parameters and controlled
 variation.
 
+Status:
+
+Implemented in this feature branch for fixed-effect Gaussian, probit, and
+Poisson benchmark corpora:
+
+```text
+pyhmsc/neural/datasets.py
+pyhmsc/neural/simulator.py
+examples/generate_neural_hmsc_training_data.py
+tests/test_neural_hmsc_simulator.py
+```
+
+The generator writes per-dataset `Y.csv`, `X.csv`, `truth_beta.csv`,
+`truth_linear_predictor.csv`, `model.yaml`, compiled `init.json`/HDF5 artifacts,
+and a top-level `corpus_metadata.json`.
+
 Tasks:
 
 - add a neural training-data generator that calls or extends `pyhmsc.simulate`
