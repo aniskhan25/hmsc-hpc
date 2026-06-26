@@ -22,6 +22,17 @@ class FixedShapeTrainingData:
 
 
 @dataclass(frozen=True)
+class VariableShapeTrainingData:
+    """Padded arrays and masks for variable-shape Beta posterior work."""
+
+    X: np.ndarray
+    Y: np.ndarray
+    Beta: np.ndarray
+    site_mask: np.ndarray
+    species_mask: np.ndarray
+
+
+@dataclass(frozen=True)
 class FixedShapeTrainingHistory:
     """Compact training history for fixed-shape prototype loops."""
 
@@ -59,6 +70,47 @@ def fixed_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> FixedSh
         X=np.stack(X_arrays).astype(np.float32),
         Y=np.stack(Y_arrays).astype(np.float32),
         Beta=np.stack(beta_arrays).astype(np.float32),
+    )
+
+
+def variable_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> VariableShapeTrainingData:
+    """Convert fixed-effect datasets to padded variable-shape arrays.
+
+    Covariates remain fixed to ``Intercept, x1, x2`` for Milestone 3. Sites and
+    species are padded to the maximum shape in the batch.
+    """
+    if not datasets:
+        raise ValueError("datasets must not be empty")
+    n_covariates = 3
+    max_sites = max(len(dataset.X) for dataset in datasets)
+    max_species = max(dataset.Y.shape[1] for dataset in datasets)
+    batch = len(datasets)
+    X = np.zeros((batch, max_sites, n_covariates), dtype=np.float32)
+    Y = np.zeros((batch, max_sites, max_species), dtype=np.float32)
+    Beta = np.zeros((batch, n_covariates, max_species), dtype=np.float32)
+    site_mask = np.zeros((batch, max_sites), dtype=bool)
+    species_mask = np.zeros((batch, max_species), dtype=bool)
+
+    for idx, dataset in enumerate(datasets):
+        n_sites = len(dataset.X)
+        n_species = dataset.Y.shape[1]
+        X[idx, :n_sites, :] = np.column_stack(
+            [
+                np.ones(n_sites, dtype=np.float32),
+                dataset.X[["x1", "x2"]].to_numpy(dtype=np.float32),
+            ]
+        )
+        Y[idx, :n_sites, :n_species] = dataset.Y.to_numpy(dtype=np.float32)
+        Beta[idx, :, :n_species] = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
+        site_mask[idx, :n_sites] = True
+        species_mask[idx, :n_species] = True
+
+    return VariableShapeTrainingData(
+        X=X,
+        Y=Y,
+        Beta=Beta,
+        site_mask=site_mask,
+        species_mask=species_mask,
     )
 
 

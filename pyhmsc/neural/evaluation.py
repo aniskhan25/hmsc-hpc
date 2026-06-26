@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from pyhmsc.neural.posterior_heads import BetaPosterior
-from pyhmsc.neural.train import FixedShapeTrainingData
+from pyhmsc.neural.train import FixedShapeTrainingData, VariableShapeTrainingData
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,19 @@ class BetaPosteriorMetrics:
 def predict_beta_posterior(model: tf.keras.Model, data: FixedShapeTrainingData) -> BetaPosterior:
     """Run a fixed-shape Beta model on prepared arrays."""
     return model({"X": data.X, "Y": data.Y}, training=False)
+
+
+def predict_variable_beta_posterior(model: tf.keras.Model, data: VariableShapeTrainingData) -> BetaPosterior:
+    """Run a variable-shape Beta model on padded arrays."""
+    return model(
+        {
+            "X": data.X,
+            "Y": data.Y,
+            "site_mask": data.site_mask,
+            "species_mask": data.species_mask,
+        },
+        training=False,
+    )
 
 
 def evaluate_beta_posterior(
@@ -53,3 +66,30 @@ def evaluate_beta_posterior(
         zero_baseline_rmse_truth=float(np.sqrt(np.mean(beta_true**2))),
     )
 
+
+def evaluate_masked_beta_posterior(
+    posterior: BetaPosterior,
+    beta_true: np.ndarray,
+    species_mask: np.ndarray,
+    *,
+    z_value: float = 1.959963984540054,
+) -> BetaPosteriorMetrics:
+    """Evaluate variable-shape Beta posterior metrics over unpadded species."""
+    mean = posterior.mean.numpy()
+    scale = posterior.scale.numpy()
+    beta_true = np.asarray(beta_true, dtype=np.float32)
+    mask = np.asarray(species_mask, dtype=bool)[:, None, :]
+    mask = np.broadcast_to(mask, beta_true.shape)
+    error = mean - beta_true
+    lower = mean - z_value * scale
+    upper = mean + z_value * scale
+    covered = (beta_true >= lower) & (beta_true <= upper)
+    return BetaPosteriorMetrics(
+        beta_mean_rmse_truth=float(np.sqrt(np.mean(error[mask] ** 2))),
+        beta_mean_mae_truth=float(np.mean(np.abs(error[mask]))),
+        beta_interval_coverage_truth_95=float(np.mean(covered[mask])),
+        beta_interval_width_mean_95=float(np.mean((upper - lower)[mask])),
+        beta_scale_min=float(np.min(scale[mask])),
+        beta_scale_mean=float(np.mean(scale[mask])),
+        zero_baseline_rmse_truth=float(np.sqrt(np.mean(beta_true[mask] ** 2))),
+    )

@@ -301,6 +301,22 @@ Purpose:
 Move from a toy fixed-shape model to a reusable inference model over variable
 numbers of sites and species.
 
+Status:
+
+Implemented in this feature branch for variable site/species counts with fixed
+covariates and Gaussian fixed effects:
+
+```text
+pyhmsc/neural/train.py
+pyhmsc/neural/models.py
+pyhmsc/neural/evaluation.py
+tests/test_neural_hmsc_variable_shape.py
+```
+
+The implementation pads variable-shape datasets, carries `site_mask` and
+`species_mask`, predicts masked diagonal Normal `Beta` posteriors, and verifies
+site-order invariance plus species-order equivariance.
+
 Candidate architecture:
 
 ```text
