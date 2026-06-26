@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
+import subprocess
 import sys
 import tempfile
 import time
@@ -60,14 +62,22 @@ def main() -> None:
     parser.add_argument("--mcmc-transient", type=int, default=100)
     parser.add_argument("--mcmc-thin", type=int, default=1)
     parser.add_argument("--mcmc-verbose", type=int, default=100)
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="reuse existing per-distribution artifacts when possible",
+    )
     args = parser.parse_args()
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     tf.keras.utils.set_random_seed(args.seed)
+    started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _write_run_metadata(output / "run_metadata.json", args=args, started_at=started_at, status="running")
 
     rows = []
     manifest: dict[str, object] = {
+        "started_at": started_at,
         "suite": args.suite,
         "n_sites": args.n_sites,
         "n_species": args.n_species,
@@ -81,6 +91,52 @@ def main() -> None:
     for suite_idx, distribution in enumerate(args.suite):
         dataset_dir = output / distribution
         dataset_dir.mkdir(parents=True, exist_ok=True)
+        record_path = dataset_dir / "benchmark_record.json"
+        neural_path = dataset_dir / "neural_posterior.h5"
+        uncalibrated_path = dataset_dir / "neural_posterior_uncalibrated.h5"
+        mcmc_path = dataset_dir / "mcmc_reference.h5"
+        if args.skip_existing and neural_path.exists() and uncalibrated_path.exists():
+            record = _load_record(record_path)
+            if record is None:
+                record = {
+                    "distribution": distribution,
+                    "neural_posterior": str(neural_path),
+                    "neural_posterior_uncalibrated": str(uncalibrated_path),
+                    "data_dir": str(dataset_dir),
+                    "neural_inference_wall_time_seconds": None,
+                    "reused_existing": True,
+                }
+            if args.run_mcmc_reference and not mcmc_path.exists():
+                test = _load_dataset(dataset_dir, distribution=distribution)
+                mcmc_seconds = _run_mcmc_reference(
+                    test,
+                    output=mcmc_path,
+                    workdir=dataset_dir / "mcmc_work",
+                    samples=args.mcmc_samples,
+                    transient=args.mcmc_transient,
+                    thin=args.mcmc_thin,
+                    chains=args.mcmc_chains,
+                    verbose=args.mcmc_verbose,
+                )
+                record["mcmc_posterior"] = str(mcmc_path)
+                record["mcmc_wall_time_seconds"] = mcmc_seconds
+            if args.run_mcmc_reference and mcmc_path.exists():
+                test = _load_dataset(dataset_dir, distribution=distribution)
+                rows.extend(
+                    _comparison_rows(
+                        distribution=distribution,
+                        test=test,
+                        neural_path=neural_path,
+                        uncalibrated_path=uncalibrated_path,
+                        mcmc_path=mcmc_path,
+                        neural_seconds=record.get("neural_inference_wall_time_seconds"),
+                        mcmc_seconds=record.get("mcmc_wall_time_seconds"),
+                    )
+                )
+            manifest["datasets"].append(record)  # type: ignore[index]
+            record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+            continue
+
         train = _datasets(
             count=args.train_datasets,
             n_sites=args.n_sites,
@@ -121,7 +177,7 @@ def main() -> None:
         uncalibrated_posterior = predict_beta_posterior(model, test_data)
         uncalibrated_path = write_beta_posterior_hdf5(
             uncalibrated_posterior,
-            dataset_dir / "neural_posterior_uncalibrated.h5",
+            uncalibrated_path,
             covariate_names=list(test.truth_beta.index),
             species_names=list(test.truth_beta.columns),
             distribution=distribution,
@@ -150,7 +206,7 @@ def main() -> None:
             )
         neural_path = write_beta_posterior_hdf5(
             posterior,
-            dataset_dir / "neural_posterior.h5",
+            neural_path,
             covariate_names=list(test.truth_beta.index),
             species_names=list(test.truth_beta.columns),
             distribution=distribution,
@@ -173,7 +229,6 @@ def main() -> None:
         if calibration_result is not None:
             record["calibration"] = calibration_result.to_metadata()
         if args.run_mcmc_reference:
-            mcmc_path = dataset_dir / "mcmc_reference.h5"
             mcmc_seconds = _run_mcmc_reference(
                 test,
                 output=mcmc_path,
@@ -184,37 +239,24 @@ def main() -> None:
                 chains=args.mcmc_chains,
                 verbose=args.mcmc_verbose,
             )
-            uncalibrated_row = compare_beta_posteriors(
-                HmscFit.from_file(uncalibrated_path),
-                HmscFit.from_file(mcmc_path),
-                truth_beta=test.truth_beta,
-                dataset=distribution,
-                distribution=distribution,
-                neural_seconds=neural_seconds,
-                mcmc_seconds=mcmc_seconds,
-                X=test.X,
-                Y=test.Y,
-                formula="~ x1 + x2",
+            rows.extend(
+                _comparison_rows(
+                    distribution=distribution,
+                    test=test,
+                    neural_path=neural_path,
+                    uncalibrated_path=uncalibrated_path,
+                    mcmc_path=mcmc_path,
+                    neural_seconds=neural_seconds,
+                    mcmc_seconds=mcmc_seconds,
+                )
             )
-            uncalibrated_row["posterior_variant"] = "uncalibrated"
-            calibrated_row = compare_beta_posteriors(
-                HmscFit.from_file(neural_path),
-                HmscFit.from_file(mcmc_path),
-                truth_beta=test.truth_beta,
-                dataset=distribution,
-                distribution=distribution,
-                neural_seconds=neural_seconds,
-                mcmc_seconds=mcmc_seconds,
-                X=test.X,
-                Y=test.Y,
-                formula="~ x1 + x2",
-            )
-            calibrated_row["posterior_variant"] = "calibrated"
-            rows.extend([uncalibrated_row, calibrated_row])
             record["mcmc_posterior"] = str(mcmc_path)
             record["mcmc_wall_time_seconds"] = mcmc_seconds
         manifest["datasets"].append(record)  # type: ignore[index]
+        record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
+    finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    manifest["finished_at"] = finished_at
     (output / "benchmark_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     if rows:
         paths = write_benchmark_report(rows, output)
@@ -223,6 +265,13 @@ def main() -> None:
     else:
         print(f"Wrote neural benchmark artifacts in {output}")
         print("No MCMC comparison report was written because --run-mcmc-reference was not set.")
+    _write_run_metadata(
+        output / "run_metadata.json",
+        args=args,
+        started_at=started_at,
+        finished_at=finished_at,
+        status="completed",
+    )
 
 
 def _datasets(
@@ -252,6 +301,120 @@ def _write_dataset(dataset: FixedEffectDataset, output: Path) -> None:
     dataset.truth_beta.to_csv(data_dir / "truth_beta.csv")
     dataset.linear_predictor.to_csv(data_dir / "truth_linear_predictor.csv")
     (output / "dataset_metadata.json").write_text(json.dumps(dataset.metadata, indent=2), encoding="utf-8")
+
+
+def _load_dataset(dataset_dir: Path, *, distribution: str) -> FixedEffectDataset:
+    Y = _read_csv(dataset_dir / "data" / "Y.csv")
+    X = _read_csv(dataset_dir / "data" / "X.csv")
+    truth_beta = _read_csv(dataset_dir / "data" / "truth_beta.csv")
+    linear = _read_csv(dataset_dir / "data" / "truth_linear_predictor.csv")
+    metadata_path = dataset_dir / "dataset_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {"distribution": distribution}
+    return FixedEffectDataset(
+        Y=Y,
+        X=X,
+        truth_beta=truth_beta,
+        linear_predictor=linear,
+        metadata=metadata,
+    )
+
+
+def _read_csv(path: Path):
+    import pandas as pd
+
+    return pd.read_csv(path, index_col=0)
+
+
+def _comparison_rows(
+    *,
+    distribution: str,
+    test: FixedEffectDataset,
+    neural_path: Path,
+    uncalibrated_path: Path,
+    mcmc_path: Path,
+    neural_seconds: float | None,
+    mcmc_seconds: float | None,
+) -> list[dict[str, object]]:
+    uncalibrated_row = compare_beta_posteriors(
+        HmscFit.from_file(uncalibrated_path),
+        HmscFit.from_file(mcmc_path),
+        truth_beta=test.truth_beta,
+        dataset=distribution,
+        distribution=distribution,
+        neural_seconds=neural_seconds,
+        mcmc_seconds=mcmc_seconds,
+        X=test.X,
+        Y=test.Y,
+        formula="~ x1 + x2",
+    )
+    uncalibrated_row["posterior_variant"] = "uncalibrated"
+    calibrated_row = compare_beta_posteriors(
+        HmscFit.from_file(neural_path),
+        HmscFit.from_file(mcmc_path),
+        truth_beta=test.truth_beta,
+        dataset=distribution,
+        distribution=distribution,
+        neural_seconds=neural_seconds,
+        mcmc_seconds=mcmc_seconds,
+        X=test.X,
+        Y=test.Y,
+        formula="~ x1 + x2",
+    )
+    calibrated_row["posterior_variant"] = "calibrated"
+    return [uncalibrated_row, calibrated_row]
+
+
+def _load_record(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_run_metadata(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    started_at: str,
+    status: str,
+    finished_at: str | None = None,
+) -> None:
+    payload = {
+        "status": status,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "argv": sys.argv,
+        "args": vars(args),
+        "platform": platform.platform(),
+        "python": sys.version,
+        "tensorflow": tf.__version__,
+        "gpus": [device.name for device in tf.config.list_physical_devices("GPU")],
+        "slurm": {
+            key: os.environ[key]
+            for key in [
+                "SLURM_JOB_ID",
+                "SLURM_JOB_NAME",
+                "SLURM_SUBMIT_DIR",
+                "SLURM_CPUS_PER_TASK",
+                "SLURM_GPUS",
+            ]
+            if key in os.environ
+        },
+        "git_commit": _git_commit(),
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+    except Exception:
+        return None
+    return result.stdout.strip()
 
 
 def _run_mcmc_reference(

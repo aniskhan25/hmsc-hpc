@@ -688,6 +688,18 @@ Exit criteria:
 - LUMI run can train the prototype and emit a benchmark report without manual
   intervention
 
+Status:
+
+- Implemented `docs/lumi_neural_hmsc_train_sbatch.sh` for scratch-backed neural
+  prototype training with checkpoint-style reuse of existing posterior
+  artifacts.
+- Implemented `docs/lumi_neural_hmsc_benchmark_sbatch.sh` for end-to-end
+  neural plus Python-native MCMC reference benchmarking and report emission.
+- Extended `examples/run_neural_hmsc_benchmark.py` to write reproducible run
+  metadata, reuse existing per-distribution outputs with `--skip-existing`, and
+  resume missing MCMC references when neural artifacts already exist.
+- Added GPU utilization and wall-time logging to both LUMI workflows.
+
 ## Milestone 11: Public API Stabilization
 
 Purpose:
