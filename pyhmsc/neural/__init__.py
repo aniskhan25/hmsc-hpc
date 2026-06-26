@@ -5,6 +5,13 @@ initial utilities support benchmark corpus generation for amortized Neural-HMSC
 posterior inference.
 """
 
+from pathlib import Path
+import os
+import tempfile
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
+os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
+
 from pyhmsc.neural.simulator import (
     FixedEffectDataset,
     IidLatentEffectDataset,
@@ -22,6 +29,10 @@ __all__ = [
     "FixedShapeBetaPosteriorModel",
     "IidLatentEffectDataset",
     "IidLatentFactorPosteriorModel",
+    "NEURAL_CHECKPOINT_VERSION",
+    "NEURAL_TRAINING_CORPUS_VERSION",
+    "NeuralHmscCompatibilityError",
+    "NeuralHmscInference",
     "SpatialLatentEffectDataset",
     "SpatialLatentFactorPosteriorModel",
     "TraitEffectDataset",
@@ -90,6 +101,25 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.models import SpatialLatentFactorPosteriorModel
 
         return SpatialLatentFactorPosteriorModel
+    if name in {
+        "NEURAL_CHECKPOINT_VERSION",
+        "NEURAL_TRAINING_CORPUS_VERSION",
+        "NeuralHmscCompatibilityError",
+        "NeuralHmscInference",
+    }:
+        from pyhmsc.neural.inference import (
+            NEURAL_CHECKPOINT_VERSION,
+            NEURAL_TRAINING_CORPUS_VERSION,
+            NeuralHmscCompatibilityError,
+            NeuralHmscInference,
+        )
+
+        return {
+            "NEURAL_CHECKPOINT_VERSION": NEURAL_CHECKPOINT_VERSION,
+            "NEURAL_TRAINING_CORPUS_VERSION": NEURAL_TRAINING_CORPUS_VERSION,
+            "NeuralHmscCompatibilityError": NeuralHmscCompatibilityError,
+            "NeuralHmscInference": NeuralHmscInference,
+        }[name]
     if name in {
         "fixed_shape_training_data",
         "compiled_trait_effect_training_data",

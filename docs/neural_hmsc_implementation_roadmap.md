@@ -731,6 +731,17 @@ Exit criteria:
 - a user can run a documented end-to-end example without touching internal
   training code
 
+Status:
+
+- Added `NeuralHmscInference` as the first stable public facade for fixed-shape
+  fixed-effect `Beta` neural posterior inference.
+- Added versioned checkpoint manifests with explicit checkpoint and training
+  corpus versions.
+- Added compatibility checks that reject unsupported compiled model structures
+  before inference.
+- Added `docs/neural_hmsc_public_api_tutorial.md` with a documented
+  train/save/load/infer workflow and explicit limitations.
+
 ## Testing Strategy
 
 Unit tests:
