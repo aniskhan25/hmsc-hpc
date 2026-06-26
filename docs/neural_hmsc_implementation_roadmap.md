@@ -610,6 +610,27 @@ Purpose:
 
 Approximate HMSC spatial random-effect behavior after the iid path is stable.
 
+Status:
+
+Implemented in this feature branch for a first full-spatial random-intercept
+latent-factor prototype:
+
+```text
+pyhmsc/neural/simulator.py
+pyhmsc/neural/models.py
+pyhmsc/neural/evaluation.py
+pyhmsc/neural/storage.py
+tests/test_neural_hmsc_spatial_latent.py
+```
+
+The implementation simulates coordinates, spatial `Eta`, `Lambda`, blocked
+held-out sites, and residual spatial contributions; encodes coordinates in
+spatial training data; predicts `Beta`, spatial `Eta`, and `Lambda` with a
+coordinate-kernel residual encoder; evaluates nearest and conditional held-out
+spatial interpolation; reports residual nearest-neighbor autocorrelation; and
+writes samples to the existing random-level posterior layout with
+`spatial_full` metadata. GPP and NNGP variants remain deferred.
+
 Scope order:
 
 1. full spatial

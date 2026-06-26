@@ -159,6 +159,8 @@ def write_iid_latent_posterior_hdf5(
     distribution: str = "normal",
     formula: str = "~ x1 + x2",
     random_level_name: str = "plot",
+    random_level_type: str = "iid",
+    coords: np.ndarray | None = None,
     chains: int = 1,
     draws: int = 100,
     seed: int | None = None,
@@ -220,11 +222,17 @@ def write_iid_latent_posterior_hdf5(
         {
             "name": str(random_level_name),
             "column": str(random_level_name),
-            "type": "iid",
+            "type": str(random_level_type),
             "levels": [str(name) for name in group_names],
             "nf": int(eta_mean.shape[1]),
         }
     ]
+    if coords is not None:
+        coord_array = np.asarray(coords, dtype=float)
+        if coord_array.shape != (len(group_names), 2):
+            raise ValueError(f"coords must have shape {(len(group_names), 2)}")
+        posterior_metadata["random_levels"][0]["coords"] = ["xcoord", "ycoord"]
+        posterior_metadata["random_levels"][0]["coordinate_values"] = coord_array.tolist()
 
     try:
         import h5py  # type: ignore
@@ -240,6 +248,41 @@ def write_iid_latent_posterior_hdf5(
         handle.attrs["nDraws"] = int(draws)
         handle.attrs["pyhmsc_metadata"] = json.dumps(posterior_metadata)
     return output
+
+
+def write_spatial_latent_posterior_hdf5(
+    posterior: IidLatentPosterior,
+    output: str | Path,
+    *,
+    covariate_names: Sequence[str],
+    species_names: Sequence[str],
+    site_names: Sequence[str],
+    coords: np.ndarray,
+    distribution: str = "normal",
+    formula: str = "~ x1 + x2",
+    random_level_name: str = "plot",
+    chains: int = 1,
+    draws: int = 100,
+    seed: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Path:
+    """Write full-spatial neural latent-factor posterior samples to HDF5."""
+    return write_iid_latent_posterior_hdf5(
+        posterior,
+        output,
+        covariate_names=covariate_names,
+        species_names=species_names,
+        group_names=site_names,
+        distribution=distribution,
+        formula=formula,
+        random_level_name=random_level_name,
+        random_level_type="spatial_full",
+        coords=coords,
+        chains=chains,
+        draws=draws,
+        seed=seed,
+        metadata=metadata,
+    )
 
 
 def _neural_metadata(

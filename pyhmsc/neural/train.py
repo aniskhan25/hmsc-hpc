@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from pyhmsc.neural.posterior_heads import beta_negative_log_probability, gamma_negative_log_probability
-from pyhmsc.neural.simulator import FixedEffectDataset, IidLatentEffectDataset, TraitEffectDataset
+from pyhmsc.neural.simulator import FixedEffectDataset, IidLatentEffectDataset, SpatialLatentEffectDataset, TraitEffectDataset
 from pyhmsc.serialization import read_compiled_model
 
 
@@ -56,6 +56,15 @@ class IidLatentTrainingData:
     Eta: np.ndarray
     Lambda: np.ndarray
     random_effect: np.ndarray
+
+
+@dataclass(frozen=True)
+class SpatialLatentTrainingData(IidLatentTrainingData):
+    """Tensor arrays for full-spatial latent-factor posterior work."""
+
+    coords: np.ndarray
+    train_mask: np.ndarray
+    test_mask: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -228,6 +237,41 @@ def iid_latent_training_data(datasets: Sequence[IidLatentEffectDataset]) -> IidL
         Eta=np.stack(eta_arrays).astype(np.float32),
         Lambda=np.stack(lambda_arrays).astype(np.float32),
         random_effect=np.stack(effect_arrays).astype(np.float32),
+    )
+
+
+def spatial_latent_training_data(datasets: Sequence[SpatialLatentEffectDataset]) -> SpatialLatentTrainingData:
+    """Convert same-shape full-spatial latent datasets to model-ready arrays."""
+    base = iid_latent_training_data(datasets)
+    coords_arrays = []
+    train_masks = []
+    test_masks = []
+    expected = None
+    for dataset in datasets:
+        coords = dataset.coords[["xcoord", "ycoord"]].to_numpy(dtype=np.float32)
+        train_mask = np.asarray(dataset.train_mask, dtype=bool)
+        test_mask = np.asarray(dataset.test_mask, dtype=bool)
+        shape = (coords.shape, train_mask.shape, test_mask.shape)
+        if expected is None:
+            expected = shape
+        elif shape != expected:
+            raise ValueError("all spatial latent datasets must have the same coordinate and split shapes")
+        if not train_mask.any() or not test_mask.any():
+            raise ValueError("spatial latent datasets require non-empty train and test masks")
+        coords_arrays.append(coords)
+        train_masks.append(train_mask)
+        test_masks.append(test_mask)
+    return SpatialLatentTrainingData(
+        X=base.X,
+        Y=base.Y,
+        group_codes=base.group_codes,
+        Beta=base.Beta,
+        Eta=base.Eta,
+        Lambda=base.Lambda,
+        random_effect=base.random_effect,
+        coords=np.stack(coords_arrays).astype(np.float32),
+        train_mask=np.stack(train_masks),
+        test_mask=np.stack(test_masks),
     )
 
 

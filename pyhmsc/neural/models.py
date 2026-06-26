@@ -273,6 +273,72 @@ class IidLatentFactorPosteriorModel(tf.keras.Model):
         )
 
 
+class SpatialLatentFactorPosteriorModel(tf.keras.Model):
+    """Full-spatial random-intercept latent-factor posterior prototype."""
+
+    def __init__(
+        self,
+        n_sites: int,
+        n_covariates: int,
+        n_species: int,
+        n_factors: int = 1,
+        spatial_range: float = 0.25,
+        beta_scale: float = 0.05,
+        eta_scale: float = 0.05,
+        lambda_scale: float = 0.05,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.n_sites = int(n_sites)
+        self.n_covariates = int(n_covariates)
+        self.n_species = int(n_species)
+        self.n_factors = int(n_factors)
+        self.spatial_range = float(spatial_range)
+        self.beta_scale = float(beta_scale)
+        self.eta_scale = float(eta_scale)
+        self.lambda_scale = float(lambda_scale)
+        if self.spatial_range <= 0:
+            raise ValueError("spatial_range must be positive")
+
+    def call(self, inputs: dict[str, tf.Tensor]) -> IidLatentPosterior:
+        design = tf.cast(inputs["X"], tf.float32)
+        response = tf.cast(inputs["Y"], tf.float32)
+        coords = tf.cast(inputs["coords"], tf.float32)
+        _assert_spatial_latent_shape(
+            design,
+            response,
+            coords,
+            self.n_sites,
+            self.n_covariates,
+            self.n_species,
+        )
+
+        xty = tf.einsum("bnk,bns->bks", design, response) / tf.cast(self.n_sites, tf.float32)
+        xtx = tf.einsum("bnk,bnl->bkl", design, design) / tf.cast(self.n_sites, tf.float32)
+        beta_ridge = _ridge_beta_estimate(xtx, xty)
+        residual = response - tf.einsum("bnk,bks->bns", design, beta_ridge)
+        weights = _spatial_kernel(coords, self.spatial_range)
+        smooth_residual = tf.einsum("bij,bjs->bis", weights, residual)
+        singular_values, left, right = tf.linalg.svd(smooth_residual, full_matrices=False)
+        keep = min(self.n_factors, int(smooth_residual.shape[-1]), int(smooth_residual.shape[-2]))
+        singular_values = singular_values[:, :keep]
+        left = left[:, :, :keep]
+        right = right[:, :, :keep]
+        root = tf.sqrt(tf.maximum(singular_values, 0.0))
+        eta_mean = left * root[:, None, :]
+        lambda_mean = tf.transpose(right * root[:, None, :], [0, 2, 1])
+        eta_mean = _pad_factor_axis(eta_mean, self.n_factors, axis=2)
+        lambda_mean = _pad_factor_axis(lambda_mean, self.n_factors, axis=1)
+        return IidLatentPosterior(
+            beta_mean=beta_ridge,
+            beta_scale=tf.ones_like(beta_ridge) * tf.cast(self.beta_scale, beta_ridge.dtype),
+            eta_mean=eta_mean,
+            eta_scale=tf.ones_like(eta_mean) * tf.cast(self.eta_scale, eta_mean.dtype),
+            lambda_mean=lambda_mean,
+            lambda_scale=tf.ones_like(lambda_mean) * tf.cast(self.lambda_scale, lambda_mean.dtype),
+        )
+
+
 def _assert_fixed_shape(
     design: tf.Tensor,
     response: tf.Tensor,
@@ -327,6 +393,24 @@ def _assert_iid_latent_shape(
         raise ValueError(f"group_codes must have trailing shape {(n_sites,)}")
 
 
+def _assert_spatial_latent_shape(
+    design: tf.Tensor,
+    response: tf.Tensor,
+    coords: tf.Tensor,
+    n_sites: int,
+    n_covariates: int,
+    n_species: int,
+) -> None:
+    if design.shape.rank != 3 or response.shape.rank != 3 or coords.shape.rank != 3:
+        raise ValueError("SpatialLatentFactorPosteriorModel expects rank-3 X, Y, and coords tensors")
+    if design.shape[1:] != (n_sites, n_covariates):
+        raise ValueError(f"X must have trailing shape {(n_sites, n_covariates)}")
+    if response.shape[1:] != (n_sites, n_species):
+        raise ValueError(f"Y must have trailing shape {(n_sites, n_species)}")
+    if coords.shape[1:] != (n_sites, 2):
+        raise ValueError(f"coords must have trailing shape {(n_sites, 2)}")
+
+
 def _assert_variable_shape(
     design: tf.Tensor,
     response: tf.Tensor,
@@ -377,3 +461,10 @@ def _pad_factor_axis(values: tf.Tensor, n_factors: int, axis: int) -> tf.Tensor:
     paddings = [[0, 0] for _ in range(values.shape.rank)]
     paddings[axis] = [0, n_factors - current]
     return tf.pad(values, paddings)
+
+
+def _spatial_kernel(coords: tf.Tensor, spatial_range: float) -> tf.Tensor:
+    delta = coords[:, :, None, :] - coords[:, None, :, :]
+    distances = tf.sqrt(tf.reduce_sum(tf.square(delta), axis=-1) + 1e-12)
+    weights = tf.exp(-distances / tf.cast(spatial_range, coords.dtype))
+    return weights / tf.maximum(tf.reduce_sum(weights, axis=-1, keepdims=True), 1e-12)

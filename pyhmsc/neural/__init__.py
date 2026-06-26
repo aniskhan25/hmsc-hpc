@@ -8,9 +8,11 @@ posterior inference.
 from pyhmsc.neural.simulator import (
     FixedEffectDataset,
     IidLatentEffectDataset,
+    SpatialLatentEffectDataset,
     TraitEffectDataset,
     generate_fixed_effect_corpus,
     simulate_iid_latent_effect_dataset,
+    simulate_spatial_latent_effect_dataset,
     simulate_fixed_effect_dataset,
     simulate_trait_effect_dataset,
 )
@@ -20,6 +22,8 @@ __all__ = [
     "FixedShapeBetaPosteriorModel",
     "IidLatentEffectDataset",
     "IidLatentFactorPosteriorModel",
+    "SpatialLatentEffectDataset",
+    "SpatialLatentFactorPosteriorModel",
     "TraitEffectDataset",
     "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
@@ -37,6 +41,7 @@ __all__ = [
     "evaluate_gamma_posterior",
     "evaluate_iid_latent_posterior",
     "evaluate_masked_beta_posterior",
+    "evaluate_spatial_latent_posterior",
     "fixed_shape_training_data",
     "fit_beta_scale_calibration",
     "generate_fixed_effect_corpus",
@@ -44,10 +49,14 @@ __all__ = [
     "predict_beta_posterior",
     "predict_gamma_posterior",
     "predict_iid_latent_posterior",
+    "predict_spatial_latent_posterior",
     "predict_variable_beta_posterior",
     "simulate_fixed_effect_dataset",
     "simulate_iid_latent_effect_dataset",
+    "simulate_spatial_latent_effect_dataset",
     "simulate_trait_effect_dataset",
+    "spatial_holdout_random_effect_rmse",
+    "spatial_latent_training_data",
     "train_fixed_shape_beta_model",
     "train_trait_gamma_model",
     "trait_effect_training_data",
@@ -56,6 +65,7 @@ __all__ = [
     "write_beta_posterior_hdf5",
     "write_gamma_posterior_hdf5",
     "write_iid_latent_posterior_hdf5",
+    "write_spatial_latent_posterior_hdf5",
 ]
 
 
@@ -76,10 +86,15 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.models import IidLatentFactorPosteriorModel
 
         return IidLatentFactorPosteriorModel
+    if name == "SpatialLatentFactorPosteriorModel":
+        from pyhmsc.neural.models import SpatialLatentFactorPosteriorModel
+
+        return SpatialLatentFactorPosteriorModel
     if name in {
         "fixed_shape_training_data",
         "compiled_trait_effect_training_data",
         "iid_latent_training_data",
+        "spatial_latent_training_data",
         "train_fixed_shape_beta_model",
         "train_trait_gamma_model",
         "trait_effect_training_data",
@@ -89,6 +104,7 @@ def __getattr__(name: str) -> object:
             compiled_trait_effect_training_data,
             fixed_shape_training_data,
             iid_latent_training_data,
+            spatial_latent_training_data,
             train_fixed_shape_beta_model,
             train_trait_gamma_model,
             trait_effect_training_data,
@@ -99,6 +115,7 @@ def __getattr__(name: str) -> object:
             "fixed_shape_training_data": fixed_shape_training_data,
             "compiled_trait_effect_training_data": compiled_trait_effect_training_data,
             "iid_latent_training_data": iid_latent_training_data,
+            "spatial_latent_training_data": spatial_latent_training_data,
             "train_fixed_shape_beta_model": train_fixed_shape_beta_model,
             "train_trait_gamma_model": train_trait_gamma_model,
             "trait_effect_training_data": trait_effect_training_data,
@@ -109,20 +126,26 @@ def __getattr__(name: str) -> object:
         "evaluate_gamma_posterior",
         "evaluate_iid_latent_posterior",
         "evaluate_masked_beta_posterior",
+        "evaluate_spatial_latent_posterior",
         "predict_beta_posterior",
         "predict_gamma_posterior",
         "predict_iid_latent_posterior",
+        "predict_spatial_latent_posterior",
         "predict_variable_beta_posterior",
+        "spatial_holdout_random_effect_rmse",
     }:
         from pyhmsc.neural.evaluation import (
             evaluate_beta_posterior,
             evaluate_gamma_posterior,
             evaluate_iid_latent_posterior,
             evaluate_masked_beta_posterior,
+            evaluate_spatial_latent_posterior,
             predict_beta_posterior,
             predict_gamma_posterior,
             predict_iid_latent_posterior,
+            predict_spatial_latent_posterior,
             predict_variable_beta_posterior,
+            spatial_holdout_random_effect_rmse,
         )
 
         return {
@@ -130,10 +153,13 @@ def __getattr__(name: str) -> object:
             "evaluate_gamma_posterior": evaluate_gamma_posterior,
             "evaluate_iid_latent_posterior": evaluate_iid_latent_posterior,
             "evaluate_masked_beta_posterior": evaluate_masked_beta_posterior,
+            "evaluate_spatial_latent_posterior": evaluate_spatial_latent_posterior,
             "predict_beta_posterior": predict_beta_posterior,
             "predict_gamma_posterior": predict_gamma_posterior,
             "predict_iid_latent_posterior": predict_iid_latent_posterior,
+            "predict_spatial_latent_posterior": predict_spatial_latent_posterior,
             "predict_variable_beta_posterior": predict_variable_beta_posterior,
+            "spatial_holdout_random_effect_rmse": spatial_holdout_random_effect_rmse,
         }[name]
     if name == "write_beta_posterior_hdf5":
         from pyhmsc.neural.storage import write_beta_posterior_hdf5
@@ -147,6 +173,10 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.storage import write_iid_latent_posterior_hdf5
 
         return write_iid_latent_posterior_hdf5
+    if name == "write_spatial_latent_posterior_hdf5":
+        from pyhmsc.neural.storage import write_spatial_latent_posterior_hdf5
+
+        return write_spatial_latent_posterior_hdf5
     if name in {
         "BetaScaleCalibration",
         "apply_beta_scale_calibration",
