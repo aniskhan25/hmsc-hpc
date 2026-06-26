@@ -60,6 +60,9 @@ fi
 
 source "${VENV}/bin/activate"
 cd "${REPO_DIR}"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
+export SINGULARITYENV_PYTHONPATH="${PYTHONPATH}"
+export APPTAINERENV_PYTHONPATH="${PYTHONPATH}"
 
 echo "Repository: ${REPO_DIR}"
 echo "Run root: ${RUN_ROOT}"
@@ -117,7 +120,7 @@ if [[ "${SKIP_EXISTING}" == "1" ]]; then
   args+=(--skip-existing)
 fi
 
-srun "${PYTHON}" "${args[@]}"
+"${PYTHON}" "${args[@]}"
 printf 'wall_time_seconds=%s\n' "${SECONDS}" | tee "${RUN_ROOT}/wall_time.txt"
 
 echo "Benchmark workflow complete."

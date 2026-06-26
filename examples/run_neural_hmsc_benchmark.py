@@ -20,11 +20,18 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
-import tensorflow as tf
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+loaded_pyhmsc = sys.modules.get("pyhmsc")
+if loaded_pyhmsc is not None:
+    loaded_file = Path(getattr(loaded_pyhmsc, "__file__", "")).resolve()
+    if ROOT not in loaded_file.parents:
+        for module_name in list(sys.modules):
+            if module_name == "pyhmsc" or module_name.startswith("pyhmsc."):
+                del sys.modules[module_name]
+
+import tensorflow as tf
 
 from pyhmsc.neural.benchmark import compare_beta_posteriors, write_benchmark_report
 from pyhmsc.neural.calibration import apply_beta_scale_calibration, fit_beta_scale_calibration
