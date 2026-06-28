@@ -7,6 +7,7 @@ prototype. The supported surface is intentionally narrow:
 - fixed site/covariate/species shape per checkpoint
 - `normal`, `probit`, and `poisson` fixed-effect benchmark distributions
 - outputs readable by `pyhmsc.posterior.HmscFit`
+- per-species full-covariance Normal `Beta` posteriors by default
 
 The API does not yet support trait-mediated `Gamma`, phylogeny, iid latent
 factors, spatial latent factors, random effects, random slopes, detection
@@ -39,6 +40,7 @@ engine = NeuralHmscInference.for_fixed_effects(
     n_species=3,
     distribution="normal",
     formula="~ x1 + x2",
+    posterior_family="full_covariance_normal",
 )
 engine.fit(train, epochs=40, batch_size=8)
 engine.save("run/neural_checkpoint")
@@ -96,12 +98,18 @@ The manifest records:
 - `checkpoint_version`
 - `training_corpus_version`
 - `model_family`
+- `posterior_family`
 - distribution, formula, dimensions, and names
 - public limitations for the checkpoint family
 
 Milestone 11 uses checkpoint version `0.1` and training corpus version `0.1`.
 Future incompatible checkpoint formats must bump `checkpoint_version`. Changes
 to generated training-data semantics must bump `training_corpus_version`.
+
+Checkpoints created before `posterior_family` was added are loaded as
+`diagonal_normal`. New fixed-effect checkpoints default to
+`full_covariance_normal`, which stores correlated draws in the existing
+`Beta` HDF5 sample shape.
 
 ## Compatibility Limits
 

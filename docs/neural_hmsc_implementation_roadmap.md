@@ -478,6 +478,14 @@ on response-family or shape mismatches. The benchmark runner writes both
 uncalibrated and calibrated posterior files and exposes calibration metadata in
 CSV/Markdown reports.
 
+Post-milestone Poisson hardening replaces the public fixed-effect diagonal
+posterior with a per-species full-covariance Normal parameterized by Cholesky
+factors. Poisson calibration records the separate multiplier required for
+nominal coefficient coverage, then selects the applied multiplier by balancing
+independent simulation-replicate log score against truth-rate RMSE. Benchmark
+reports include eta-clipping fractions and an explicit predictive acceptance
+result so finite but degraded calibrated predictions cannot be promoted.
+
 Candidate methods:
 
 - temperature/scale calibration of posterior standard deviations

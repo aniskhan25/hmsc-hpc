@@ -17,6 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
@@ -58,9 +60,15 @@ def main() -> None:
     parser.add_argument("--calibration-datasets", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--mse-weight", type=float)
     parser.add_argument("--seed", type=int, default=20260626)
     parser.add_argument("--neural-chains", type=int, default=2)
     parser.add_argument("--neural-draws", type=int, default=200)
+    parser.add_argument(
+        "--posterior-family",
+        choices=["diagonal_normal", "full_covariance_normal"],
+        default="full_covariance_normal",
+    )
     parser.add_argument("--disable-calibration", action="store_true")
     parser.add_argument("--run-mcmc-reference", action="store_true")
     parser.add_argument("--mcmc-chains", type=int, default=2)
@@ -90,6 +98,8 @@ def main() -> None:
         "train_datasets": args.train_datasets,
         "calibration_datasets": args.calibration_datasets,
         "epochs": args.epochs,
+        "posterior_family": args.posterior_family,
+        "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
         "run_mcmc_reference": bool(args.run_mcmc_reference),
         "datasets": [],
@@ -176,12 +186,14 @@ def main() -> None:
             covariate_names=list(test.truth_beta.index),
             species_names=list(test.truth_beta.columns),
             hidden_units=(96, 96),
+            posterior_family=args.posterior_family,
         )
         training_history = engine.fit(
             train,
             epochs=args.epochs,
             batch_size=args.batch_size,
             seed=args.seed + suite_idx,
+            mse_weight=args.mse_weight,
         )
         engine.save(checkpoint_dir)
         engine = NeuralHmscInference.load(checkpoint_dir)
@@ -208,6 +220,9 @@ def main() -> None:
                 calibration_data.Beta,
                 nominal_level=0.95,
                 distribution=distribution,
+                predictive_X=calibration_data.X if distribution == "poisson" else None,
+                poisson_eta_clip=(-6.0, 6.0) if distribution == "poisson" else None,
+                predictive_seed=args.seed + suite_idx + 50,
             )
             posterior = apply_beta_scale_calibration(
                 uncalibrated_posterior,
@@ -231,6 +246,7 @@ def main() -> None:
 
         record: dict[str, object] = {
             "distribution": distribution,
+            "posterior_family": args.posterior_family,
             "neural_posterior": str(neural_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
             "neural_checkpoint": str(checkpoint_dir),
@@ -351,6 +367,11 @@ def _comparison_rows(
     neural_seconds: float | None,
     mcmc_seconds: float | None,
 ) -> list[dict[str, object]]:
+    poisson_eta_clip = None
+    if distribution == "poisson":
+        bounds = test.metadata.get("poisson_eta_clip")
+        if isinstance(bounds, list) and len(bounds) == 2:
+            poisson_eta_clip = (float(bounds[0]), float(bounds[1]))
     uncalibrated_row = compare_beta_posteriors(
         HmscFit.from_file(uncalibrated_path),
         HmscFit.from_file(mcmc_path),
@@ -362,6 +383,7 @@ def _comparison_rows(
         X=test.X,
         Y=test.Y,
         formula="~ x1 + x2",
+        poisson_eta_clip=poisson_eta_clip,
     )
     uncalibrated_row["posterior_variant"] = "uncalibrated"
     calibrated_row = compare_beta_posteriors(
@@ -375,8 +397,18 @@ def _comparison_rows(
         X=test.X,
         Y=test.Y,
         formula="~ x1 + x2",
+        poisson_eta_clip=poisson_eta_clip,
     )
     calibrated_row["posterior_variant"] = "calibrated"
+    if distribution == "poisson":
+        uncalibrated_rmse = float(uncalibrated_row["neural_posterior_predictive_mean_rmse"])
+        calibrated_rmse = float(calibrated_row["neural_posterior_predictive_mean_rmse"])
+        ratio = calibrated_rmse / max(uncalibrated_rmse, np.finfo(float).eps)
+        calibrated_row["predictive_rmse_ratio_vs_uncalibrated"] = ratio
+        calibrated_row["predictive_acceptance_passed"] = bool(
+            ratio <= 1.25
+            and float(calibrated_row["neural_poisson_eta_clipped_fraction"]) <= 0.01
+        )
     return [uncalibrated_row, calibrated_row]
 
 

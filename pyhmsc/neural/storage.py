@@ -48,11 +48,20 @@ def write_beta_posterior_hdf5(
         raise ValueError("covariate/species names do not match posterior Beta shape")
 
     rng = np.random.default_rng(seed)
-    beta = rng.normal(
-        loc=beta_mean[None, None, :, :],
-        scale=beta_scale[None, None, :, :],
-        size=(chains, draws) + beta_mean.shape,
-    )
+    if posterior.scale_tril is None:
+        beta = rng.normal(
+            loc=beta_mean[None, None, :, :],
+            scale=beta_scale[None, None, :, :],
+            size=(chains, draws) + beta_mean.shape,
+        )
+    else:
+        scale_tril = _as_numpy(posterior.scale_tril)
+        if scale_tril.shape != (1, len(species_names), len(covariate_names), len(covariate_names)):
+            raise ValueError("posterior scale_tril does not match Beta covariate/species shape")
+        noise = rng.normal(size=(chains, draws, len(species_names), len(covariate_names)))
+        correlated = np.einsum("sij,cdsj->cdsi", scale_tril[0], noise)
+        beta = beta_mean.T[None, None, :, :] + correlated
+        beta = np.transpose(beta, (0, 1, 3, 2))
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     posterior_metadata = _neural_metadata(
@@ -65,6 +74,7 @@ def write_beta_posterior_hdf5(
         seed=seed,
         metadata=metadata,
         calibration=calibration,
+        posterior_family=posterior.posterior_family,
     )
 
     try:
@@ -296,12 +306,13 @@ def _neural_metadata(
     seed: int | None,
     metadata: dict[str, Any] | None,
     calibration: BetaScaleCalibration | dict[str, Any] | None,
+    posterior_family: str = "diagonal_normal",
 ) -> dict[str, Any]:
     base = {
         "model_type": "neural-hmsc",
         "inference": {
             "engine": "amortized-neural",
-            "posterior_family": "diagonal_normal",
+            "posterior_family": str(posterior_family),
             "parameter": "Beta",
             "chains": int(chains),
             "draws": int(draws),
@@ -339,7 +350,7 @@ def _neural_metadata(
         base["inference"].update(
             {
                 "engine": "amortized-neural",
-                "posterior_family": "diagonal_normal",
+                "posterior_family": str(posterior_family),
                 "parameter": "Beta",
                 "chains": int(chains),
                 "draws": int(draws),

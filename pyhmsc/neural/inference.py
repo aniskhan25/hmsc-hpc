@@ -81,6 +81,7 @@ class NeuralHmscInference:
         covariate_names: Sequence[str] | None = None,
         species_names: Sequence[str] | None = None,
         hidden_units: Sequence[int] = (64, 64),
+        posterior_family: str = "full_covariance_normal",
     ) -> "NeuralHmscInference":
         """Create an untrained fixed-effect Beta inference engine."""
         covariate_names = tuple(covariate_names or _default_covariate_names(n_covariates))
@@ -95,6 +96,7 @@ class NeuralHmscInference:
             n_covariates=n_covariates,
             n_species=n_species,
             hidden_units=hidden_units,
+            posterior_family=posterior_family,
         )
         _build_fixed_shape_model(model)
         return cls(
@@ -128,11 +130,13 @@ class NeuralHmscInference:
             )
         dimensions = manifest.get("dimensions", {})
         hidden_units = tuple(int(value) for value in manifest.get("hidden_units", (64, 64)))
+        posterior_family = str(manifest.get("posterior_family", "diagonal_normal"))
         model = FixedShapeBetaPosteriorModel(
             n_sites=int(dimensions["n_sites"]),
             n_covariates=int(dimensions["n_covariates"]),
             n_species=int(dimensions["n_species"]),
             hidden_units=hidden_units,
+            posterior_family=posterior_family,
         )
         _build_fixed_shape_model(model)
         model.load_weights(checkpoint / CHECKPOINT_WEIGHTS)
@@ -176,7 +180,7 @@ class NeuralHmscInference:
         epochs: int = 40,
         batch_size: int = 8,
         learning_rate: float = 1e-3,
-        mse_weight: float = 0.25,
+        mse_weight: float | None = None,
         seed: int = 123,
         verbose: int = 0,
     ) -> FixedShapeTrainingHistory:
@@ -189,6 +193,10 @@ class NeuralHmscInference:
             raise ValueError("epochs must be positive")
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
+        if mse_weight is None:
+            mse_weight = 5.0 if self.model.posterior_family == "full_covariance_normal" else 0.25
+        if mse_weight < 0.0:
+            raise ValueError("mse_weight must be non-negative")
 
         data = fixed_shape_training_data(datasets)
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
@@ -245,6 +253,7 @@ class NeuralHmscInference:
         return {
             "compatible": True,
             "model_family": self.model_family,
+            "posterior_family": self.model.posterior_family,
             "distribution": context.distribution,
             "formula": context.formula,
             "dimensions": {
@@ -308,7 +317,7 @@ class NeuralHmscInference:
         return fit
 
     def predict_beta_posterior(self, model_or_compiled_artifact: Any) -> BetaPosterior:
-        """Return the raw diagonal-normal fixed-effect ``Beta`` posterior."""
+        """Return the raw Normal fixed-effect ``Beta`` posterior."""
         data, _ = self._prepare_inference_data(model_or_compiled_artifact)
         self._check_training_data_shape(data, batch_size=None)
         return predict_beta_posterior(self.model, data)
@@ -416,6 +425,7 @@ class NeuralHmscInference:
             "checkpoint_version": self.checkpoint_version,
             "training_corpus_version": self.training_corpus_version,
             "model_family": self.model_family,
+            "posterior_family": self.model.posterior_family,
             "distribution": self.distribution,
             "formula": {"X": self.formula},
             "dimensions": self.dimensions,

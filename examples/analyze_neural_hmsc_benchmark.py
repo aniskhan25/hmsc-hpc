@@ -31,6 +31,13 @@ def main() -> None:
     parser.add_argument("--Y", help="response CSV path for predictive metrics")
     parser.add_argument("--formula", default="~ x1 + x2")
     parser.add_argument("--distribution", help="normal, probit, or poisson")
+    parser.add_argument(
+        "--poisson-eta-clip",
+        type=float,
+        nargs=2,
+        metavar=("LOWER", "UPPER"),
+        help="optional Poisson linear-predictor bounds used by the benchmark model",
+    )
     parser.add_argument("--dataset", default="dataset")
     parser.add_argument("--neural-seconds", type=float)
     parser.add_argument("--mcmc-seconds", type=float)
@@ -66,6 +73,7 @@ def main() -> None:
             X=args.X,
             Y=args.Y,
             formula=args.formula,
+            poisson_eta_clip=None if args.poisson_eta_clip is None else tuple(args.poisson_eta_clip),
         )
     paths = write_benchmark_report([row], args.output_dir, stem=args.stem)
     print(f"Wrote {paths.csv}")

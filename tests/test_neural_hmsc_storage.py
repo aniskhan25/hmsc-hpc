@@ -74,3 +74,36 @@ def test_neural_posterior_storage_info_reports_beta_and_metadata(tmp_path):
     assert info.n_draws == 7
     assert by_name["Beta"].shape == (1, 7, 3, 2)
     assert info.attrs["nChains"] == "1"
+
+
+def test_full_covariance_beta_storage_preserves_correlated_draws(tmp_path):
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=16,
+        n_species=1,
+        distribution="normal",
+        seed=406,
+    )
+    data = fixed_shape_training_data([dataset])
+    model = FixedShapeBetaPosteriorModel(
+        n_sites=16,
+        n_covariates=3,
+        n_species=1,
+        posterior_family="full_covariance_normal",
+    )
+    posterior = predict_beta_posterior(model, data)
+    path = write_beta_posterior_hdf5(
+        posterior,
+        tmp_path / "full_covariance.h5",
+        covariate_names=list(dataset.truth_beta.index),
+        species_names=list(dataset.truth_beta.columns),
+        chains=1,
+        draws=2000,
+        seed=101,
+    )
+
+    fit = HmscFit.from_file(path)
+    samples = fit.beta_samples()[0, :, :, 0]
+    expected = posterior.scale_tril.numpy()[0, 0] @ posterior.scale_tril.numpy()[0, 0].T
+
+    assert fit.metadata["inference"]["posterior_family"] == "full_covariance_normal"
+    np.testing.assert_allclose(np.cov(samples, rowvar=False), expected, atol=0.05)

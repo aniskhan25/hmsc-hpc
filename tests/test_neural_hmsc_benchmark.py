@@ -3,6 +3,7 @@ import json
 import h5py
 import numpy as np
 import pandas as pd
+import pytest
 
 from pyhmsc.neural.benchmark import compare_beta_posterior_files, write_benchmark_report
 
@@ -100,6 +101,64 @@ def test_compare_beta_posterior_files_adds_predictive_and_runtime_metrics(tmp_pa
     assert 0.0 <= row["neural_species_mean_coverage_95"] <= 1.0
 
 
+def test_poisson_predictive_metrics_respect_declared_eta_clip(tmp_path):
+    samples = np.array([[[[10.0]], [[12.0]], [[14.0]]]], dtype=float)
+    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
+    X = pd.DataFrame(index=["s1"])
+    Y = pd.DataFrame({"sp1": [np.exp(6.0)]}, index=X.index)
+
+    row = compare_beta_posterior_files(
+        neural_posterior=neural_path,
+        mcmc_posterior=mcmc_path,
+        distribution="poisson",
+        X=X,
+        Y=Y,
+        formula="~ 1",
+        poisson_eta_clip=(-6.0, 6.0),
+    )
+
+    assert row["predictive_poisson_eta_clip_lower"] == -6.0
+    assert row["predictive_poisson_eta_clip_upper"] == 6.0
+    assert row["neural_posterior_predictive_mean_rmse"] == pytest.approx(0.0)
+    assert row["mcmc_posterior_predictive_mean_rmse"] == pytest.approx(0.0)
+    assert row["neural_poisson_eta_clipped_fraction"] == pytest.approx(1.0)
+    assert row["mcmc_poisson_eta_clipped_fraction"] == pytest.approx(1.0)
+
+
+def test_poisson_predictive_metrics_reject_invalid_eta_clip(tmp_path):
+    samples = np.zeros((1, 2, 1, 1), dtype=float)
+    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
+
+    with pytest.raises(ValueError, match="finite, ordered bounds"):
+        compare_beta_posterior_files(
+            neural_posterior=neural_path,
+            mcmc_posterior=mcmc_path,
+            distribution="poisson",
+            X=pd.DataFrame(index=["s1"]),
+            Y=pd.DataFrame({"sp1": [1.0]}, index=["s1"]),
+            formula="~ 1",
+            poisson_eta_clip=(6.0, -6.0),
+        )
+
+
+def test_poisson_predictive_metrics_fail_loudly_on_unbounded_overflow(tmp_path):
+    samples = np.full((1, 2, 1, 1), 1000.0, dtype=float)
+    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
+
+    with pytest.raises(ValueError, match="Poisson response predictions overflowed"):
+        compare_beta_posterior_files(
+            neural_posterior=neural_path,
+            mcmc_posterior=mcmc_path,
+            distribution="poisson",
+            X=pd.DataFrame(index=["s1"]),
+            Y=pd.DataFrame({"sp1": [1.0]}, index=["s1"]),
+            formula="~ 1",
+        )
+
+
 def test_write_benchmark_report_writes_csv_and_markdown(tmp_path):
     paths = write_benchmark_report(
         [
@@ -147,7 +206,7 @@ def test_benchmark_report_exposes_neural_calibration_metadata(tmp_path):
     assert row["neural_calibration_domain_distribution"] == "normal"
 
 
-def _write_posterior(path, beta_samples, calibration=None):
+def _write_posterior(path, beta_samples, calibration=None, distribution="normal"):
     metadata = {
         "names": {
             "covariates": ["Intercept", "x1"][: beta_samples.shape[2]],
@@ -155,7 +214,7 @@ def _write_posterior(path, beta_samples, calibration=None):
             "traits": ["Intercept"],
         },
         "formula": {"X": "~ x1"},
-        "distribution": "normal",
+        "distribution": distribution,
     }
     if calibration is not None:
         metadata["calibration"] = calibration

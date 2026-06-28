@@ -57,6 +57,7 @@ def test_public_neural_hmsc_api_saves_loads_and_infers(tmp_path):
     assert fit.beta_ci()["lower"].shape == (3, 2)
     assert fit.predict_mean(test.X).shape == test.Y.shape
     assert loaded.predict_beta_posterior(test).mean.shape == (1, 3, 2)
+    assert loaded.predict_beta_posterior(test).scale_tril.shape == (1, 2, 3, 3)
 
 
 def test_public_neural_hmsc_api_infers_from_compiled_artifact(tmp_path):
@@ -124,7 +125,25 @@ def test_public_neural_hmsc_checkpoint_manifest_is_versioned(tmp_path):
     assert manifest["checkpoint_version"] == NEURAL_CHECKPOINT_VERSION
     assert manifest["training_corpus_version"] == "0.1"
     assert manifest["model_family"] == "fixed_effect_beta"
+    assert manifest["posterior_family"] == "full_covariance_normal"
     assert "limitations" in manifest
+
+
+def test_public_neural_hmsc_loads_legacy_diagonal_checkpoint(tmp_path):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=4,
+        n_species=1,
+        posterior_family="diagonal_normal",
+    )
+    checkpoint = engine.save(tmp_path / "checkpoint")
+    manifest_path = checkpoint / "neural_checkpoint.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["posterior_family"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    loaded = NeuralHmscInference.load(checkpoint)
+
+    assert loaded.model.posterior_family == "diagonal_normal"
 
 
 def test_public_neural_hmsc_load_rejects_unknown_checkpoint_version(tmp_path):
@@ -137,3 +156,16 @@ def test_public_neural_hmsc_load_rejects_unknown_checkpoint_version(tmp_path):
 
     with pytest.raises(NeuralHmscCompatibilityError, match="unsupported Neural-HMSC checkpoint version"):
         NeuralHmscInference.load(checkpoint)
+
+
+def test_public_neural_hmsc_rejects_negative_mse_weight():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1400,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(ValueError, match="mse_weight must be non-negative"):
+        engine.fit([dataset], epochs=1, batch_size=1, mse_weight=-1.0)

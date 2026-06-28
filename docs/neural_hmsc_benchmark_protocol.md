@@ -191,6 +191,16 @@ Poisson:
 y_ij ~ Poisson(exp(clip(eta_ij, -6, 6)))
 ```
 
+The same `poisson_eta_clip` bounds must be passed to predictive benchmark
+metrics. This is part of the declared simulation model, not a post-hoc metric
+clamp; omitting it allows Gaussian posterior tails to dominate response-scale
+means after exponentiation.
+
+Poisson reports must also include the fraction of neural and MCMC linear
+predictors outside those bounds. Calibration passes predictive acceptance only
+when calibrated RMSE is at most 1.25 times uncalibrated RMSE and fewer than 1%
+of neural predictors require clipping.
+
 Initial simulation hyperparameters:
 
 ```text
@@ -241,17 +251,18 @@ quality.
 
 ## Neural Target
 
-Initial posterior family:
+Current fixed-effect posterior family:
 
 ```text
-q_phi(Beta | Y, X) = diagonal Normal(mean_phi, scale_phi)
+q_phi(Beta_j | Y, X) = Normal(mean_phi,j, L_phi,j L_phi,j^T)
 ```
 
 Output shape:
 
 ```text
 Beta mean:  n_covariates x n_species
-Beta scale: n_covariates x n_species
+Beta marginal scale: n_covariates x n_species
+Beta scale_tril:     n_species x n_covariates x n_covariates
 ```
 
 The initial model should sample `Beta` draws and write them as standard
@@ -367,8 +378,10 @@ Initial choices:
 - no PyTorch/JAX dependency in the first implementation
 - no normalizing flow in the first implementation
 
-Normalizing flows remain a later option if the diagonal Gaussian posterior is
-too restrictive.
+The fixed-effect benchmark uses a per-species Cholesky factor so correlated
+coefficient uncertainty is retained through response-scale prediction. A
+diagonal Gaussian remains available as a compatibility baseline. Normalizing
+flows remain a later option if the full-covariance Gaussian is too restrictive.
 
 ## Expected Files
 

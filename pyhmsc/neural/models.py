@@ -8,6 +8,7 @@ from pyhmsc.neural.posterior_heads import (
     BetaPosterior,
     DiagonalNormalBetaHead,
     DiagonalNormalGammaHead,
+    FullCovarianceNormalBetaHead,
     GammaPosterior,
     IidLatentPosterior,
 )
@@ -23,17 +24,26 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         n_species: int,
         hidden_units: tuple[int, ...] = (64, 64),
         min_scale: float = 1e-3,
+        posterior_family: str = "diagonal_normal",
         **kwargs: object,
     ) -> None:
         super().__init__(**kwargs)
         self.n_sites = int(n_sites)
         self.n_covariates = int(n_covariates)
         self.n_species = int(n_species)
+        if posterior_family not in {"diagonal_normal", "full_covariance_normal"}:
+            raise ValueError("posterior_family must be 'diagonal_normal' or 'full_covariance_normal'")
+        self.posterior_family = str(posterior_family)
         self.encoder_layers = [
             tf.keras.layers.Dense(units, activation="relu")
             for units in hidden_units
         ]
-        self.head = DiagonalNormalBetaHead(
+        head_type = (
+            FullCovarianceNormalBetaHead
+            if self.posterior_family == "full_covariance_normal"
+            else DiagonalNormalBetaHead
+        )
+        self.head = head_type(
             n_covariates=self.n_covariates,
             n_species=self.n_species,
             min_scale=min_scale,
@@ -67,7 +77,11 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         for layer in self.encoder_layers:
             features = layer(features)
         residual = self.head(features)
-        return BetaPosterior(mean=ridge + residual.mean, scale=residual.scale)
+        return BetaPosterior(
+            mean=ridge + residual.mean,
+            scale=residual.scale,
+            scale_tril=residual.scale_tril,
+        )
 
 
 class VariableShapeBetaPosteriorModel(tf.keras.Model):

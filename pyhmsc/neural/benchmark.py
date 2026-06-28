@@ -43,6 +43,7 @@ def compare_beta_posteriors(
     X: pd.DataFrame | np.ndarray | None = None,
     Y: pd.DataFrame | np.ndarray | None = None,
     formula: str | None = None,
+    poisson_eta_clip: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """Compare a neural ``Beta`` posterior against an MCMC reference posterior.
 
@@ -110,6 +111,13 @@ def compare_beta_posteriors(
         if predictive_formula is None:
             raise ValueError("formula is required for predictive benchmark metrics")
         predictive_distribution = distribution or "normal"
+        predictive_eta_clip = _validate_poisson_eta_clip(
+            poisson_eta_clip,
+            distribution=predictive_distribution,
+        )
+        if predictive_eta_clip is not None:
+            row["predictive_poisson_eta_clip_lower"] = predictive_eta_clip[0]
+            row["predictive_poisson_eta_clip_upper"] = predictive_eta_clip[1]
         row.update(
             _predictive_metrics(
                 "neural",
@@ -118,6 +126,7 @@ def compare_beta_posteriors(
                 Y=Y,
                 formula=predictive_formula,
                 distribution=predictive_distribution,
+                poisson_eta_clip=predictive_eta_clip,
             )
         )
         row.update(
@@ -128,6 +137,7 @@ def compare_beta_posteriors(
                 Y=Y,
                 formula=predictive_formula,
                 distribution=predictive_distribution,
+                poisson_eta_clip=predictive_eta_clip,
             )
         )
 
@@ -147,6 +157,7 @@ def compare_beta_posterior_files(
     X: str | Path | pd.DataFrame | np.ndarray | None = None,
     Y: str | Path | pd.DataFrame | np.ndarray | None = None,
     formula: str | None = None,
+    poisson_eta_clip: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """Load posterior files and return one benchmark metric row."""
     truth = _read_optional_frame(truth_beta)
@@ -164,6 +175,7 @@ def compare_beta_posterior_files(
         X=x_frame,
         Y=y_frame,
         formula=formula,
+        poisson_eta_clip=poisson_eta_clip,
     )
 
 
@@ -349,12 +361,17 @@ def render_benchmark_markdown(
         "neural_association_correlation_truth",
         "neural_calibration_method",
         "neural_calibration_scale_multiplier",
+        "neural_calibration_coverage_scale_multiplier",
         "neural_calibration_uncalibrated_coverage",
         "neural_calibration_calibrated_coverage",
         "neural_beta_mean_rmse_truth",
         "mcmc_beta_mean_rmse_truth",
+        "predictive_poisson_eta_clip_lower",
+        "predictive_poisson_eta_clip_upper",
         "neural_posterior_predictive_mean_rmse",
         "mcmc_posterior_predictive_mean_rmse",
+        "predictive_rmse_ratio_vs_uncalibrated",
+        "predictive_acceptance_passed",
         "speedup_factor",
     ]
     columns = [column for column in preferred if column in frame.columns]
@@ -377,6 +394,8 @@ def render_benchmark_markdown(
         "- `beta_ci_overlap_*`: mean interval overlap coefficient between neural and MCMC credible intervals.",
         "- `*_truth` metrics compare posterior summaries to simulated `truth_beta` when available.",
         "- predictive RMSE uses posterior mean response predictions from fixed-effect `Beta` samples.",
+        "- Poisson predictive metrics report explicit eta bounds when the declared benchmark model uses them.",
+        "- `predictive_acceptance_passed` requires calibrated RMSE <= 1.25x uncalibrated RMSE and <1% clipped eta draws.",
         "",
     ]
     return "\n".join(lines)
@@ -426,6 +445,7 @@ def _predictive_metrics(
     Y: pd.DataFrame | np.ndarray,
     formula: str,
     distribution: str,
+    poisson_eta_clip: tuple[float, float] | None = None,
 ) -> dict[str, float]:
     x_frame = X if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
     y_frame = Y if isinstance(Y, pd.DataFrame) else pd.DataFrame(Y)
@@ -436,7 +456,7 @@ def _predictive_metrics(
             f"got {design.shape[1]} and {beta_samples.shape[2]}"
         )
     linear = np.einsum("nk,cdks->cdns", design.to_numpy(dtype=float), beta_samples)
-    response = _response_scale(linear, distribution)
+    response = _response_scale(linear, distribution, poisson_eta_clip=poisson_eta_clip)
     prediction = response.mean(axis=(0, 1))
     observed = y_frame.to_numpy(dtype=float)
     if prediction.shape != observed.shape:
@@ -445,10 +465,20 @@ def _predictive_metrics(
     observed_species = observed.mean(axis=0)
     lo = np.quantile(species_prediction, 0.025, axis=0)
     hi = np.quantile(species_prediction, 0.975, axis=0)
-    return {
+    metrics = {
         f"{prefix}_posterior_predictive_mean_rmse": _rmse(prediction, observed),
         f"{prefix}_species_mean_coverage_95": float(np.mean((observed_species >= lo) & (observed_species <= hi))),
     }
+    if str(distribution).lower() == "poisson" and poisson_eta_clip is not None:
+        lower, upper = poisson_eta_clip
+        metrics.update(
+            {
+                f"{prefix}_poisson_eta_below_clip_fraction": float(np.mean(linear < lower)),
+                f"{prefix}_poisson_eta_above_clip_fraction": float(np.mean(linear > upper)),
+                f"{prefix}_poisson_eta_clipped_fraction": float(np.mean((linear < lower) | (linear > upper))),
+            }
+        )
+    return metrics
 
 
 def _read_optional_frame(value: str | Path | pd.DataFrame | np.ndarray | None) -> pd.DataFrame | np.ndarray | None:
@@ -521,15 +551,46 @@ def _mean_interval_overlap(
     return float(np.mean(overlap))
 
 
-def _response_scale(linear: np.ndarray, distribution: str) -> np.ndarray:
+def _response_scale(
+    linear: np.ndarray,
+    distribution: str,
+    *,
+    poisson_eta_clip: tuple[float, float] | None = None,
+) -> np.ndarray:
     key = str(distribution).lower()
     if key in {"normal", "gaussian"}:
         return linear
     if key == "poisson":
-        return np.exp(np.clip(linear, -20.0, 20.0))
+        if poisson_eta_clip is None:
+            with np.errstate(over="raise", invalid="raise"):
+                try:
+                    return np.exp(linear)
+                except FloatingPointError as exc:
+                    raise ValueError(
+                        "Poisson response predictions overflowed; pass the eta bounds "
+                        "declared by the benchmark model via poisson_eta_clip"
+                    ) from exc
+        return np.exp(np.clip(linear, poisson_eta_clip[0], poisson_eta_clip[1]))
     if key in {"probit", "bernoulli", "binomial"}:
         return ndtr(linear)
     raise ValueError(f"Unsupported predictive distribution {distribution!r}")
+
+
+def _validate_poisson_eta_clip(
+    value: tuple[float, float] | None,
+    *,
+    distribution: str,
+) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    if str(distribution).lower() != "poisson":
+        raise ValueError("poisson_eta_clip is only valid for Poisson predictive metrics")
+    if len(value) != 2:
+        raise ValueError("poisson_eta_clip must contain exactly two bounds")
+    lower, upper = float(value[0]), float(value[1])
+    if not np.isfinite(lower) or not np.isfinite(upper) or lower >= upper:
+        raise ValueError("poisson_eta_clip must contain finite, ordered bounds")
+    return lower, upper
 
 
 def _fit_distribution(fit: HmscFit) -> str | None:
@@ -555,10 +616,15 @@ def _calibration_report_fields(fit: HmscFit, *, prefix: str) -> dict[str, Any]:
     for source, target in [
         ("method", "method"),
         ("scale_multiplier", "scale_multiplier"),
+        ("coverage_scale_multiplier", "coverage_scale_multiplier"),
         ("nominal_level", "nominal_level"),
         ("uncalibrated_coverage", "uncalibrated_coverage"),
         ("calibrated_coverage", "calibrated_coverage"),
         ("n_observations", "n_observations"),
+        ("predictive_score_uncalibrated", "predictive_score_uncalibrated"),
+        ("predictive_score_calibrated", "predictive_score_calibrated"),
+        ("predictive_rate_rmse_uncalibrated", "predictive_rate_rmse_uncalibrated"),
+        ("predictive_rate_rmse_calibrated", "predictive_rate_rmse_calibrated"),
     ]:
         if source in calibration:
             fields[f"{prefix}_calibration_{target}"] = calibration[source]

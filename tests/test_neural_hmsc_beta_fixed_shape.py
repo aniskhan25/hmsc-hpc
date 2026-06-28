@@ -35,6 +35,29 @@ def test_fixed_shape_beta_model_outputs_positive_scales_and_samples():
     assert float(tf.reduce_min(posterior.scale)) > 0.0
 
 
+def test_full_covariance_beta_model_outputs_valid_cholesky_and_correlated_samples():
+    data = fixed_shape_training_data(_fixed_gaussian_datasets(2, 200))
+    model = FixedShapeBetaPosteriorModel(
+        n_sites=32,
+        n_covariates=3,
+        n_species=3,
+        posterior_family="full_covariance_normal",
+    )
+
+    posterior = predict_beta_posterior(model, data)
+    samples = sample_beta_posterior(posterior, draws=500, seed=9)
+
+    assert posterior.posterior_family == "full_covariance_normal"
+    assert posterior.scale_tril is not None
+    assert posterior.scale_tril.shape == (2, 3, 3, 3)
+    assert samples.shape == (500, 2, 3, 3)
+    diagonal = tf.linalg.diag_part(posterior.scale_tril)
+    assert float(tf.reduce_min(diagonal)) > 0.0
+    covariance = np.cov(samples.numpy()[:, 0, :, 0], rowvar=False)
+    expected = posterior.scale_tril.numpy()[0, 0] @ posterior.scale_tril.numpy()[0, 0].T
+    np.testing.assert_allclose(covariance, expected, atol=0.08)
+
+
 def test_fixed_shape_beta_model_starts_with_nontrivial_beta_posterior_means():
     tf.keras.utils.set_random_seed(2026)
     test_data = fixed_shape_training_data(_fixed_gaussian_datasets(8, 5000))
