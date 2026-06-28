@@ -81,7 +81,7 @@ class NeuralHmscInference:
         covariate_names: Sequence[str] | None = None,
         species_names: Sequence[str] | None = None,
         hidden_units: Sequence[int] = (64, 64),
-        posterior_family: str = "full_covariance_normal",
+        posterior_family: str = "auto",
     ) -> "NeuralHmscInference":
         """Create an untrained fixed-effect Beta inference engine."""
         covariate_names = tuple(covariate_names or _default_covariate_names(n_covariates))
@@ -91,6 +91,7 @@ class NeuralHmscInference:
         if len(species_names) != n_species:
             raise ValueError("species_names length must match n_species")
         hidden_units = tuple(int(value) for value in hidden_units)
+        posterior_family = _resolve_posterior_family(posterior_family, distribution=distribution)
         model = FixedShapeBetaPosteriorModel(
             n_sites=n_sites,
             n_covariates=n_covariates,
@@ -504,6 +505,17 @@ def _default_covariate_names(n_covariates: int) -> list[str]:
     if n_covariates == 3:
         return ["Intercept", "x1", "x2"]
     return ["Intercept"] + [f"x{idx}" for idx in range(1, n_covariates)]
+
+
+def _resolve_posterior_family(value: str, *, distribution: str) -> str:
+    family = str(value).lower()
+    if family == "auto":
+        return "full_covariance_normal" if str(distribution).lower() == "poisson" else "diagonal_normal"
+    if family not in {"diagonal_normal", "full_covariance_normal"}:
+        raise ValueError(
+            "posterior_family must be 'auto', 'diagonal_normal', or 'full_covariance_normal'"
+        )
+    return family
 
 
 def _build_fixed_shape_model(model: FixedShapeBetaPosteriorModel) -> None:

@@ -251,7 +251,7 @@ quality.
 
 ## Neural Target
 
-Current fixed-effect posterior family:
+Poisson fixed-effect posterior family:
 
 ```text
 q_phi(Beta_j | Y, X) = Normal(mean_phi,j, L_phi,j L_phi,j^T)
@@ -379,9 +379,10 @@ Initial choices:
 - no normalizing flow in the first implementation
 
 The fixed-effect benchmark uses a per-species Cholesky factor so correlated
-coefficient uncertainty is retained through response-scale prediction. A
-diagonal Gaussian remains available as a compatibility baseline. Normalizing
-flows remain a later option if the full-covariance Gaussian is too restrictive.
+coefficient uncertainty is retained through the log-link response prediction.
+Gaussian and probit retain the diagonal Gaussian, which performed better in
+scaled validation. Normalizing flows remain a later option if these Normal
+families are too restrictive.
 
 ## Expected Files
 

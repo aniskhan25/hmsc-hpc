@@ -66,8 +66,8 @@ def main() -> None:
     parser.add_argument("--neural-draws", type=int, default=200)
     parser.add_argument(
         "--posterior-family",
-        choices=["diagonal_normal", "full_covariance_normal"],
-        default="full_covariance_normal",
+        choices=["auto", "diagonal_normal", "full_covariance_normal"],
+        default="auto",
     )
     parser.add_argument("--disable-calibration", action="store_true")
     parser.add_argument("--run-mcmc-reference", action="store_true")
@@ -98,7 +98,7 @@ def main() -> None:
         "train_datasets": args.train_datasets,
         "calibration_datasets": args.calibration_datasets,
         "epochs": args.epochs,
-        "posterior_family": args.posterior_family,
+        "posterior_family_policy": args.posterior_family,
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
         "run_mcmc_reference": bool(args.run_mcmc_reference),
@@ -246,7 +246,7 @@ def main() -> None:
 
         record: dict[str, object] = {
             "distribution": distribution,
-            "posterior_family": args.posterior_family,
+            "posterior_family": engine.model.posterior_family,
             "neural_posterior": str(neural_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
             "neural_checkpoint": str(checkpoint_dir),

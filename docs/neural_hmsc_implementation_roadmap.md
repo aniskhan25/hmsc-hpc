@@ -479,8 +479,10 @@ uncalibrated and calibrated posterior files and exposes calibration metadata in
 CSV/Markdown reports.
 
 Post-milestone Poisson hardening replaces the public fixed-effect diagonal
-posterior with a per-species full-covariance Normal parameterized by Cholesky
-factors. Poisson calibration records the separate multiplier required for
+posterior for Poisson with a per-species full-covariance Normal parameterized
+by Cholesky factors. Gaussian and probit retain diagonal posteriors after scaled
+validation showed a Gaussian regression under universal full covariance.
+Poisson calibration records the separate multiplier required for
 nominal coefficient coverage, then selects the applied multiplier by balancing
 independent simulation-replicate log score against truth-rate RMSE. Benchmark
 reports include eta-clipping fractions and an explicit predictive acceptance

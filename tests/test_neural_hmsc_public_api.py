@@ -57,7 +57,7 @@ def test_public_neural_hmsc_api_saves_loads_and_infers(tmp_path):
     assert fit.beta_ci()["lower"].shape == (3, 2)
     assert fit.predict_mean(test.X).shape == test.Y.shape
     assert loaded.predict_beta_posterior(test).mean.shape == (1, 3, 2)
-    assert loaded.predict_beta_posterior(test).scale_tril.shape == (1, 2, 3, 3)
+    assert loaded.predict_beta_posterior(test).scale_tril is None
 
 
 def test_public_neural_hmsc_api_infers_from_compiled_artifact(tmp_path):
@@ -125,7 +125,7 @@ def test_public_neural_hmsc_checkpoint_manifest_is_versioned(tmp_path):
     assert manifest["checkpoint_version"] == NEURAL_CHECKPOINT_VERSION
     assert manifest["training_corpus_version"] == "0.1"
     assert manifest["model_family"] == "fixed_effect_beta"
-    assert manifest["posterior_family"] == "full_covariance_normal"
+    assert manifest["posterior_family"] == "diagonal_normal"
     assert "limitations" in manifest
 
 
@@ -144,6 +144,33 @@ def test_public_neural_hmsc_loads_legacy_diagonal_checkpoint(tmp_path):
     loaded = NeuralHmscInference.load(checkpoint)
 
     assert loaded.model.posterior_family == "diagonal_normal"
+
+
+@pytest.mark.parametrize(
+    ("distribution", "expected_family"),
+    [
+        ("normal", "diagonal_normal"),
+        ("probit", "diagonal_normal"),
+        ("poisson", "full_covariance_normal"),
+    ],
+)
+def test_public_neural_hmsc_auto_family_is_distribution_aware(distribution, expected_family):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=4,
+        n_species=1,
+        distribution=distribution,
+    )
+
+    assert engine.model.posterior_family == expected_family
+
+
+def test_public_neural_hmsc_rejects_unknown_posterior_family():
+    with pytest.raises(ValueError, match="posterior_family must be"):
+        NeuralHmscInference.for_fixed_effects(
+            n_sites=4,
+            n_species=1,
+            posterior_family="unknown",
+        )
 
 
 def test_public_neural_hmsc_load_rejects_unknown_checkpoint_version(tmp_path):
