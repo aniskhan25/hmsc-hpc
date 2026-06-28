@@ -17,8 +17,6 @@ import tempfile
 import time
 from pathlib import Path
 
-import numpy as np
-
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
@@ -35,13 +33,25 @@ if loaded_pyhmsc is not None:
 
 import tensorflow as tf
 
-from pyhmsc.neural.benchmark import compare_beta_posteriors, write_benchmark_report
+from pyhmsc.neural.benchmark import (
+    compare_beta_posteriors,
+    poisson_predictive_acceptance,
+    write_benchmark_report,
+)
 from pyhmsc.neural.calibration import apply_beta_scale_calibration, fit_beta_scale_calibration
 from pyhmsc.neural.inference import NeuralHmscInference
 from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
 from pyhmsc.neural.storage import write_beta_posterior_hdf5
 from pyhmsc.neural.train import fixed_shape_training_data
 from pyhmsc.posterior import HmscFit
+
+
+DISTRIBUTION_SEED_OFFSETS = {"normal": 0, "probit": 1, "poisson": 2}
+
+
+def distribution_seed(base_seed: int, distribution: str, *, delta: int = 0) -> int:
+    """Return a suite-order-independent simulation seed for a distribution."""
+    return int(base_seed) + 1000 * DISTRIBUTION_SEED_OFFSETS[distribution] + int(delta)
 
 
 def main() -> None:
@@ -62,6 +72,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--mse-weight", type=float)
     parser.add_argument("--seed", type=int, default=20260626)
+    parser.add_argument("--model-seed", type=int)
     parser.add_argument("--neural-chains", type=int, default=2)
     parser.add_argument("--neural-draws", type=int, default=200)
     parser.add_argument(
@@ -82,10 +93,12 @@ def main() -> None:
         help="reuse existing per-distribution artifacts when possible",
     )
     args = parser.parse_args()
+    if args.model_seed is None:
+        args.model_seed = args.seed
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
-    tf.keras.utils.set_random_seed(args.seed)
+    tf.keras.utils.set_random_seed(args.model_seed)
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     _write_run_metadata(output / "run_metadata.json", args=args, started_at=started_at, status="running")
 
@@ -101,10 +114,12 @@ def main() -> None:
         "posterior_family_policy": args.posterior_family,
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
+        "model_seed": args.model_seed,
         "run_mcmc_reference": bool(args.run_mcmc_reference),
         "datasets": [],
     }
-    for suite_idx, distribution in enumerate(args.suite):
+    for distribution in args.suite:
+        suite_idx = DISTRIBUTION_SEED_OFFSETS[distribution]
         dataset_dir = output / distribution
         dataset_dir.mkdir(parents=True, exist_ok=True)
         record_path = dataset_dir / "benchmark_record.json"
@@ -160,23 +175,24 @@ def main() -> None:
             n_sites=args.n_sites,
             n_species=args.n_species,
             distribution=distribution,
-            seed=args.seed + 1000 * suite_idx,
+            seed=distribution_seed(args.seed, distribution),
         )
         calibration = _datasets(
             count=args.calibration_datasets,
             n_sites=args.n_sites,
             n_species=args.n_species,
             distribution=distribution,
-            seed=args.seed + 1000 * suite_idx + 500,
+            seed=distribution_seed(args.seed, distribution, delta=500),
         )
         test = simulate_fixed_effect_dataset(
             n_sites=args.n_sites,
             n_species=args.n_species,
             distribution=distribution,
-            seed=args.seed + 1000 * suite_idx + 999,
+            seed=distribution_seed(args.seed, distribution, delta=999),
         )
         _write_dataset(test, dataset_dir)
 
+        tf.keras.utils.set_random_seed(args.model_seed + suite_idx)
         engine = NeuralHmscInference.for_fixed_effects(
             n_sites=args.n_sites,
             n_species=args.n_species,
@@ -192,7 +208,7 @@ def main() -> None:
             train,
             epochs=args.epochs,
             batch_size=args.batch_size,
-            seed=args.seed + suite_idx,
+            seed=args.model_seed + suite_idx,
             mse_weight=args.mse_weight,
         )
         engine.save(checkpoint_dir)
@@ -204,7 +220,7 @@ def main() -> None:
             output=uncalibrated_path,
             chains=args.neural_chains,
             draws=args.neural_draws,
-            seed=args.seed + suite_idx,
+            seed=args.model_seed + suite_idx,
             metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
         )
         uncalibrated_path = uncalibrated_fit.output_file or uncalibrated_path
@@ -222,7 +238,7 @@ def main() -> None:
                 distribution=distribution,
                 predictive_X=calibration_data.X if distribution == "poisson" else None,
                 poisson_eta_clip=(-6.0, 6.0) if distribution == "poisson" else None,
-                predictive_seed=args.seed + suite_idx + 50,
+                predictive_seed=args.model_seed + suite_idx + 50,
             )
             posterior = apply_beta_scale_calibration(
                 uncalibrated_posterior,
@@ -238,7 +254,7 @@ def main() -> None:
             formula="~ x1 + x2",
             chains=args.neural_chains,
             draws=args.neural_draws,
-            seed=args.seed + suite_idx + 100,
+            seed=args.model_seed + suite_idx + 100,
             metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
             calibration=calibration_result,
         )
@@ -247,6 +263,7 @@ def main() -> None:
         record: dict[str, object] = {
             "distribution": distribution,
             "posterior_family": engine.model.posterior_family,
+            "model_seed": args.model_seed + suite_idx,
             "neural_posterior": str(neural_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
             "neural_checkpoint": str(checkpoint_dir),
@@ -401,14 +418,7 @@ def _comparison_rows(
     )
     calibrated_row["posterior_variant"] = "calibrated"
     if distribution == "poisson":
-        uncalibrated_rmse = float(uncalibrated_row["neural_posterior_predictive_mean_rmse"])
-        calibrated_rmse = float(calibrated_row["neural_posterior_predictive_mean_rmse"])
-        ratio = calibrated_rmse / max(uncalibrated_rmse, np.finfo(float).eps)
-        calibrated_row["predictive_rmse_ratio_vs_uncalibrated"] = ratio
-        calibrated_row["predictive_acceptance_passed"] = bool(
-            ratio <= 1.25
-            and float(calibrated_row["neural_poisson_eta_clipped_fraction"]) <= 0.01
-        )
+        calibrated_row.update(poisson_predictive_acceptance(uncalibrated_row, calibrated_row))
     return [uncalibrated_row, calibrated_row]
 
 

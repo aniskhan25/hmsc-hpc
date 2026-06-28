@@ -5,7 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pyhmsc.neural.benchmark import compare_beta_posterior_files, write_benchmark_report
+from pyhmsc.neural.benchmark import (
+    compare_beta_posterior_files,
+    poisson_predictive_acceptance,
+    write_benchmark_report,
+)
 
 
 def test_compare_beta_posterior_files_reports_reference_metrics(tmp_path):
@@ -157,6 +161,21 @@ def test_poisson_predictive_metrics_fail_loudly_on_unbounded_overflow(tmp_path):
             Y=pd.DataFrame({"sp1": [1.0]}, index=["s1"]),
             formula="~ 1",
         )
+
+
+def test_poisson_acceptance_requires_mcmc_relative_accuracy():
+    uncalibrated = {"neural_posterior_predictive_mean_rmse": 20.0}
+    calibrated = {
+        "neural_posterior_predictive_mean_rmse": 10.0,
+        "mcmc_posterior_predictive_mean_rmse": 1.0,
+        "neural_poisson_eta_clipped_fraction": 0.0,
+    }
+
+    result = poisson_predictive_acceptance(uncalibrated, calibrated)
+
+    assert result["predictive_rmse_ratio_vs_uncalibrated"] == 0.5
+    assert result["predictive_rmse_ratio_vs_mcmc"] == 10.0
+    assert result["predictive_acceptance_passed"] is False
 
 
 def test_write_benchmark_report_writes_csv_and_markdown(tmp_path):

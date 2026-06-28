@@ -44,6 +44,8 @@ MCMC_TRANSIENT="${MCMC_TRANSIENT:-250}"
 MCMC_THIN="${MCMC_THIN:-5}"
 MCMC_VERBOSE="${MCMC_VERBOSE:-100}"
 SEED="${SEED:-20260626}"
+MODEL_SEED="${MODEL_SEED:-${SEED}}"
+RUN_MCMC_REFERENCE="${RUN_MCMC_REFERENCE:-1}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
 GPU_LOG_INTERVAL="${GPU_LOG_INTERVAL:-60}"
 
@@ -72,6 +74,7 @@ echo "Shape: sites=${N_SITES}, species=${N_SPECIES}"
 echo "Training datasets: ${TRAIN_DATASETS}; calibration datasets: ${CALIBRATION_DATASETS}"
 echo "Epochs/batch size: ${EPOCHS}/${BATCH_SIZE}"
 echo "MCMC chains/samples/transient/thin: ${MCMC_CHAINS}/${MCMC_SAMPLES}/${MCMC_TRANSIENT}/${MCMC_THIN}"
+echo "Simulation/model seed: ${SEED}/${MODEL_SEED}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
 "${PYTHON}" -c "import tensorflow_probability as tfp; print('TFP:', tfp.__version__)"
@@ -109,13 +112,16 @@ args=(
   --neural-chains "${NEURAL_CHAINS}"
   --neural-draws "${NEURAL_DRAWS}"
   --seed "${SEED}"
-  --run-mcmc-reference
+  --model-seed "${MODEL_SEED}"
   --mcmc-chains "${MCMC_CHAINS}"
   --mcmc-samples "${MCMC_SAMPLES}"
   --mcmc-transient "${MCMC_TRANSIENT}"
   --mcmc-thin "${MCMC_THIN}"
   --mcmc-verbose "${MCMC_VERBOSE}"
 )
+if [[ "${RUN_MCMC_REFERENCE}" == "1" ]]; then
+  args+=(--run-mcmc-reference)
+fi
 if [[ "${SKIP_EXISTING}" == "1" ]]; then
   args+=(--skip-existing)
 fi

@@ -198,8 +198,8 @@ means after exponentiation.
 
 Poisson reports must also include the fraction of neural and MCMC linear
 predictors outside those bounds. Calibration passes predictive acceptance only
-when calibrated RMSE is at most 1.25 times uncalibrated RMSE and fewer than 1%
-of neural predictors require clipping.
+when calibrated RMSE is at most 1.25 times uncalibrated RMSE, at most twice the
+MCMC-reference RMSE, and fewer than 1% of neural predictors require clipping.
 
 Initial simulation hyperparameters:
 

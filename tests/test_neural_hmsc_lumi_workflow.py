@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from examples.run_neural_hmsc_benchmark import distribution_seed
+
 
 def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
     train = Path("docs/lumi_neural_hmsc_train_sbatch.sh")
@@ -22,6 +24,13 @@ def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
         assert "wall_time.txt" in text
     assert "--run-mcmc-reference" not in train_text
     assert "--run-mcmc-reference" in benchmark_text
+
+
+def test_distribution_seed_is_independent_of_requested_suite_order():
+    assert distribution_seed(100, "normal") == 100
+    assert distribution_seed(100, "probit") == 1100
+    assert distribution_seed(100, "poisson") == 2100
+    assert distribution_seed(100, "poisson", delta=999) == 3099
 
 
 def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):

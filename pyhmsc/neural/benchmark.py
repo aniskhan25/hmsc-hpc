@@ -25,6 +25,33 @@ class BenchmarkReportPaths:
     markdown: Path
 
 
+def poisson_predictive_acceptance(
+    uncalibrated_row: dict[str, Any],
+    calibrated_row: dict[str, Any],
+    *,
+    max_calibrated_rmse_ratio: float = 1.25,
+    max_mcmc_rmse_ratio: float = 2.0,
+    max_clipped_fraction: float = 0.01,
+) -> dict[str, float | bool]:
+    """Evaluate Poisson calibration against neural and MCMC baselines."""
+    uncalibrated_rmse = float(uncalibrated_row["neural_posterior_predictive_mean_rmse"])
+    calibrated_rmse = float(calibrated_row["neural_posterior_predictive_mean_rmse"])
+    mcmc_rmse = float(calibrated_row["mcmc_posterior_predictive_mean_rmse"])
+    clipped_fraction = float(calibrated_row["neural_poisson_eta_clipped_fraction"])
+    epsilon = np.finfo(float).eps
+    calibration_ratio = calibrated_rmse / max(uncalibrated_rmse, epsilon)
+    mcmc_ratio = calibrated_rmse / max(mcmc_rmse, epsilon)
+    return {
+        "predictive_rmse_ratio_vs_uncalibrated": calibration_ratio,
+        "predictive_rmse_ratio_vs_mcmc": mcmc_ratio,
+        "predictive_acceptance_passed": bool(
+            calibration_ratio <= max_calibrated_rmse_ratio
+            and mcmc_ratio <= max_mcmc_rmse_ratio
+            and clipped_fraction <= max_clipped_fraction
+        ),
+    }
+
+
 def load_truth_beta(path: str | Path) -> pd.DataFrame:
     """Load a benchmark ``truth_beta.csv`` file."""
     return pd.read_csv(path, index_col=0)
@@ -371,6 +398,7 @@ def render_benchmark_markdown(
         "neural_posterior_predictive_mean_rmse",
         "mcmc_posterior_predictive_mean_rmse",
         "predictive_rmse_ratio_vs_uncalibrated",
+        "predictive_rmse_ratio_vs_mcmc",
         "predictive_acceptance_passed",
         "speedup_factor",
     ]
@@ -395,7 +423,7 @@ def render_benchmark_markdown(
         "- `*_truth` metrics compare posterior summaries to simulated `truth_beta` when available.",
         "- predictive RMSE uses posterior mean response predictions from fixed-effect `Beta` samples.",
         "- Poisson predictive metrics report explicit eta bounds when the declared benchmark model uses them.",
-        "- `predictive_acceptance_passed` requires calibrated RMSE <= 1.25x uncalibrated RMSE and <1% clipped eta draws.",
+        "- `predictive_acceptance_passed` requires calibrated RMSE <= 1.25x uncalibrated RMSE, <= 2x MCMC RMSE, and <1% clipped eta draws.",
         "",
     ]
     return "\n".join(lines)
