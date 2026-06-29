@@ -505,12 +505,32 @@ Candidate methods:
 - ensemble of neural posterior models
 - simulation-based calibration diagnostics
 
+Simulation-based calibration rank diagnostics are now implemented in
+`pyhmsc/neural/diagnostics.py`. The benchmark evaluates independent simulated
+datasets with randomized tie-aware ranks and reports rank histograms, expected
+discrete-rank counts, rank moments, tail imbalance, coefficient-level bias,
+chi-square uniformity diagnostics, posterior-mean RMSE, and interval coverage.
+The chi-square p-value is descriptive because coefficients within a simulated
+community are not independent tests.
+
+The same benchmark evaluates three explicit OOD regimes without retraining:
+
+- `covariate_shift`: covariate mean 2.0 and standard deviation 1.5
+- `effect_size_shift`: coefficient standard deviation 1.5
+- `combined_shift`: both changes together
+
+Each OOD row records posterior-mean RMSE relative to the matching in-domain
+posterior variant. Generated corpora may also request these regimes under
+`simulation.ood`, and LUMI runs expose `SBC_DATASETS`, `SBC_DRAWS`, `SBC_BINS`,
+and `OOD_REGIMES` controls.
+
 Tasks:
 
 - add calibration split to generated training corpus
 - implement calibration metadata in posterior output
 - evaluate calibrated vs uncalibrated coverage
 - fail loudly when the requested model is out of calibration domain
+- run SBC ranks on independent in-domain and OOD simulation batches
 
 Exit criteria:
 

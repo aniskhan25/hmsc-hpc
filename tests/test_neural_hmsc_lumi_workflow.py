@@ -22,6 +22,8 @@ def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
         assert "--skip-existing" in text
         assert "rocm-smi" in text
         assert "wall_time.txt" in text
+        assert "--sbc-datasets" in text
+        assert "--ood-regimes" in text
     assert "--run-mcmc-reference" not in train_text
     assert "--run-mcmc-reference" in benchmark_text
 
@@ -58,6 +60,12 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
         "1",
         "--neural-draws",
         "3",
+        "--sbc-datasets",
+        "2",
+        "--sbc-draws",
+        "8",
+        "--sbc-bins",
+        "4",
         "--skip-existing",
     ]
 
@@ -79,3 +87,6 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
     assert Path(record["neural_checkpoint"], "weights.weights.h5").exists()
     assert Path(record["neural_posterior"]).exists()
     assert Path(record["neural_posterior_uncalibrated"]).exists()
+    assert Path(record["sbc_diagnostics"]).exists()
+    assert (output / "neural_hmsc_sbc_diagnostics.csv").exists()
+    assert (output / "neural_hmsc_sbc_diagnostics.json").exists()

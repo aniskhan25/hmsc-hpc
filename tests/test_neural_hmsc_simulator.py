@@ -6,7 +6,11 @@ import pandas as pd
 
 from pyhmsc.config import model_from_config
 from pyhmsc.neural.datasets import load_benchmark_config
-from pyhmsc.neural.simulator import generate_fixed_effect_corpus, simulate_fixed_effect_dataset
+from pyhmsc.neural.simulator import (
+    generate_fixed_effect_corpus,
+    simulate_fixed_effect_dataset,
+    simulate_fixed_effect_ood_dataset,
+)
 from pyhmsc.serialization import read_compiled_model
 
 
@@ -25,6 +29,24 @@ def test_simulate_fixed_effect_dataset_shapes_and_truth():
     assert list(dataset.truth_beta.index) == ["Intercept", "x1", "x2"]
     assert dataset.linear_predictor.shape == (10, 3)
     assert dataset.metadata["n_covariates"] == 3
+    assert dataset.metadata["simulation_domain"] == "in_distribution"
+
+
+def test_simulate_fixed_effect_ood_dataset_records_named_shift():
+    dataset = simulate_fixed_effect_ood_dataset(
+        n_sites=200,
+        n_species=3,
+        distribution="normal",
+        regime="combined_shift",
+        seed=123,
+    )
+
+    assert dataset.metadata["simulation_domain"] == "ood"
+    assert dataset.metadata["ood_regime"] == "combined_shift"
+    assert dataset.metadata["covariate_mean"] == 2.0
+    assert dataset.metadata["covariate_scale"] == 1.5
+    assert dataset.metadata["beta_scale"] == 1.5
+    assert dataset.X.to_numpy().mean() > 1.5
 
 
 def test_generate_fixed_effect_corpus_writes_compiled_artifacts(tmp_path):
@@ -91,6 +113,25 @@ def test_generate_fixed_effect_corpus_is_reproducible(tmp_path):
         pd.read_csv(left_dir / "data" / "truth_beta.csv", index_col=0),
         pd.read_csv(right_dir / "data" / "truth_beta.csv", index_col=0),
     )
+
+
+def test_generate_fixed_effect_corpus_writes_ood_artifacts(tmp_path):
+    config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
+    config["simulation"]["corpus_sizes"]["tiny"] = {"train": 1}
+    config["simulation"]["ood"] = {
+        "regimes": ["covariate_shift"],
+        "corpus_sizes": {"tiny": 2},
+    }
+
+    manifest = generate_fixed_effect_corpus(config, tmp_path / "corpus", profile="tiny", chains=1)
+
+    assert manifest["ood"]["covariate_shift"]["count"] == 2
+    record = manifest["ood"]["covariate_shift"]["datasets"][0]
+    metadata = json.loads(
+        (tmp_path / "corpus" / record["path"] / "dataset_metadata.json").read_text(encoding="utf-8")
+    )
+    assert metadata["simulation_domain"] == "ood"
+    assert metadata["ood_regime"] == "covariate_shift"
 
 
 def test_benchmark_configs_generate_tiny_corpora(tmp_path):

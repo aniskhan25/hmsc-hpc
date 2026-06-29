@@ -32,6 +32,27 @@ class BetaScaleCalibration:
     predictive_rate_rmse_uncalibrated: float | None = None
     predictive_rate_rmse_calibrated: float | None = None
 
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, Any]) -> "BetaScaleCalibration":
+        """Reconstruct a calibrator from stored posterior metadata."""
+        domain = metadata.get("domain", {})
+        return cls(
+            scale_multiplier=float(metadata["scale_multiplier"]),
+            nominal_level=float(metadata["nominal_level"]),
+            uncalibrated_coverage=float(metadata["uncalibrated_coverage"]),
+            calibrated_coverage=float(metadata["calibrated_coverage"]),
+            n_observations=int(metadata["n_observations"]),
+            distribution=domain.get("distribution"),
+            n_covariates=None if domain.get("n_covariates") is None else int(domain["n_covariates"]),
+            n_species=None if domain.get("n_species") is None else int(domain["n_species"]),
+            method=str(metadata.get("method", "temperature_scale")),
+            coverage_scale_multiplier=_optional_float(metadata, "coverage_scale_multiplier"),
+            predictive_score_uncalibrated=_optional_float(metadata, "predictive_score_uncalibrated"),
+            predictive_score_calibrated=_optional_float(metadata, "predictive_score_calibrated"),
+            predictive_rate_rmse_uncalibrated=_optional_float(metadata, "predictive_rate_rmse_uncalibrated"),
+            predictive_rate_rmse_calibrated=_optional_float(metadata, "predictive_rate_rmse_calibrated"),
+        )
+
     def validate_domain(
         self,
         *,
@@ -258,6 +279,11 @@ def _as_numpy(value: Any) -> np.ndarray:
     if hasattr(value, "numpy"):
         value = value.numpy()
     return np.asarray(value, dtype=float)
+
+
+def _optional_float(metadata: dict[str, Any], key: str) -> float | None:
+    value = metadata.get(key)
+    return None if value is None else float(value)
 
 
 def _select_poisson_scale(

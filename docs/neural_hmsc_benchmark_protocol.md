@@ -213,6 +213,31 @@ poisson_eta_clip: [-6, 6]
 The first benchmark should avoid sparse coefficients. Sparsity can be introduced
 later as an out-of-distribution stress test.
 
+## Simulation-Based Calibration and OOD Stress Tests
+
+SBC uses independent simulated datasets that are excluded from training and
+post-hoc scale fitting. For each `Beta` coefficient, its true simulated value is
+ranked among posterior draws. Ties are randomized uniformly over their valid
+rank positions. Reports include the observed and discrete-uniform expected rank
+histograms, normalized-rank mean and variance, lower/upper tail fractions,
+maximum coefficient-level mean-rank deviation, and a chi-square uniformity
+diagnostic. The chi-square p-value is descriptive because ranks from coefficients
+within the same community are dependent.
+
+The fixed-effect benchmark also evaluates these named OOD regimes with the same
+trained checkpoint and calibration layer:
+
+```text
+covariate_shift:   x ~ Normal(2.0, 1.5)
+effect_size_shift: Beta ~ Normal(0.0, 1.5)
+combined_shift:    both shifts
+```
+
+The in-domain reference remains `x ~ Normal(0, 1)` and
+`Beta ~ Normal(0, 0.75)`. OOD results must remain separate from in-domain SBC
+summaries and report posterior-mean RMSE degradation relative to the matching
+in-domain calibrated or uncalibrated posterior.
+
 ## MCMC Reference Settings
 
 MCMC references are expensive and should be generated only for a subset of the

@@ -59,6 +59,11 @@ simulation:
       calibration: 128
       validation: 128
       test: 128
+  ood:
+    regimes: [covariate_shift, effect_size_shift, combined_shift]
+    corpus_sizes:
+      smoke: 4
+      default: 128
 
 mcmc_reference:
   enabled_for_subset: true
@@ -95,6 +100,8 @@ metrics:
     - beta_interval_coverage_truth_90
     - beta_interval_coverage_truth_95
     - beta_interval_width_mean
+    - sbc_rank_histogram
+    - sbc_rank_uniformity
   posterior_mcmc:
     - beta_mean_rmse_mcmc
     - beta_sd_rmse_mcmc

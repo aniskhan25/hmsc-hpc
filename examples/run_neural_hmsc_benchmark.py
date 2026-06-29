@@ -17,6 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
@@ -37,10 +39,22 @@ from pyhmsc.neural.benchmark import (
     compare_beta_posteriors,
     poisson_predictive_acceptance,
     write_benchmark_report,
+    write_sbc_report,
 )
-from pyhmsc.neural.calibration import apply_beta_scale_calibration, fit_beta_scale_calibration
+from pyhmsc.neural.calibration import (
+    BetaScaleCalibration,
+    apply_beta_scale_calibration,
+    fit_beta_scale_calibration,
+)
+from pyhmsc.neural.diagnostics import beta_sbc_rank_diagnostics
 from pyhmsc.neural.inference import NeuralHmscInference
-from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
+from pyhmsc.neural.posterior_heads import sample_beta_posterior
+from pyhmsc.neural.simulator import (
+    FIXED_EFFECT_OOD_REGIMES,
+    FixedEffectDataset,
+    simulate_fixed_effect_dataset,
+    simulate_fixed_effect_ood_dataset,
+)
 from pyhmsc.neural.storage import write_beta_posterior_hdf5
 from pyhmsc.neural.train import fixed_shape_training_data
 from pyhmsc.posterior import HmscFit
@@ -81,6 +95,16 @@ def main() -> None:
         default="auto",
     )
     parser.add_argument("--disable-calibration", action="store_true")
+    parser.add_argument("--sbc-datasets", type=int, default=32)
+    parser.add_argument("--sbc-draws", type=int, default=256)
+    parser.add_argument("--sbc-bins", type=int, default=10)
+    parser.add_argument(
+        "--ood-regimes",
+        nargs="*",
+        choices=sorted(FIXED_EFFECT_OOD_REGIMES),
+        default=sorted(FIXED_EFFECT_OOD_REGIMES),
+        help="named OOD simulation regimes included in SBC diagnostics",
+    )
     parser.add_argument("--run-mcmc-reference", action="store_true")
     parser.add_argument("--mcmc-chains", type=int, default=2)
     parser.add_argument("--mcmc-samples", type=int, default=200)
@@ -95,6 +119,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.model_seed is None:
         args.model_seed = args.seed
+    if args.sbc_datasets != 0 and args.sbc_datasets < 2:
+        parser.error("--sbc-datasets must be zero or at least two")
+    if args.sbc_draws <= 0:
+        parser.error("--sbc-draws must be positive")
+    if args.sbc_bins < 2 or args.sbc_bins > args.sbc_draws + 1:
+        parser.error("--sbc-bins must be between 2 and --sbc-draws + 1")
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -103,6 +133,7 @@ def main() -> None:
     _write_run_metadata(output / "run_metadata.json", args=args, started_at=started_at, status="running")
 
     rows = []
+    sbc_rows = []
     manifest: dict[str, object] = {
         "started_at": started_at,
         "suite": args.suite,
@@ -114,6 +145,10 @@ def main() -> None:
         "posterior_family_policy": args.posterior_family,
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
+        "sbc_datasets": args.sbc_datasets,
+        "sbc_draws": args.sbc_draws,
+        "sbc_bins": args.sbc_bins,
+        "ood_regimes": args.ood_regimes,
         "model_seed": args.model_seed,
         "run_mcmc_reference": bool(args.run_mcmc_reference),
         "datasets": [],
@@ -127,6 +162,7 @@ def main() -> None:
         uncalibrated_path = dataset_dir / "neural_posterior_uncalibrated.h5"
         mcmc_path = dataset_dir / "mcmc_reference.h5"
         checkpoint_dir = dataset_dir / "neural_checkpoint"
+        sbc_path = dataset_dir / "sbc_diagnostics.json"
         if args.skip_existing and neural_path.exists() and uncalibrated_path.exists():
             record = _load_record(record_path)
             if record is None:
@@ -166,6 +202,38 @@ def main() -> None:
                         mcmc_seconds=record.get("mcmc_wall_time_seconds"),
                     )
                 )
+            if args.sbc_datasets > 0:
+                if sbc_path.exists():
+                    distribution_sbc_rows = json.loads(sbc_path.read_text(encoding="utf-8"))
+                elif checkpoint_dir.exists():
+                    engine = NeuralHmscInference.load(checkpoint_dir)
+                    calibration_result = None
+                    if not args.disable_calibration:
+                        metadata = HmscFit.from_file(neural_path).metadata.get("calibration")
+                        if isinstance(metadata, dict):
+                            calibration_result = BetaScaleCalibration.from_metadata(metadata)
+                    distribution_sbc_rows = _sbc_rows(
+                        engine=engine,
+                        calibration=calibration_result,
+                        distribution=distribution,
+                        n_sites=args.n_sites,
+                        n_species=args.n_species,
+                        n_datasets=args.sbc_datasets,
+                        draws=args.sbc_draws,
+                        n_bins=args.sbc_bins,
+                        ood_regimes=args.ood_regimes,
+                        seed=distribution_seed(args.seed, distribution, delta=2000),
+                    )
+                    sbc_path.write_text(
+                        json.dumps(distribution_sbc_rows, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    raise RuntimeError(
+                        f"cannot compute SBC diagnostics without checkpoint {checkpoint_dir}"
+                    )
+                sbc_rows.extend(distribution_sbc_rows)
+                record["sbc_diagnostics"] = str(sbc_path)
             manifest["datasets"].append(record)  # type: ignore[index]
             record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
             continue
@@ -260,6 +328,26 @@ def main() -> None:
         )
         neural_seconds = time.perf_counter() - start
 
+        distribution_sbc_rows = []
+        if args.sbc_datasets > 0:
+            distribution_sbc_rows = _sbc_rows(
+                engine=engine,
+                calibration=calibration_result,
+                distribution=distribution,
+                n_sites=args.n_sites,
+                n_species=args.n_species,
+                n_datasets=args.sbc_datasets,
+                draws=args.sbc_draws,
+                n_bins=args.sbc_bins,
+                ood_regimes=args.ood_regimes,
+                seed=distribution_seed(args.seed, distribution, delta=2000),
+            )
+            sbc_rows.extend(distribution_sbc_rows)
+            sbc_path.write_text(
+                json.dumps(distribution_sbc_rows, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
         record: dict[str, object] = {
             "distribution": distribution,
             "posterior_family": engine.model.posterior_family,
@@ -275,6 +363,8 @@ def main() -> None:
                 "scale_mean": training_history.scale_mean,
             },
         }
+        if distribution_sbc_rows:
+            record["sbc_diagnostics"] = str(sbc_path)
         if calibration_result is not None:
             record["calibration"] = calibration_result.to_metadata()
         if args.run_mcmc_reference:
@@ -314,6 +404,11 @@ def main() -> None:
     else:
         print(f"Wrote neural benchmark artifacts in {output}")
         print("No MCMC comparison report was written because --run-mcmc-reference was not set.")
+    if sbc_rows:
+        sbc_paths = write_sbc_report(sbc_rows, output)
+        print(f"Wrote {sbc_paths.csv}")
+        print(f"Wrote {sbc_paths.markdown}")
+        print(f"Wrote {sbc_paths.json}")
     _write_run_metadata(
         output / "run_metadata.json",
         args=args,
@@ -340,6 +435,108 @@ def _datasets(
         )
         for idx in range(count)
     ]
+
+
+def _sbc_rows(
+    *,
+    engine: NeuralHmscInference,
+    calibration: BetaScaleCalibration | None,
+    distribution: str,
+    n_sites: int,
+    n_species: int,
+    n_datasets: int,
+    draws: int,
+    n_bins: int,
+    ood_regimes: list[str],
+    seed: int,
+) -> list[dict[str, object]]:
+    domains: list[tuple[str, str | None, list[FixedEffectDataset]]] = [
+        (
+            "in_distribution",
+            None,
+            _datasets(
+                count=n_datasets,
+                n_sites=n_sites,
+                n_species=n_species,
+                distribution=distribution,
+                seed=seed,
+            ),
+        )
+    ]
+    for regime_idx, regime in enumerate(ood_regimes):
+        domains.append(
+            (
+                "ood",
+                regime,
+                [
+                    simulate_fixed_effect_ood_dataset(
+                        n_sites=n_sites,
+                        n_species=n_species,
+                        distribution=distribution,
+                        regime=regime,
+                        seed=seed + 10_000 * (regime_idx + 1) + dataset_idx,
+                    )
+                    for dataset_idx in range(n_datasets)
+                ],
+            )
+        )
+
+    rows: list[dict[str, object]] = []
+    for domain_idx, (simulation_domain, ood_regime, datasets) in enumerate(domains):
+        data = fixed_shape_training_data(datasets)
+        uncalibrated = engine.predict_beta_posterior(data)
+        variants = [("uncalibrated", uncalibrated)]
+        if calibration is not None:
+            variants.append(
+                (
+                    "calibrated",
+                    apply_beta_scale_calibration(
+                        uncalibrated,
+                        calibration,
+                        distribution=distribution,
+                    ),
+                )
+            )
+        for variant_idx, (posterior_variant, posterior) in enumerate(variants):
+            samples = sample_beta_posterior(
+                posterior,
+                draws=draws,
+                seed=seed + 1000 * domain_idx + variant_idx,
+            ).numpy()
+            samples = np.transpose(samples, (1, 0, 2, 3))
+            diagnostics = beta_sbc_rank_diagnostics(
+                samples,
+                data.Beta,
+                n_bins=n_bins,
+                seed=seed + 2000 * domain_idx + variant_idx,
+            )
+            metadata = datasets[0].metadata
+            row: dict[str, object] = {
+                "distribution": distribution,
+                "simulation_domain": simulation_domain,
+                "ood_regime": ood_regime,
+                "posterior_variant": posterior_variant,
+                "simulation_covariate_mean": metadata.get("covariate_mean"),
+                "simulation_covariate_scale": metadata.get("covariate_scale"),
+                "simulation_beta_scale": metadata.get("beta_scale"),
+            }
+            row.update(diagnostics.report_fields())
+            rows.append(row)
+
+    in_distribution_rmse = {
+        str(row["posterior_variant"]): float(row["sbc_beta_mean_rmse"])
+        for row in rows
+        if row["simulation_domain"] == "in_distribution"
+    }
+    for row in rows:
+        if row["simulation_domain"] != "ood":
+            continue
+        baseline = in_distribution_rmse[str(row["posterior_variant"])]
+        row["ood_rmse_ratio_vs_in_distribution"] = float(row["sbc_beta_mean_rmse"]) / max(
+            baseline,
+            np.finfo(float).eps,
+        )
+    return rows
 
 
 def _write_dataset(dataset: FixedEffectDataset, output: Path) -> None:

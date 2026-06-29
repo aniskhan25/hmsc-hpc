@@ -81,6 +81,22 @@ def test_beta_scale_calibration_rejects_out_of_domain_application():
         raise AssertionError("Expected calibration domain mismatch")
 
 
+def test_beta_scale_calibration_round_trips_metadata():
+    posterior = BetaPosterior(
+        mean=tf.zeros((2, 1, 1), dtype=tf.float32),
+        scale=tf.ones((2, 1, 1), dtype=tf.float32),
+    )
+    calibration = fit_beta_scale_calibration(
+        posterior,
+        np.zeros((2, 1, 1), dtype=np.float32),
+        distribution="normal",
+    )
+
+    restored = type(calibration).from_metadata(calibration.to_metadata())
+
+    assert restored == calibration
+
+
 def test_write_beta_posterior_hdf5_records_calibration_metadata(tmp_path):
     posterior = BetaPosterior(
         mean=tf.zeros((1, 2, 1), dtype=tf.float32),

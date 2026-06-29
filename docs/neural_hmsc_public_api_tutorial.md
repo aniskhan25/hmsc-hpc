@@ -118,6 +118,19 @@ ridge anchor. Gaussian and probit checkpoints retain identity response
 features. Because this changes checkpoint behavior, version `0.1` checkpoints
 are not loaded as version `0.2` models.
 
+## SBC and OOD Diagnostics
+
+`beta_sbc_rank_diagnostics(samples, truth)` accepts posterior samples with
+shape `replicates x draws x covariates x species` and matching simulated truths.
+It returns JSON-ready metadata and flat report fields for rank uniformity,
+tail behavior, posterior-mean RMSE, and 80/90/95 percent coverage.
+
+The benchmark runner generates independent in-domain simulations plus named
+`covariate_shift`, `effect_size_shift`, and `combined_shift` datasets. It writes
+`neural_hmsc_sbc_diagnostics.{csv,json,md}` and per-distribution
+`sbc_diagnostics.json` files. These are stress diagnostics: OOD calibration is
+measured, not assumed to retain in-domain validity.
+
 ## Compatibility Limits
 
 `NeuralHmscInference` currently rejects compiled artifacts with any of:

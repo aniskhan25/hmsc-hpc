@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -23,6 +24,15 @@ class BenchmarkReportPaths:
 
     csv: Path
     markdown: Path
+
+
+@dataclass(frozen=True)
+class SbcReportPaths:
+    """Paths written by an SBC and OOD diagnostic report."""
+
+    csv: Path
+    markdown: Path
+    json: Path
 
 
 def poisson_predictive_acceptance(
@@ -361,6 +371,80 @@ def write_benchmark_report(
     frame.to_csv(csv_path, index=False)
     markdown_path.write_text(render_benchmark_markdown(frame, title=title), encoding="utf-8")
     return BenchmarkReportPaths(csv=csv_path, markdown=markdown_path)
+
+
+def write_sbc_report(
+    rows: Iterable[dict[str, Any]],
+    output_dir: str | Path,
+    *,
+    stem: str = "neural_hmsc_sbc_diagnostics",
+) -> SbcReportPaths:
+    """Write simulation-based calibration and OOD diagnostics."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    records = list(rows)
+    if not records:
+        raise ValueError("rows must contain at least one SBC result")
+    frame = pd.DataFrame(records)
+    csv_frame = frame.copy()
+    for column in csv_frame.columns:
+        if csv_frame[column].map(lambda value: isinstance(value, (list, tuple, dict))).any():
+            csv_frame[column] = csv_frame[column].map(
+                lambda value: json.dumps(value) if isinstance(value, (list, tuple, dict)) else value
+            )
+    csv_path = output_dir / f"{stem}.csv"
+    markdown_path = output_dir / f"{stem}.md"
+    json_path = output_dir / f"{stem}.json"
+    csv_frame.to_csv(csv_path, index=False)
+    json_path.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    markdown_path.write_text(render_sbc_markdown(frame), encoding="utf-8")
+    return SbcReportPaths(csv=csv_path, markdown=markdown_path, json=json_path)
+
+
+def render_sbc_markdown(rows: pd.DataFrame | Sequence[dict[str, Any]]) -> str:
+    """Render a compact SBC and OOD summary."""
+    frame = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(list(rows))
+    if frame.empty:
+        raise ValueError("rows must contain at least one SBC result")
+    preferred = [
+        "distribution",
+        "simulation_domain",
+        "ood_regime",
+        "posterior_variant",
+        "sbc_n_replicates",
+        "sbc_n_draws",
+        "sbc_rank_mean",
+        "sbc_rank_variance",
+        "sbc_expected_rank_variance",
+        "sbc_lower_tail_fraction",
+        "sbc_upper_tail_fraction",
+        "sbc_max_abs_coefficient_rank_mean_deviation",
+        "sbc_chi_square_pvalue",
+        "sbc_beta_mean_rmse",
+        "sbc_beta_interval_coverage_95",
+        "ood_rmse_ratio_vs_in_distribution",
+    ]
+    columns = [column for column in preferred if column in frame.columns]
+    summary = frame.loc[:, columns].copy()
+    for column in summary.columns:
+        if pd.api.types.is_float_dtype(summary[column]):
+            summary[column] = summary[column].map(
+                lambda value: f"{value:.4g}" if pd.notna(value) else ""
+            )
+    lines = [
+        "# Neural-HMSC Simulation-Based Calibration Diagnostics",
+        "",
+        _markdown_table(summary),
+        "",
+        "## Metric Notes",
+        "",
+        "- Uniform SBC ranks have mean 0.5 and variance close to the reported discrete-rank expectation.",
+        "- Tail imbalance and low chi-square p-values flag posterior bias or dispersion mismatch; they are diagnostics, not independent hypothesis tests.",
+        "- OOD rows use the same fitted amortizer and calibration as the in-distribution row.",
+        "- `ood_rmse_ratio_vs_in_distribution` measures posterior-mean degradation relative to the matching posterior variant.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def render_benchmark_markdown(

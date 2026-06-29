@@ -54,6 +54,22 @@ class SpatialLatentEffectDataset(IidLatentEffectDataset):
     test_mask: np.ndarray
 
 
+FIXED_EFFECT_OOD_REGIMES: dict[str, dict[str, float]] = {
+    "covariate_shift": {
+        "covariate_mean": 2.0,
+        "covariate_scale": 1.5,
+    },
+    "effect_size_shift": {
+        "beta_scale": 1.5,
+    },
+    "combined_shift": {
+        "covariate_mean": 2.0,
+        "covariate_scale": 1.5,
+        "beta_scale": 1.5,
+    },
+}
+
+
 def simulate_fixed_effect_dataset(
     *,
     n_sites: int,
@@ -64,6 +80,11 @@ def simulate_fixed_effect_dataset(
     beta_zero_probability: float = 0.0,
     gaussian_sigma: float = 0.35,
     poisson_eta_clip: tuple[float, float] = (-6.0, 6.0),
+    covariate_mean: float = 0.0,
+    covariate_scale: float = 1.0,
+    beta_mean: float = 0.0,
+    simulation_domain: str = "in_distribution",
+    ood_regime: str | None = None,
 ) -> FixedEffectDataset:
     """Simulate a variable-shape fixed-effect benchmark dataset.
 
@@ -83,18 +104,28 @@ def simulate_fixed_effect_dataset(
         raise ValueError("gaussian_sigma must be positive")
     if poisson_eta_clip[0] >= poisson_eta_clip[1]:
         raise ValueError("poisson_eta_clip must be ordered as (low, high)")
+    if not np.isfinite(covariate_mean) or not np.isfinite(beta_mean):
+        raise ValueError("covariate_mean and beta_mean must be finite")
+    if not np.isfinite(covariate_scale) or covariate_scale <= 0.0:
+        raise ValueError("covariate_scale must be positive and finite")
+    if simulation_domain not in {"in_distribution", "ood"}:
+        raise ValueError("simulation_domain must be 'in_distribution' or 'ood'")
+    if simulation_domain == "ood" and not ood_regime:
+        raise ValueError("ood_regime is required for out-of-distribution simulations")
+    if simulation_domain == "in_distribution" and ood_regime is not None:
+        raise ValueError("ood_regime is only valid for out-of-distribution simulations")
 
     rng = np.random.default_rng(seed)
     site_names = [f"site_{idx + 1:04d}" for idx in range(n_sites)]
     species_names = [f"sp{idx + 1}" for idx in range(n_species)]
     covariate_names = ["Intercept", "x1", "x2"]
 
-    x1 = rng.normal(size=n_sites)
-    x2 = rng.normal(size=n_sites)
+    x1 = rng.normal(loc=covariate_mean, scale=covariate_scale, size=n_sites)
+    x2 = rng.normal(loc=covariate_mean, scale=covariate_scale, size=n_sites)
     X = pd.DataFrame({"x1": x1, "x2": x2}, index=site_names)
     design = np.column_stack([np.ones(n_sites), x1, x2])
 
-    beta = rng.normal(loc=0.0, scale=beta_scale, size=(len(covariate_names), n_species))
+    beta = rng.normal(loc=beta_mean, scale=beta_scale, size=(len(covariate_names), n_species))
     if beta_zero_probability > 0:
         keep = rng.uniform(size=beta.shape) >= beta_zero_probability
         beta = beta * keep
@@ -123,6 +154,11 @@ def simulate_fixed_effect_dataset(
         "formula": "~ x1 + x2",
         "beta_scale": float(beta_scale),
         "beta_zero_probability": float(beta_zero_probability),
+        "beta_mean": float(beta_mean),
+        "covariate_mean": float(covariate_mean),
+        "covariate_scale": float(covariate_scale),
+        "simulation_domain": simulation_domain,
+        "ood_regime": ood_regime,
     }
     if key == "normal":
         metadata["gaussian_sigma"] = float(gaussian_sigma)
@@ -134,6 +170,36 @@ def simulate_fixed_effect_dataset(
         truth_beta=truth_beta,
         linear_predictor=linear_predictor,
         metadata=metadata,
+    )
+
+
+def simulate_fixed_effect_ood_dataset(
+    *,
+    n_sites: int,
+    n_species: int,
+    distribution: str,
+    regime: str,
+    seed: int,
+    gaussian_sigma: float = 0.35,
+    poisson_eta_clip: tuple[float, float] = (-6.0, 6.0),
+) -> FixedEffectDataset:
+    """Simulate a named parameter shift outside the default training domain."""
+    if regime not in FIXED_EFFECT_OOD_REGIMES:
+        choices = ", ".join(sorted(FIXED_EFFECT_OOD_REGIMES))
+        raise ValueError(f"unknown fixed-effect OOD regime {regime!r}; expected one of {choices}")
+    parameters = FIXED_EFFECT_OOD_REGIMES[regime]
+    return simulate_fixed_effect_dataset(
+        n_sites=n_sites,
+        n_species=n_species,
+        distribution=distribution,
+        seed=seed,
+        beta_scale=float(parameters.get("beta_scale", 0.75)),
+        gaussian_sigma=gaussian_sigma,
+        poisson_eta_clip=poisson_eta_clip,
+        covariate_mean=float(parameters.get("covariate_mean", 0.0)),
+        covariate_scale=float(parameters.get("covariate_scale", 1.0)),
+        simulation_domain="ood",
+        ood_regime=regime,
     )
 
 
@@ -538,6 +604,52 @@ def generate_fixed_effect_corpus(
             )
         manifest["splits"][split] = {"count": int(count), "datasets": records}
 
+    ood_config = simulation.get("ood", {})
+    ood_count = int(ood_config.get("corpus_sizes", {}).get(profile, 0))
+    ood_regimes = [str(value) for value in ood_config.get("regimes", [])]
+    if ood_count > 0 and ood_regimes:
+        manifest["ood"] = {}
+        for regime in ood_regimes:
+            regime_dir = output / "ood" / regime
+            regime_dir.mkdir(parents=True, exist_ok=True)
+            records = []
+            for dataset_idx in range(ood_count):
+                dataset_seed = int(rng.integers(0, np.iinfo(np.int32).max))
+                n_sites = _sample_dimension(rng, dimensions["n_sites"])
+                n_species = _sample_dimension(rng, dimensions["n_species"])
+                dataset = simulate_fixed_effect_ood_dataset(
+                    n_sites=n_sites,
+                    n_species=n_species,
+                    distribution=distribution,
+                    regime=regime,
+                    seed=dataset_seed,
+                    gaussian_sigma=float(response.get("gaussian_sigma", 0.35)),
+                    poisson_eta_clip=tuple(response.get("eta_clip", [-6.0, 6.0])),
+                )
+                dataset_name = f"dataset_{dataset_idx:06d}"
+                dataset_dir = regime_dir / dataset_name
+                _write_fixed_effect_dataset(
+                    dataset,
+                    dataset_dir,
+                    formula=formula,
+                    distribution=distribution,
+                    chains=chain_count,
+                )
+                records.append(
+                    {
+                        "name": dataset_name,
+                        "path": str(dataset_dir.relative_to(output)),
+                        "seed": dataset_seed,
+                        "n_sites": n_sites,
+                        "n_species": n_species,
+                        "simulation_domain": "ood",
+                        "ood_regime": regime,
+                        "compiled": str((dataset_dir / "compiled" / "init.json").relative_to(output)),
+                        "truth_beta": str((dataset_dir / "data" / "truth_beta.csv").relative_to(output)),
+                    }
+                )
+            manifest["ood"][regime] = {"count": ood_count, "datasets": records}
+
     write_json(output / "corpus_metadata.json", manifest)
     return manifest
 
@@ -606,6 +718,15 @@ def _validate_fixed_effect_config(config: dict[str, Any]) -> None:
     for key in ["dimensions", "beta", "corpus_sizes"]:
         if key not in simulation:
             raise ValueError(f"simulation.{key} is required")
+    ood_config = simulation.get("ood")
+    if ood_config is not None:
+        regimes = ood_config.get("regimes", [])
+        unknown = sorted(set(regimes).difference(FIXED_EFFECT_OOD_REGIMES))
+        if unknown:
+            raise ValueError(f"simulation.ood contains unknown regimes: {unknown}")
+        sizes = ood_config.get("corpus_sizes", {})
+        if any(int(count) < 0 for count in sizes.values()):
+            raise ValueError("simulation.ood corpus sizes must be non-negative")
 
 
 def _sample_dimension(rng: np.random.Generator, spec: dict[str, Any]) -> int:

@@ -13,6 +13,7 @@ os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-
 os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
 
 from pyhmsc.neural.simulator import (
+    FIXED_EFFECT_OOD_REGIMES,
     FixedEffectDataset,
     IidLatentEffectDataset,
     SpatialLatentEffectDataset,
@@ -21,10 +22,13 @@ from pyhmsc.neural.simulator import (
     simulate_iid_latent_effect_dataset,
     simulate_spatial_latent_effect_dataset,
     simulate_fixed_effect_dataset,
+    simulate_fixed_effect_ood_dataset,
     simulate_trait_effect_dataset,
 )
 
 __all__ = [
+    "FIXED_EFFECT_OOD_REGIMES",
+    "BetaSbcDiagnostics",
     "FixedEffectDataset",
     "FixedShapeBetaPosteriorModel",
     "IidLatentEffectDataset",
@@ -40,6 +44,7 @@ __all__ = [
     "VariableShapeBetaPosteriorModel",
     "BetaScaleCalibration",
     "apply_beta_scale_calibration",
+    "beta_sbc_rank_diagnostics",
     "calibration_metadata",
     "compiled_trait_effect_training_data",
     "compare_beta_posterior_files",
@@ -63,6 +68,7 @@ __all__ = [
     "predict_spatial_latent_posterior",
     "predict_variable_beta_posterior",
     "simulate_fixed_effect_dataset",
+    "simulate_fixed_effect_ood_dataset",
     "simulate_iid_latent_effect_dataset",
     "simulate_spatial_latent_effect_dataset",
     "simulate_trait_effect_dataset",
@@ -73,6 +79,7 @@ __all__ = [
     "trait_effect_training_data",
     "variable_shape_training_data",
     "write_benchmark_report",
+    "write_sbc_report",
     "write_beta_posterior_hdf5",
     "write_gamma_posterior_hdf5",
     "write_iid_latent_posterior_hdf5",
@@ -119,6 +126,16 @@ def __getattr__(name: str) -> object:
             "NEURAL_TRAINING_CORPUS_VERSION": NEURAL_TRAINING_CORPUS_VERSION,
             "NeuralHmscCompatibilityError": NeuralHmscCompatibilityError,
             "NeuralHmscInference": NeuralHmscInference,
+        }[name]
+    if name in {
+        "BetaSbcDiagnostics",
+        "beta_sbc_rank_diagnostics",
+    }:
+        from pyhmsc.neural.diagnostics import BetaSbcDiagnostics, beta_sbc_rank_diagnostics
+
+        return {
+            "BetaSbcDiagnostics": BetaSbcDiagnostics,
+            "beta_sbc_rank_diagnostics": beta_sbc_rank_diagnostics,
         }[name]
     if name in {
         "fixed_shape_training_data",
@@ -234,6 +251,7 @@ def __getattr__(name: str) -> object:
         "compare_iid_association_posterior_files",
         "compare_iid_association_posteriors",
         "write_benchmark_report",
+        "write_sbc_report",
     }:
         from pyhmsc.neural.benchmark import (
             compare_beta_posterior_files,
@@ -243,6 +261,7 @@ def __getattr__(name: str) -> object:
             compare_iid_association_posterior_files,
             compare_iid_association_posteriors,
             write_benchmark_report,
+            write_sbc_report,
         )
 
         return {
@@ -253,5 +272,6 @@ def __getattr__(name: str) -> object:
             "compare_iid_association_posterior_files": compare_iid_association_posterior_files,
             "compare_iid_association_posteriors": compare_iid_association_posteriors,
             "write_benchmark_report": write_benchmark_report,
+            "write_sbc_report": write_sbc_report,
         }[name]
     raise AttributeError(f"module 'pyhmsc.neural' has no attribute {name!r}")
