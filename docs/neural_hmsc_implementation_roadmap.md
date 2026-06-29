@@ -488,6 +488,15 @@ independent simulation-replicate log score against truth-rate RMSE. Benchmark
 reports include eta-clipping fractions and an explicit predictive acceptance
 result so finite but degraded calibrated predictions cannot be promoted.
 
+Multi-seed qualification exposed Poisson sensitivity caused by applying the
+Gaussian raw-count ridge anchor to log-link data. The fixed-shape Poisson
+encoder now uses `log1p(Y)` response summaries and checkpoint version `0.2`.
+Across LUMI seeds 20260626 through 20260630, the calibrated Poisson predictive
+RMSE averaged 1.3616 versus 1.1897 for MCMC, with a worst neural-to-MCMC ratio
+of 1.287 and five of five acceptance checks passing. Before the encoder change,
+the same seeds averaged 4.0748 with a worst ratio of 9.244. Gaussian and probit
+results were unchanged by the distribution-specific transform.
+
 Candidate methods:
 
 - temperature/scale calibration of posterior standard deviations

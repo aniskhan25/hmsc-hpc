@@ -102,7 +102,8 @@ The manifest records:
 - distribution, formula, dimensions, and names
 - public limitations for the checkpoint family
 
-Milestone 11 uses checkpoint version `0.1` and training corpus version `0.1`.
+The distribution-aware encoder uses checkpoint version `0.2`; training corpus
+version remains `0.1`.
 Future incompatible checkpoint formats must bump `checkpoint_version`. Changes
 to generated training-data semantics must bump `training_corpus_version`.
 
@@ -111,6 +112,11 @@ Checkpoints created before `posterior_family` was added are loaded as
 to `full_covariance_normal`, while Gaussian and probit resolve to
 `diagonal_normal`. Explicit family overrides remain available. Full-covariance
 models store correlated draws in the existing `Beta` HDF5 sample shape.
+
+Poisson checkpoints use `log1p(Y)` encoder summaries before constructing the
+ridge anchor. Gaussian and probit checkpoints retain identity response
+features. Because this changes checkpoint behavior, version `0.1` checkpoints
+are not loaded as version `0.2` models.
 
 ## Compatibility Limits
 

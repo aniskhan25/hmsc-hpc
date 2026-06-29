@@ -38,7 +38,7 @@ from pyhmsc.posterior import HmscFit
 from pyhmsc.serialization import read_compiled_model
 
 
-NEURAL_CHECKPOINT_VERSION = "0.1"
+NEURAL_CHECKPOINT_VERSION = "0.2"
 NEURAL_TRAINING_CORPUS_VERSION = "0.1"
 SUPPORTED_MODEL_FAMILY = "fixed_effect_beta"
 CHECKPOINT_MANIFEST = "neural_checkpoint.json"
@@ -98,6 +98,7 @@ class NeuralHmscInference:
             n_species=n_species,
             hidden_units=hidden_units,
             posterior_family=posterior_family,
+            distribution=str(distribution),
         )
         _build_fixed_shape_model(model)
         return cls(
@@ -138,6 +139,7 @@ class NeuralHmscInference:
             n_species=int(dimensions["n_species"]),
             hidden_units=hidden_units,
             posterior_family=posterior_family,
+            distribution=str(manifest.get("distribution", "normal")),
         )
         _build_fixed_shape_model(model)
         model.load_weights(checkpoint / CHECKPOINT_WEIGHTS)

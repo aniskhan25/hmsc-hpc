@@ -25,12 +25,16 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         hidden_units: tuple[int, ...] = (64, 64),
         min_scale: float = 1e-3,
         posterior_family: str = "diagonal_normal",
+        distribution: str = "normal",
         **kwargs: object,
     ) -> None:
         super().__init__(**kwargs)
         self.n_sites = int(n_sites)
         self.n_covariates = int(n_covariates)
         self.n_species = int(n_species)
+        if distribution not in {"normal", "probit", "poisson"}:
+            raise ValueError("distribution must be 'normal', 'probit', or 'poisson'")
+        self.distribution = str(distribution)
         if posterior_family not in {"diagonal_normal", "full_covariance_normal"}:
             raise ValueError("posterior_family must be 'diagonal_normal' or 'full_covariance_normal'")
         self.posterior_family = str(posterior_family)
@@ -59,11 +63,12 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         response = tf.cast(response, tf.float32)
         _assert_fixed_shape(design, response, self.n_sites, self.n_covariates, self.n_species)
 
-        xty = tf.einsum("bnk,bns->bks", design, response) / tf.cast(self.n_sites, tf.float32)
+        feature_response = tf.math.log1p(response) if self.distribution == "poisson" else response
+        xty = tf.einsum("bnk,bns->bks", design, feature_response) / tf.cast(self.n_sites, tf.float32)
         xtx = tf.einsum("bnk,bnl->bkl", design, design) / tf.cast(self.n_sites, tf.float32)
         ridge = _ridge_beta_estimate(xtx, xty)
-        y_mean = tf.reduce_mean(response, axis=1)
-        y_sd = tf.math.reduce_std(response, axis=1)
+        y_mean = tf.reduce_mean(feature_response, axis=1)
+        y_sd = tf.math.reduce_std(feature_response, axis=1)
         features = tf.concat(
             [
                 tf.reshape(xty, (tf.shape(design)[0], -1)),

@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import tensorflow as tf
 
 from pyhmsc.neural.evaluation import evaluate_beta_posterior, predict_beta_posterior
@@ -76,6 +77,21 @@ def test_fixed_shape_beta_model_starts_with_nontrivial_beta_posterior_means():
     assert metrics.beta_scale_min > 1e-4
     assert np.isfinite(metrics.beta_interval_coverage_truth_95)
     assert metrics.beta_interval_width_mean_95 > 0.0
+
+
+def test_poisson_fixed_shape_model_uses_log_response_ridge_anchor():
+    X = tf.ones((1, 8, 1), dtype=tf.float32)
+    Y = tf.ones((1, 8, 1), dtype=tf.float32) * (np.exp(2.0) - 1.0)
+    model = FixedShapeBetaPosteriorModel(
+        n_sites=8,
+        n_covariates=1,
+        n_species=1,
+        distribution="poisson",
+    )
+
+    posterior = model({"X": X, "Y": Y}, training=False)
+
+    assert posterior.mean.numpy()[0, 0, 0] == pytest.approx(2.0, abs=0.01)
 
 
 def test_fixed_shape_training_data_rejects_mixed_shapes():
