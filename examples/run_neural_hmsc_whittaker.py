@@ -40,7 +40,7 @@ from pyhmsc.neural.calibration import (
     apply_beta_scale_calibration,
     fit_beta_scale_calibration,
 )
-from pyhmsc.neural.diagnostics import beta_sbc_rank_diagnostics
+from pyhmsc.neural.diagnostics import beta_sbc_stratified_diagnostics
 from pyhmsc.neural.inference import NeuralHmscInference
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
 from pyhmsc.neural.simulator import FixedEffectDataset
@@ -301,7 +301,10 @@ def main() -> None:
         _metric_row(heldout, "mcmc_fixed"),
     )
     coefficient_sbc = next(
-        row for row in sbc_rows if row["posterior_variant"] == "coefficient_calibrated"
+        row
+        for row in sbc_rows
+        if row["posterior_variant"] == "coefficient_calibrated"
+        and row["sbc_stratum_kind"] == "overall"
     )
     acceptance = {
         **predictive_acceptance,
@@ -474,18 +477,36 @@ def _sbc_rows(
     ):
         samples = sample_beta_posterior(posterior, draws=draws, seed=seed + idx).numpy()
         samples = np.transpose(samples, (1, 0, 2, 3))
-        diagnostics = beta_sbc_rank_diagnostics(
-            samples, data.Beta, n_bins=10, seed=seed + 10 + idx
+        diagnostics_by_stratum = beta_sbc_stratified_diagnostics(
+            samples,
+            data.Beta,
+            X=data.X,
+            Y=data.Y,
+            distribution="probit",
+            covariate_names=datasets[0].truth_beta.index,
+            n_bins=10,
+            seed=seed + 10 + idx,
         )
-        row: dict[str, object] = {
-            "distribution": "probit",
-            "simulation_domain": "whittaker_shape_matched",
-            "ood_regime": None,
-            "posterior_variant": variant,
-        }
-        row.update(diagnostics.report_fields())
-        rows.append(row)
-    rows[1].update(sbc_calibration_acceptance(rows[0], rows[1]))
+        for stratum in diagnostics_by_stratum:
+            row: dict[str, object] = {
+                "distribution": "probit",
+                "simulation_domain": "whittaker_shape_matched",
+                "ood_regime": None,
+                "posterior_variant": variant,
+            }
+            row.update(stratum.report_fields())
+            rows.append(row)
+    overall = {
+        str(row["posterior_variant"]): row
+        for row in rows
+        if row["sbc_stratum_kind"] == "overall"
+    }
+    overall["coefficient_calibrated"].update(
+        sbc_calibration_acceptance(
+            overall["uncalibrated"],
+            overall["coefficient_calibrated"],
+        )
+    )
     return rows
 
 
@@ -607,6 +628,9 @@ def _render_report(
     sbc_summary = sbc[
         [
             "posterior_variant",
+            "sbc_stratum_kind",
+            "sbc_stratum_label",
+            "sbc_n_ranks",
             "sbc_rank_mean",
             "sbc_rank_variance",
             "sbc_chi_square_pvalue",

@@ -10,7 +10,9 @@ import os
 import tempfile
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
-os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
+os.environ.setdefault(
+    "XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache")
+)
 
 from pyhmsc.neural.simulator import (
     FIXED_EFFECT_OOD_REGIMES,
@@ -29,6 +31,7 @@ from pyhmsc.neural.simulator import (
 __all__ = [
     "FIXED_EFFECT_OOD_REGIMES",
     "BetaSbcDiagnostics",
+    "BetaSbcStratumDiagnostics",
     "FixedEffectDataset",
     "FixedShapeBetaPosteriorModel",
     "IidLatentEffectDataset",
@@ -46,6 +49,8 @@ __all__ = [
     "apply_beta_predictive_calibration",
     "apply_beta_scale_calibration",
     "beta_sbc_rank_diagnostics",
+    "beta_sbc_stratified_diagnostics",
+    "beta_expected_design_information",
     "calibration_metadata",
     "compiled_trait_effect_training_data",
     "compare_beta_posterior_files",
@@ -130,13 +135,25 @@ def __getattr__(name: str) -> object:
         }[name]
     if name in {
         "BetaSbcDiagnostics",
+        "BetaSbcStratumDiagnostics",
+        "beta_expected_design_information",
         "beta_sbc_rank_diagnostics",
+        "beta_sbc_stratified_diagnostics",
     }:
-        from pyhmsc.neural.diagnostics import BetaSbcDiagnostics, beta_sbc_rank_diagnostics
+        from pyhmsc.neural.diagnostics import (
+            BetaSbcDiagnostics,
+            BetaSbcStratumDiagnostics,
+            beta_expected_design_information,
+            beta_sbc_rank_diagnostics,
+            beta_sbc_stratified_diagnostics,
+        )
 
         return {
             "BetaSbcDiagnostics": BetaSbcDiagnostics,
+            "BetaSbcStratumDiagnostics": BetaSbcStratumDiagnostics,
+            "beta_expected_design_information": beta_expected_design_information,
             "beta_sbc_rank_diagnostics": beta_sbc_rank_diagnostics,
+            "beta_sbc_stratified_diagnostics": beta_sbc_stratified_diagnostics,
         }[name]
     if name in {
         "fixed_shape_training_data",

@@ -73,8 +73,12 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
     subprocess.run(cmd, check=True)
 
     metadata = json.loads((output / "run_metadata.json").read_text(encoding="utf-8"))
-    manifest = json.loads((output / "benchmark_manifest.json").read_text(encoding="utf-8"))
-    record = json.loads((output / "normal" / "benchmark_record.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (output / "benchmark_manifest.json").read_text(encoding="utf-8")
+    )
+    record = json.loads(
+        (output / "normal" / "benchmark_record.json").read_text(encoding="utf-8")
+    )
 
     assert metadata["status"] == "completed"
     assert metadata["started_at"]
@@ -90,3 +94,14 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
     assert Path(record["sbc_diagnostics"]).exists()
     assert (output / "neural_hmsc_sbc_diagnostics.csv").exists()
     assert (output / "neural_hmsc_sbc_diagnostics.json").exists()
+    sbc_rows = json.loads(
+        (output / "neural_hmsc_sbc_diagnostics.json").read_text(encoding="utf-8")
+    )
+    assert {row["sbc_stratum_kind"] for row in sbc_rows} >= {
+        "overall",
+        "coefficient",
+        "design_information",
+    }
+    overall_rows = [row for row in sbc_rows if row["sbc_stratum_kind"] == "overall"]
+    assert overall_rows
+    assert all(row["sbc_stratum_label"] == "overall" for row in overall_rows)

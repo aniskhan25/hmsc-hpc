@@ -212,6 +212,23 @@ SBC acceptance requires at least 90% empirical 95% coverage and no material
 degradation in coverage error, normalized-rank mean error, or normalized-rank
 variance error relative to the uncalibrated posterior.
 
+SBC reports also include diagnostic strata. These rows do not replace the
+`overall` row used by qualification:
+
+- prevalence: rare (`<= 0.10`), intermediate (`> 0.10` and `<= 0.30`), and
+  common (`> 0.30`) occurrence or nonzero-count prevalence
+- coefficient: one row for each named fixed-effect coefficient
+- design information: low, intermediate, and high within-coefficient thirds
+  of diagonal expected Fisher information
+
+Expected information is evaluated at the raw neural posterior mean, never at
+simulated coefficient truth. Gaussian diagnostics use unit observation weight,
+probit uses `phi(eta)^2 / (Phi(eta) * (1 - Phi(eta)))`, and Poisson uses
+`exp(eta)`. This makes the same information feature computable for eventual
+real-data inference and conditional calibration. Each row records its selected
+rank count, rank moments, tail fractions, coverage, posterior-mean RMSE, and
+histogram diagnostics. Empty or undersized strata are omitted.
+
 For a real occurrence holdout, predictive acceptance requires predictive-only
 Brier score and log loss no worse than 1.10 times the uncalibrated neural
 values and no worse than twice the MCMC values. Prevalence and richness MAE

@@ -20,7 +20,9 @@ from pathlib import Path
 import numpy as np
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "pyhmsc-mpl"))
-os.environ.setdefault("XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache"))
+os.environ.setdefault(
+    "XDG_CACHE_HOME", str(Path(tempfile.gettempdir()) / "pyhmsc-cache")
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -48,7 +50,7 @@ from pyhmsc.neural.calibration import (
     apply_beta_scale_calibration,
     fit_beta_scale_calibration,
 )
-from pyhmsc.neural.diagnostics import beta_sbc_rank_diagnostics
+from pyhmsc.neural.diagnostics import beta_sbc_stratified_diagnostics
 from pyhmsc.neural.inference import NeuralHmscInference
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
 from pyhmsc.neural.simulator import (
@@ -132,7 +134,9 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     tf.keras.utils.set_random_seed(args.model_seed)
     started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    _write_run_metadata(output / "run_metadata.json", args=args, started_at=started_at, status="running")
+    _write_run_metadata(
+        output / "run_metadata.json", args=args, started_at=started_at, status="running"
+    )
 
     rows = []
     sbc_rows = []
@@ -201,14 +205,20 @@ def main() -> None:
             distribution_sbc_rows = []
             if args.sbc_datasets > 0:
                 if sbc_path.exists():
-                    distribution_sbc_rows = json.loads(sbc_path.read_text(encoding="utf-8"))
+                    distribution_sbc_rows = json.loads(
+                        sbc_path.read_text(encoding="utf-8")
+                    )
                 elif checkpoint_dir.exists():
                     engine = NeuralHmscInference.load(checkpoint_dir)
                     calibration_result = None
                     if not args.disable_calibration:
-                        metadata = HmscFit.from_file(neural_path).metadata.get("calibration")
+                        metadata = HmscFit.from_file(neural_path).metadata.get(
+                            "calibration"
+                        )
                         if isinstance(metadata, dict):
-                            calibration_result = BetaScaleCalibration.from_metadata(metadata)
+                            calibration_result = BetaScaleCalibration.from_metadata(
+                                metadata
+                            )
                     distribution_sbc_rows = _sbc_rows(
                         engine=engine,
                         calibration=calibration_result,
@@ -301,7 +311,12 @@ def main() -> None:
             chains=args.neural_chains,
             draws=args.neural_draws,
             seed=args.model_seed + suite_idx,
-            metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
+            metadata={
+                "benchmark": {
+                    "script": Path(__file__).name,
+                    "distribution": distribution,
+                }
+            },
         )
         uncalibrated_path = uncalibrated_fit.output_file or uncalibrated_path
         uncalibrated_posterior = engine.predict_beta_posterior(test)
@@ -342,7 +357,10 @@ def main() -> None:
             draws=args.neural_draws,
             seed=args.model_seed + suite_idx + 100,
             metadata={
-                "benchmark": {"script": Path(__file__).name, "distribution": distribution},
+                "benchmark": {
+                    "script": Path(__file__).name,
+                    "distribution": distribution,
+                },
                 "artifact_role": "coefficient_posterior",
             },
             calibration=calibration_result,
@@ -358,7 +376,10 @@ def main() -> None:
             draws=args.neural_draws,
             seed=args.model_seed + suite_idx + 200,
             metadata={
-                "benchmark": {"script": Path(__file__).name, "distribution": distribution},
+                "benchmark": {
+                    "script": Path(__file__).name,
+                    "distribution": distribution,
+                },
                 "artifact_role": "predictive_only",
             },
             calibration=calibration_result,
@@ -436,14 +457,18 @@ def main() -> None:
 
     finished_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     manifest["finished_at"] = finished_at
-    (output / "benchmark_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (output / "benchmark_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
     if rows:
         paths = write_benchmark_report(rows, output)
         print(f"Wrote {paths.csv}")
         print(f"Wrote {paths.markdown}")
     else:
         print(f"Wrote neural benchmark artifacts in {output}")
-        print("No MCMC comparison report was written because --run-mcmc-reference was not set.")
+        print(
+            "No MCMC comparison report was written because --run-mcmc-reference was not set."
+        )
     if sbc_rows:
         sbc_paths = write_sbc_report(sbc_rows, output)
         print(f"Wrote {sbc_paths.csv}")
@@ -544,27 +569,36 @@ def _sbc_rows(
                 seed=seed + 1000 * domain_idx + variant_idx,
             ).numpy()
             samples = np.transpose(samples, (1, 0, 2, 3))
-            diagnostics = beta_sbc_rank_diagnostics(
+            diagnostics_by_stratum = beta_sbc_stratified_diagnostics(
                 samples,
                 data.Beta,
+                X=data.X,
+                Y=data.Y,
+                distribution=distribution,
+                covariate_names=datasets[0].truth_beta.index,
                 n_bins=n_bins,
                 seed=seed + 2000 * domain_idx + variant_idx,
             )
             metadata = datasets[0].metadata
-            row: dict[str, object] = {
-                "distribution": distribution,
-                "simulation_domain": simulation_domain,
-                "ood_regime": ood_regime,
-                "posterior_variant": posterior_variant,
-                "simulation_covariate_mean": metadata.get("covariate_mean"),
-                "simulation_covariate_scale": metadata.get("covariate_scale"),
-                "simulation_beta_scale": metadata.get("beta_scale"),
-            }
-            row.update(diagnostics.report_fields())
-            rows.append(row)
+            for stratum in diagnostics_by_stratum:
+                row: dict[str, object] = {
+                    "distribution": distribution,
+                    "simulation_domain": simulation_domain,
+                    "ood_regime": ood_regime,
+                    "posterior_variant": posterior_variant,
+                    "simulation_covariate_mean": metadata.get("covariate_mean"),
+                    "simulation_covariate_scale": metadata.get("covariate_scale"),
+                    "simulation_beta_scale": metadata.get("beta_scale"),
+                }
+                row.update(stratum.report_fields())
+                rows.append(row)
 
     in_distribution_rmse = {
-        str(row["posterior_variant"]): float(row["sbc_beta_mean_rmse"])
+        (
+            str(row["posterior_variant"]),
+            str(row["sbc_stratum_kind"]),
+            str(row["sbc_stratum_label"]),
+        ): float(row["sbc_beta_mean_rmse"])
         for row in rows
         if row["simulation_domain"] == "in_distribution"
     }
@@ -572,6 +606,7 @@ def _sbc_rows(
         str(row["posterior_variant"]): row
         for row in rows
         if row["simulation_domain"] == "in_distribution"
+        and row["sbc_stratum_kind"] == "overall"
     }
     if "uncalibrated" in in_distribution and "calibrated" in in_distribution:
         in_distribution["calibrated"].update(
@@ -583,8 +618,17 @@ def _sbc_rows(
     for row in rows:
         if row["simulation_domain"] != "ood":
             continue
-        baseline = in_distribution_rmse[str(row["posterior_variant"])]
-        row["ood_rmse_ratio_vs_in_distribution"] = float(row["sbc_beta_mean_rmse"]) / max(
+        baseline_key = (
+            str(row["posterior_variant"]),
+            str(row["sbc_stratum_kind"]),
+            str(row["sbc_stratum_label"]),
+        )
+        baseline = in_distribution_rmse.get(baseline_key)
+        if baseline is None:
+            continue
+        row["ood_rmse_ratio_vs_in_distribution"] = float(
+            row["sbc_beta_mean_rmse"]
+        ) / max(
             baseline,
             np.finfo(float).eps,
         )
@@ -598,7 +642,9 @@ def _write_dataset(dataset: FixedEffectDataset, output: Path) -> None:
     dataset.X.to_csv(data_dir / "X.csv")
     dataset.truth_beta.to_csv(data_dir / "truth_beta.csv")
     dataset.linear_predictor.to_csv(data_dir / "truth_linear_predictor.csv")
-    (output / "dataset_metadata.json").write_text(json.dumps(dataset.metadata, indent=2), encoding="utf-8")
+    (output / "dataset_metadata.json").write_text(
+        json.dumps(dataset.metadata, indent=2), encoding="utf-8"
+    )
 
 
 def _load_dataset(dataset_dir: Path, *, distribution: str) -> FixedEffectDataset:
@@ -607,7 +653,11 @@ def _load_dataset(dataset_dir: Path, *, distribution: str) -> FixedEffectDataset
     truth_beta = _read_csv(dataset_dir / "data" / "truth_beta.csv")
     linear = _read_csv(dataset_dir / "data" / "truth_linear_predictor.csv")
     metadata_path = dataset_dir / "dataset_metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {"distribution": distribution}
+    metadata = (
+        json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata_path.exists()
+        else {"distribution": distribution}
+    )
     return FixedEffectDataset(
         Y=Y,
         X=X,
@@ -670,7 +720,9 @@ def _comparison_rows(
     )
     calibrated_row["posterior_variant"] = "calibrated"
     if distribution == "poisson":
-        predictive_acceptance = poisson_predictive_acceptance(uncalibrated_row, calibrated_row)
+        predictive_acceptance = poisson_predictive_acceptance(
+            uncalibrated_row, calibrated_row
+        )
         calibrated_row.update(predictive_acceptance)
         calibrated_sbc = next(
             (
@@ -678,6 +730,7 @@ def _comparison_rows(
                 for row in sbc_rows
                 if row.get("simulation_domain") == "in_distribution"
                 and row.get("posterior_variant") == "calibrated"
+                and row.get("sbc_stratum_kind") == "overall"
             ),
             None,
         )

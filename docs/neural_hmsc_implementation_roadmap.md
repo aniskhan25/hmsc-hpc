@@ -858,8 +858,16 @@ docs/neural_hmsc_conditional_calibration_YYYY-MM-DD.md
 
 Status:
 
-- Next active milestone.
-- Design and implementation have not started.
+- Active milestone.
+- Implemented mask-aware coefficient SBC diagnostics and stratified report rows
+  for prevalence, coefficient identity, and expected design-information
+  quantiles.
+- Integrated stratified rows into the general in-domain/OOD benchmark and the
+  Whittaker shape-matched SBC workflow. Qualification remains tied to the
+  `overall` row.
+- Next substep: run the global scalar baseline across multiple seeds and OOD
+  regimes, then use the observed stratum failures to lock conditional
+  calibrator features and architecture.
 
 ## Testing Strategy
 

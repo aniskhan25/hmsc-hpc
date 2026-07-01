@@ -146,6 +146,14 @@ shape `replicates x draws x covariates x species` and matching simulated truths.
 It returns JSON-ready metadata and flat report fields for rank uniformity,
 tail behavior, posterior-mean RMSE, and 80/90/95 percent coverage.
 
+`beta_sbc_stratified_diagnostics(samples, truth, X=..., Y=...,
+distribution=...)` adds one overall row plus prevalence, named-coefficient, and
+expected design-information rows. Prevalence is computed per simulated
+dataset/species. Information is evaluated at the raw posterior mean so it does
+not depend on simulated truth at deployment. Qualification code must continue
+to select the `sbc_stratum_kind == "overall"` row; stratified rows diagnose
+where calibration fails and guide conditional calibration.
+
 The benchmark runner generates independent in-domain simulations plus named
 `covariate_shift`, `effect_size_shift`, and `combined_shift` datasets. It writes
 `neural_hmsc_sbc_diagnostics.{csv,json,md}` and per-distribution
