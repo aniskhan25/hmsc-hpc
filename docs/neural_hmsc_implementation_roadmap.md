@@ -865,9 +865,20 @@ Status:
 - Integrated stratified rows into the general in-domain/OOD benchmark and the
   Whittaker shape-matched SBC workflow. Qualification remains tied to the
   `overall` row.
-- Next substep: run the global scalar baseline across multiple seeds and OOD
-  regimes, then use the observed stratum failures to lock conditional
-  calibrator features and architecture.
+- Completed the five-seed global scalar baseline on LUMI for in-domain,
+  covariate-shift, effect-size-shift, and combined-shift simulations. The
+  detailed record is `docs/neural_hmsc_stratified_sbc_baseline_2026-07-01.md`.
+- Scalar calibration produced in-domain 95% coverage `0.9420 +/- 0.0034`, but
+  rank-variance error was `0.0243 +/- 0.0015` and failed the `0.015` gate in
+  all five seeds. Rare and intermediate prevalence rank-mean errors were
+  `0.1070` and `0.0680`; rare coverage passed in only one seed.
+- Locked the first conditional architecture as a regularized structured
+  residual scale head over prevalence, raw posterior scale, coefficient
+  identity, expected design information, and a prevalence-by-coefficient
+  interaction. Posterior means remain fixed and covariance scaling uses
+  `D Sigma D`.
+- Next substep: implement the conditional calibrator and compare it against the
+  frozen five-seed scalar baseline under the same in-domain and OOD gates.
 
 ## Testing Strategy
 
