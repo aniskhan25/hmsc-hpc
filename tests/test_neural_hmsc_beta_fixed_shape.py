@@ -1,11 +1,12 @@
 import numpy as np
+import pandas as pd
 import pytest
 import tensorflow as tf
 
 from pyhmsc.neural.evaluation import evaluate_beta_posterior, predict_beta_posterior
 from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
-from pyhmsc.neural.simulator import simulate_fixed_effect_dataset
+from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
 from pyhmsc.neural.train import fixed_shape_training_data
 
 
@@ -100,9 +101,28 @@ def test_fixed_shape_training_data_rejects_mixed_shapes():
         simulate_fixed_effect_dataset(n_sites=20, n_species=2, distribution="normal", seed=2),
     ]
 
-    try:
+    with pytest.raises(ValueError, match="same fixed shapes"):
         fixed_shape_training_data(datasets)
-    except ValueError as exc:
-        assert "same fixed shapes" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for mixed fixed-shape training data")
+
+
+def test_fixed_shape_training_data_supports_named_single_covariate():
+    sites = [f"site_{idx}" for idx in range(4)]
+    species = ["sp1", "sp2"]
+    dataset = FixedEffectDataset(
+        Y=pd.DataFrame(np.zeros((4, 2)), index=sites, columns=species),
+        X=pd.DataFrame({"TMG": [-1.0, 0.0, 0.5, 1.0]}, index=sites),
+        truth_beta=pd.DataFrame(
+            [[-1.0, -0.5], [0.25, -0.25]],
+            index=["Intercept", "TMG"],
+            columns=species,
+        ),
+        linear_predictor=pd.DataFrame(np.zeros((4, 2)), index=sites, columns=species),
+        metadata={"distribution": "probit"},
+    )
+
+    data = fixed_shape_training_data([dataset])
+
+    assert data.X.shape == (1, 4, 2)
+    np.testing.assert_allclose(data.X[0, :, 0], 1.0)
+    np.testing.assert_allclose(data.X[0, :, 1], dataset.X["TMG"])
+    np.testing.assert_allclose(data.Beta[0], dataset.truth_beta)

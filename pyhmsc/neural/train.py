@@ -84,15 +84,25 @@ def fixed_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> FixedSh
     Y_arrays = []
     beta_arrays = []
     expected_shape = None
+    expected_covariates = None
     for dataset in datasets:
-        design = np.column_stack(
-            [
-                np.ones(len(dataset.X), dtype=np.float32),
-                dataset.X[["x1", "x2"]].to_numpy(dtype=np.float32),
-            ]
-        )
+        covariates = [str(name) for name in dataset.truth_beta.index]
+        if not covariates or covariates[0] != "Intercept" or "Intercept" in covariates[1:]:
+            raise ValueError("truth_beta must contain one leading Intercept row")
+        if expected_covariates is None:
+            expected_covariates = covariates
+        elif covariates != expected_covariates:
+            raise ValueError("all datasets must use the same fixed-effect covariate names")
+        predictors = covariates[1:]
+        missing = [name for name in predictors if name not in dataset.X.columns]
+        if missing:
+            raise ValueError(f"dataset X is missing fixed-effect covariates: {missing}")
+        columns = [np.ones(len(dataset.X), dtype=np.float32)]
+        if predictors:
+            columns.append(dataset.X[predictors].to_numpy(dtype=np.float32))
+        design = np.column_stack(columns)
         Y = dataset.Y.to_numpy(dtype=np.float32)
-        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
+        beta = dataset.truth_beta.loc[covariates].to_numpy(dtype=np.float32)
         shape = (design.shape, Y.shape, beta.shape)
         if expected_shape is None:
             expected_shape = shape

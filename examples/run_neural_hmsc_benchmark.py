@@ -38,11 +38,13 @@ import tensorflow as tf
 from pyhmsc.neural.benchmark import (
     compare_beta_posteriors,
     poisson_predictive_acceptance,
+    sbc_calibration_acceptance,
     write_benchmark_report,
     write_sbc_report,
 )
 from pyhmsc.neural.calibration import (
     BetaScaleCalibration,
+    apply_beta_predictive_calibration,
     apply_beta_scale_calibration,
     fit_beta_scale_calibration,
 )
@@ -159,16 +161,23 @@ def main() -> None:
         dataset_dir.mkdir(parents=True, exist_ok=True)
         record_path = dataset_dir / "benchmark_record.json"
         neural_path = dataset_dir / "neural_posterior.h5"
+        predictive_path = dataset_dir / "neural_predictive_distribution.h5"
         uncalibrated_path = dataset_dir / "neural_posterior_uncalibrated.h5"
         mcmc_path = dataset_dir / "mcmc_reference.h5"
         checkpoint_dir = dataset_dir / "neural_checkpoint"
         sbc_path = dataset_dir / "sbc_diagnostics.json"
-        if args.skip_existing and neural_path.exists() and uncalibrated_path.exists():
+        if (
+            args.skip_existing
+            and neural_path.exists()
+            and predictive_path.exists()
+            and uncalibrated_path.exists()
+        ):
             record = _load_record(record_path)
             if record is None:
                 record = {
                     "distribution": distribution,
                     "neural_posterior": str(neural_path),
+                    "neural_predictive_distribution": str(predictive_path),
                     "neural_posterior_uncalibrated": str(uncalibrated_path),
                     "neural_checkpoint": str(checkpoint_dir),
                     "data_dir": str(dataset_dir),
@@ -189,19 +198,7 @@ def main() -> None:
                 )
                 record["mcmc_posterior"] = str(mcmc_path)
                 record["mcmc_wall_time_seconds"] = mcmc_seconds
-            if args.run_mcmc_reference and mcmc_path.exists():
-                test = _load_dataset(dataset_dir, distribution=distribution)
-                rows.extend(
-                    _comparison_rows(
-                        distribution=distribution,
-                        test=test,
-                        neural_path=neural_path,
-                        uncalibrated_path=uncalibrated_path,
-                        mcmc_path=mcmc_path,
-                        neural_seconds=record.get("neural_inference_wall_time_seconds"),
-                        mcmc_seconds=record.get("mcmc_wall_time_seconds"),
-                    )
-                )
+            distribution_sbc_rows = []
             if args.sbc_datasets > 0:
                 if sbc_path.exists():
                     distribution_sbc_rows = json.loads(sbc_path.read_text(encoding="utf-8"))
@@ -234,6 +231,21 @@ def main() -> None:
                     )
                 sbc_rows.extend(distribution_sbc_rows)
                 record["sbc_diagnostics"] = str(sbc_path)
+            if args.run_mcmc_reference and mcmc_path.exists():
+                test = _load_dataset(dataset_dir, distribution=distribution)
+                rows.extend(
+                    _comparison_rows(
+                        distribution=distribution,
+                        test=test,
+                        neural_path=neural_path,
+                        predictive_path=predictive_path,
+                        uncalibrated_path=uncalibrated_path,
+                        mcmc_path=mcmc_path,
+                        neural_seconds=record.get("neural_inference_wall_time_seconds"),
+                        mcmc_seconds=record.get("mcmc_wall_time_seconds"),
+                        sbc_rows=distribution_sbc_rows,
+                    )
+                )
             manifest["datasets"].append(record)  # type: ignore[index]
             record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
             continue
@@ -296,6 +308,7 @@ def main() -> None:
         if args.disable_calibration:
             calibration_result = None
             posterior = uncalibrated_posterior
+            predictive_posterior = uncalibrated_posterior
         else:
             calibration_data = fixed_shape_training_data(calibration)
             calibration_posterior = engine.predict_beta_posterior(calibration_data)
@@ -313,6 +326,11 @@ def main() -> None:
                 calibration_result,
                 distribution=distribution,
             )
+            predictive_posterior = apply_beta_predictive_calibration(
+                uncalibrated_posterior,
+                calibration_result,
+                distribution=distribution,
+            )
         neural_path = write_beta_posterior_hdf5(
             posterior,
             neural_path,
@@ -323,7 +341,26 @@ def main() -> None:
             chains=args.neural_chains,
             draws=args.neural_draws,
             seed=args.model_seed + suite_idx + 100,
-            metadata={"benchmark": {"script": Path(__file__).name, "distribution": distribution}},
+            metadata={
+                "benchmark": {"script": Path(__file__).name, "distribution": distribution},
+                "artifact_role": "coefficient_posterior",
+            },
+            calibration=calibration_result,
+        )
+        predictive_path = write_beta_posterior_hdf5(
+            predictive_posterior,
+            predictive_path,
+            covariate_names=list(test.truth_beta.index),
+            species_names=list(test.truth_beta.columns),
+            distribution=distribution,
+            formula="~ x1 + x2",
+            chains=args.neural_chains,
+            draws=args.neural_draws,
+            seed=args.model_seed + suite_idx + 200,
+            metadata={
+                "benchmark": {"script": Path(__file__).name, "distribution": distribution},
+                "artifact_role": "predictive_only",
+            },
             calibration=calibration_result,
         )
         neural_seconds = time.perf_counter() - start
@@ -353,6 +390,7 @@ def main() -> None:
             "posterior_family": engine.model.posterior_family,
             "model_seed": args.model_seed + suite_idx,
             "neural_posterior": str(neural_path),
+            "neural_predictive_distribution": str(predictive_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
             "neural_checkpoint": str(checkpoint_dir),
             "data_dir": str(dataset_dir),
@@ -383,10 +421,12 @@ def main() -> None:
                     distribution=distribution,
                     test=test,
                     neural_path=neural_path,
+                    predictive_path=predictive_path,
                     uncalibrated_path=uncalibrated_path,
                     mcmc_path=mcmc_path,
                     neural_seconds=neural_seconds,
                     mcmc_seconds=mcmc_seconds,
+                    sbc_rows=distribution_sbc_rows,
                 )
             )
             record["mcmc_posterior"] = str(mcmc_path)
@@ -528,6 +568,18 @@ def _sbc_rows(
         for row in rows
         if row["simulation_domain"] == "in_distribution"
     }
+    in_distribution = {
+        str(row["posterior_variant"]): row
+        for row in rows
+        if row["simulation_domain"] == "in_distribution"
+    }
+    if "uncalibrated" in in_distribution and "calibrated" in in_distribution:
+        in_distribution["calibrated"].update(
+            sbc_calibration_acceptance(
+                in_distribution["uncalibrated"],
+                in_distribution["calibrated"],
+            )
+        )
     for row in rows:
         if row["simulation_domain"] != "ood":
             continue
@@ -576,10 +628,12 @@ def _comparison_rows(
     distribution: str,
     test: FixedEffectDataset,
     neural_path: Path,
+    predictive_path: Path,
     uncalibrated_path: Path,
     mcmc_path: Path,
     neural_seconds: float | None,
     mcmc_seconds: float | None,
+    sbc_rows: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     poisson_eta_clip = None
     if distribution == "poisson":
@@ -612,10 +666,43 @@ def _comparison_rows(
         Y=test.Y,
         formula="~ x1 + x2",
         poisson_eta_clip=poisson_eta_clip,
+        neural_predictive_fit=HmscFit.from_file(predictive_path),
     )
     calibrated_row["posterior_variant"] = "calibrated"
     if distribution == "poisson":
-        calibrated_row.update(poisson_predictive_acceptance(uncalibrated_row, calibrated_row))
+        predictive_acceptance = poisson_predictive_acceptance(uncalibrated_row, calibrated_row)
+        calibrated_row.update(predictive_acceptance)
+        calibrated_sbc = next(
+            (
+                row
+                for row in sbc_rows
+                if row.get("simulation_domain") == "in_distribution"
+                and row.get("posterior_variant") == "calibrated"
+            ),
+            None,
+        )
+        sbc_passed = False
+        if calibrated_sbc is not None:
+            for key in [
+                "sbc_beta_interval_coverage_95",
+                "sbc_rank_mean",
+                "sbc_rank_variance",
+                "sbc_expected_rank_mean",
+                "sbc_expected_rank_variance",
+                "sbc_coverage_error_uncalibrated",
+                "sbc_coverage_error_calibrated",
+                "sbc_rank_mean_error_uncalibrated",
+                "sbc_rank_mean_error_calibrated",
+                "sbc_rank_variance_error_uncalibrated",
+                "sbc_rank_variance_error_calibrated",
+                "sbc_acceptance_passed",
+            ]:
+                if key in calibrated_sbc:
+                    calibrated_row[key] = calibrated_sbc[key]
+            sbc_passed = bool(calibrated_sbc.get("sbc_acceptance_passed", False))
+        calibrated_row["qualification_acceptance_passed"] = bool(
+            predictive_acceptance["predictive_acceptance_passed"] and sbc_passed
+        )
     return [uncalibrated_row, calibrated_row]
 
 

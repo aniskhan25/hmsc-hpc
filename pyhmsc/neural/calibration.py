@@ -15,7 +15,7 @@ from pyhmsc.neural.posterior_heads import BetaPosterior
 
 @dataclass(frozen=True)
 class BetaScaleCalibration:
-    """Post-hoc scale calibration for diagonal Normal ``Beta`` posteriors."""
+    """Separate coefficient-posterior and predictive scale calibration."""
 
     scale_multiplier: float
     nominal_level: float
@@ -27,6 +27,8 @@ class BetaScaleCalibration:
     n_species: int | None = None
     method: str = "temperature_scale"
     coverage_scale_multiplier: float | None = None
+    predictive_scale_multiplier: float | None = None
+    predictive_method: str | None = None
     predictive_score_uncalibrated: float | None = None
     predictive_score_calibrated: float | None = None
     predictive_rate_rmse_uncalibrated: float | None = None
@@ -36,8 +38,19 @@ class BetaScaleCalibration:
     def from_metadata(cls, metadata: dict[str, Any]) -> "BetaScaleCalibration":
         """Reconstruct a calibrator from stored posterior metadata."""
         domain = metadata.get("domain", {})
+        semantics_version = int(metadata.get("semantics_version", 1))
+        stored_method = str(metadata.get("method", "temperature_scale"))
+        stored_multiplier = float(metadata["scale_multiplier"])
+        coverage_multiplier = _optional_float(metadata, "coverage_scale_multiplier")
+        predictive_multiplier = _optional_float(metadata, "predictive_scale_multiplier")
+        predictive_method = metadata.get("predictive_method")
+        if semantics_version < 2 and stored_method == "poisson_balanced_score_scale":
+            predictive_multiplier = stored_multiplier
+            predictive_method = stored_method
+            stored_multiplier = coverage_multiplier or stored_multiplier
+            stored_method = "temperature_scale"
         return cls(
-            scale_multiplier=float(metadata["scale_multiplier"]),
+            scale_multiplier=stored_multiplier,
             nominal_level=float(metadata["nominal_level"]),
             uncalibrated_coverage=float(metadata["uncalibrated_coverage"]),
             calibrated_coverage=float(metadata["calibrated_coverage"]),
@@ -45,8 +58,10 @@ class BetaScaleCalibration:
             distribution=domain.get("distribution"),
             n_covariates=None if domain.get("n_covariates") is None else int(domain["n_covariates"]),
             n_species=None if domain.get("n_species") is None else int(domain["n_species"]),
-            method=str(metadata.get("method", "temperature_scale")),
-            coverage_scale_multiplier=_optional_float(metadata, "coverage_scale_multiplier"),
+            method=stored_method,
+            coverage_scale_multiplier=coverage_multiplier,
+            predictive_scale_multiplier=predictive_multiplier,
+            predictive_method=None if predictive_method is None else str(predictive_method),
             predictive_score_uncalibrated=_optional_float(metadata, "predictive_score_uncalibrated"),
             predictive_score_calibrated=_optional_float(metadata, "predictive_score_calibrated"),
             predictive_rate_rmse_uncalibrated=_optional_float(metadata, "predictive_rate_rmse_uncalibrated"),
@@ -81,6 +96,7 @@ class BetaScaleCalibration:
     def to_metadata(self) -> dict[str, Any]:
         """Return JSON-serializable calibration metadata."""
         metadata = {
+            "semantics_version": 2,
             "method": self.method,
             "parameter": "Beta",
             "scale_multiplier": float(self.scale_multiplier),
@@ -96,6 +112,10 @@ class BetaScaleCalibration:
         }
         if self.coverage_scale_multiplier is not None:
             metadata["coverage_scale_multiplier"] = float(self.coverage_scale_multiplier)
+        if self.predictive_scale_multiplier is not None:
+            metadata["predictive_scale_multiplier"] = float(self.predictive_scale_multiplier)
+        if self.predictive_method is not None:
+            metadata["predictive_method"] = self.predictive_method
         if self.predictive_score_uncalibrated is not None:
             metadata["predictive_score_uncalibrated"] = float(self.predictive_score_uncalibrated)
         if self.predictive_score_calibrated is not None:
@@ -157,8 +177,8 @@ def fit_beta_scale_calibration(
     selected = standardized[mask]
     coverage_multiplier = float(np.quantile(selected, nominal_level) / z_value)
     coverage_multiplier = max(coverage_multiplier, float(min_multiplier))
-    multiplier = coverage_multiplier
-    method = "temperature_scale"
+    predictive_multiplier = None
+    predictive_method = None
     predictive_score_uncalibrated = None
     predictive_score_calibrated = None
     predictive_rate_rmse_uncalibrated = None
@@ -180,7 +200,7 @@ def fit_beta_scale_calibration(
             else np.asarray(predictive_Y, dtype=float)
         )
         (
-            multiplier,
+            predictive_multiplier,
             predictive_score_uncalibrated,
             predictive_score_calibrated,
             predictive_rate_rmse_uncalibrated,
@@ -198,11 +218,11 @@ def fit_beta_scale_calibration(
             max_rate_rmse_ratio=max_predictive_rate_rmse_ratio,
             max_log_score_ratio=max_predictive_log_score_ratio,
         )
-        method = "poisson_balanced_score_scale"
+        predictive_method = "poisson_balanced_score_scale"
     uncalibrated_coverage = _coverage(mean, scale, truth, nominal_level, mask)
-    calibrated_coverage = _coverage(mean, scale * multiplier, truth, nominal_level, mask)
+    calibrated_coverage = _coverage(mean, scale * coverage_multiplier, truth, nominal_level, mask)
     return BetaScaleCalibration(
-        scale_multiplier=multiplier,
+        scale_multiplier=coverage_multiplier,
         nominal_level=float(nominal_level),
         uncalibrated_coverage=uncalibrated_coverage,
         calibrated_coverage=calibrated_coverage,
@@ -210,8 +230,10 @@ def fit_beta_scale_calibration(
         distribution=None if distribution is None else str(distribution),
         n_covariates=int(mean.shape[1]),
         n_species=int(mean.shape[2]),
-        method=method,
+        method="temperature_scale",
         coverage_scale_multiplier=coverage_multiplier,
+        predictive_scale_multiplier=predictive_multiplier,
+        predictive_method=predictive_method,
         predictive_score_uncalibrated=predictive_score_uncalibrated,
         predictive_score_calibrated=predictive_score_calibrated,
         predictive_rate_rmse_uncalibrated=predictive_rate_rmse_uncalibrated,
@@ -225,7 +247,40 @@ def apply_beta_scale_calibration(
     *,
     distribution: str | None = None,
 ) -> BetaPosterior:
-    """Return a calibrated posterior with unchanged means and rescaled scales."""
+    """Return the coefficient-calibrated Beta posterior."""
+    return _apply_beta_multiplier(
+        posterior,
+        calibration,
+        multiplier=calibration.scale_multiplier,
+        distribution=distribution,
+    )
+
+
+def apply_beta_predictive_calibration(
+    posterior: BetaPosterior,
+    calibration: BetaScaleCalibration,
+    *,
+    distribution: str | None = None,
+) -> BetaPosterior:
+    """Return a predictive-only surrogate without changing Beta semantics."""
+    multiplier = calibration.predictive_scale_multiplier
+    if multiplier is None:
+        multiplier = calibration.scale_multiplier
+    return _apply_beta_multiplier(
+        posterior,
+        calibration,
+        multiplier=multiplier,
+        distribution=distribution,
+    )
+
+
+def _apply_beta_multiplier(
+    posterior: BetaPosterior,
+    calibration: BetaScaleCalibration,
+    *,
+    multiplier: float,
+    distribution: str | None,
+) -> BetaPosterior:
     mean = tf.convert_to_tensor(posterior.mean)
     scale = tf.convert_to_tensor(posterior.scale)
     if mean.shape.rank != 3:
@@ -235,11 +290,11 @@ def apply_beta_scale_calibration(
         n_covariates=int(mean.shape[1]),
         n_species=int(mean.shape[2]),
     )
-    multiplier = tf.cast(calibration.scale_multiplier, scale.dtype)
+    scale_multiplier = tf.cast(multiplier, scale.dtype)
     scale_tril = None
     if posterior.scale_tril is not None:
-        scale_tril = tf.convert_to_tensor(posterior.scale_tril) * multiplier
-    return BetaPosterior(mean=mean, scale=scale * multiplier, scale_tril=scale_tril)
+        scale_tril = tf.convert_to_tensor(posterior.scale_tril) * scale_multiplier
+    return BetaPosterior(mean=mean, scale=scale * scale_multiplier, scale_tril=scale_tril)
 
 
 def calibration_metadata(calibration: BetaScaleCalibration | dict[str, Any]) -> dict[str, Any]:

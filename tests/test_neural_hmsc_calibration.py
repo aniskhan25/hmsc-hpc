@@ -2,6 +2,8 @@ import numpy as np
 import tensorflow as tf
 
 from pyhmsc.neural.calibration import (
+    BetaScaleCalibration,
+    apply_beta_predictive_calibration,
     apply_beta_scale_calibration,
     fit_beta_scale_calibration,
 )
@@ -147,9 +149,50 @@ def test_poisson_calibration_selects_scale_by_predictive_log_score():
         predictive_seed=7,
     )
 
-    assert calibration.method == "poisson_balanced_score_scale"
+    assert calibration.method == "temperature_scale"
+    assert calibration.predictive_method == "poisson_balanced_score_scale"
     assert calibration.coverage_scale_multiplier > 1.0
-    assert calibration.scale_multiplier < calibration.coverage_scale_multiplier
+    assert calibration.scale_multiplier == calibration.coverage_scale_multiplier
+    assert calibration.predictive_scale_multiplier < calibration.scale_multiplier
     assert calibration.predictive_score_calibrated <= 1.10 * calibration.predictive_score_uncalibrated
     assert calibration.predictive_rate_rmse_calibrated <= 1.25 * calibration.predictive_rate_rmse_uncalibrated
-    assert calibration.calibrated_coverage < calibration.nominal_level
+    assert calibration.calibrated_coverage >= calibration.uncalibrated_coverage
+
+    coefficient_posterior = apply_beta_scale_calibration(
+        posterior,
+        calibration,
+        distribution="poisson",
+    )
+    predictive_only = apply_beta_predictive_calibration(
+        posterior,
+        calibration,
+        distribution="poisson",
+    )
+    np.testing.assert_allclose(
+        coefficient_posterior.scale.numpy(),
+        posterior.scale.numpy() * calibration.scale_multiplier,
+    )
+    np.testing.assert_allclose(
+        predictive_only.scale.numpy(),
+        posterior.scale.numpy() * calibration.predictive_scale_multiplier,
+    )
+
+
+def test_legacy_poisson_metadata_does_not_replace_beta_uncertainty_scale():
+    calibration = BetaScaleCalibration.from_metadata(
+        {
+            "method": "poisson_balanced_score_scale",
+            "scale_multiplier": 0.35,
+            "coverage_scale_multiplier": 1.2,
+            "nominal_level": 0.95,
+            "uncalibrated_coverage": 0.9,
+            "calibrated_coverage": 0.5,
+            "n_observations": 20,
+            "domain": {"distribution": "poisson", "n_covariates": 1, "n_species": 1},
+        }
+    )
+
+    assert calibration.scale_multiplier == 1.2
+    assert calibration.predictive_scale_multiplier == 0.35
+    assert calibration.method == "temperature_scale"
+    assert calibration.predictive_method == "poisson_balanced_score_scale"

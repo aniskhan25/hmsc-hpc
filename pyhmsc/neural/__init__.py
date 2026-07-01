@@ -43,6 +43,7 @@ __all__ = [
     "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
     "BetaScaleCalibration",
+    "apply_beta_predictive_calibration",
     "apply_beta_scale_calibration",
     "beta_sbc_rank_diagnostics",
     "calibration_metadata",
@@ -226,12 +227,14 @@ def __getattr__(name: str) -> object:
         return write_spatial_latent_posterior_hdf5
     if name in {
         "BetaScaleCalibration",
+        "apply_beta_predictive_calibration",
         "apply_beta_scale_calibration",
         "calibration_metadata",
         "fit_beta_scale_calibration",
     }:
         from pyhmsc.neural.calibration import (
             BetaScaleCalibration,
+            apply_beta_predictive_calibration,
             apply_beta_scale_calibration,
             calibration_metadata,
             fit_beta_scale_calibration,
@@ -239,6 +242,7 @@ def __getattr__(name: str) -> object:
 
         return {
             "BetaScaleCalibration": BetaScaleCalibration,
+            "apply_beta_predictive_calibration": apply_beta_predictive_calibration,
             "apply_beta_scale_calibration": apply_beta_scale_calibration,
             "calibration_metadata": calibration_metadata,
             "fit_beta_scale_calibration": fit_beta_scale_calibration,

@@ -482,20 +482,32 @@ Post-milestone Poisson hardening replaces the public fixed-effect diagonal
 posterior for Poisson with a per-species full-covariance Normal parameterized
 by Cholesky factors. Gaussian and probit retain diagonal posteriors after scaled
 validation showed a Gaussian regression under universal full covariance.
-Poisson calibration records the separate multiplier required for
-nominal coefficient coverage, then selects the applied multiplier by balancing
-independent simulation-replicate log score against truth-rate RMSE. Benchmark
-reports include eta-clipping fractions and an explicit predictive acceptance
-result so finite but degraded calibrated predictions cannot be promoted.
+Poisson calibration now keeps two explicit semantics. The coefficient
+`scale_multiplier` targets nominal Beta coverage and is the only multiplier
+written to `neural_posterior.h5`. A separate `predictive_scale_multiplier` is
+selected by balancing independent simulation-replicate log score against
+truth-rate RMSE and is written to a clearly labelled predictive-only artifact.
+It never replaces Beta uncertainty. Benchmark reports include eta-clipping,
+predictive acceptance, SBC non-degradation, and a combined qualification gate.
 
 Multi-seed qualification exposed Poisson sensitivity caused by applying the
 Gaussian raw-count ridge anchor to log-link data. The fixed-shape Poisson
 encoder now uses `log1p(Y)` response summaries and checkpoint version `0.2`.
 Across LUMI seeds 20260626 through 20260630, the calibrated Poisson predictive
 RMSE averaged 1.3616 versus 1.1897 for MCMC, with a worst neural-to-MCMC ratio
-of 1.287 and five of five acceptance checks passing. Before the encoder change,
+of 1.287 and five of five predictive checks passing. Those historical runs
+predate the SBC qualification gate and must not be described as fully
+qualified. Before the encoder change,
 the same seeds averaged 4.0748 with a worst ratio of 9.244. Gaussian and probit
 results were unchanged by the distribution-specific transform.
+
+Split-calibration validation on LUMI job `19637239` used the previously
+problematic seed 20260627. The coefficient multiplier was 1.507 and the
+predictive-only multiplier was 0.299. Independent SBC coverage improved from
+86.2% to 95.1%, with calibrated rank variance 0.067 versus the discrete-uniform
+expectation 0.083 and no rank-error degradation. Predictive RMSE improved from
+2.045 to 1.601 versus MCMC 1.515. Predictive acceptance, SBC acceptance, and
+combined qualification all passed.
 
 Candidate methods:
 
@@ -853,6 +865,14 @@ Mitigation:
 - randomize dimensions and priors
 - reserve out-of-distribution simulation regimes
 - benchmark on real-data validation projects
+
+The first real-data benchmark is recorded in
+`docs/neural_hmsc_whittaker_validation_2026-06-29.md`. LUMI job `19609057`
+completed a fixed-effect Whittaker plant holdout comparison. It found useful
+neural ranking performance and a 624x inference-only speedup, but also showed
+that scalar simulation calibration worsened real probability and richness
+metrics despite restoring nominal synthetic coverage. Calibrated neural draws
+must therefore remain experimental until calibration transfers to real data.
 
 Risk: latent factor targets are non-identifiable.
 

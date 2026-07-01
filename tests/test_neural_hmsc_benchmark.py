@@ -8,6 +8,7 @@ import pytest
 from pyhmsc.neural.benchmark import (
     compare_beta_posterior_files,
     poisson_predictive_acceptance,
+    sbc_calibration_acceptance,
     write_benchmark_report,
 )
 
@@ -176,6 +177,49 @@ def test_poisson_acceptance_requires_mcmc_relative_accuracy():
     assert result["predictive_rmse_ratio_vs_uncalibrated"] == 0.5
     assert result["predictive_rmse_ratio_vs_mcmc"] == 10.0
     assert result["predictive_acceptance_passed"] is False
+
+
+def test_sbc_acceptance_rejects_rank_variance_degradation():
+    uncalibrated = {
+        "sbc_expected_rank_mean": 0.5,
+        "sbc_expected_rank_variance": 1.0 / 12.0,
+        "sbc_rank_mean": 0.50,
+        "sbc_rank_variance": 0.085,
+        "sbc_beta_interval_coverage_95": 0.91,
+    }
+    calibrated = {
+        "sbc_expected_rank_mean": 0.5,
+        "sbc_expected_rank_variance": 1.0 / 12.0,
+        "sbc_rank_mean": 0.50,
+        "sbc_rank_variance": 0.16,
+        "sbc_beta_interval_coverage_95": 0.95,
+    }
+
+    result = sbc_calibration_acceptance(uncalibrated, calibrated)
+
+    assert result["sbc_coverage_error_calibrated"] < result["sbc_coverage_error_uncalibrated"]
+    assert result["sbc_acceptance_passed"] is False
+
+
+def test_predictive_only_fit_does_not_change_beta_posterior_metrics(tmp_path):
+    coefficient_samples = np.zeros((1, 4, 1, 1), dtype=float)
+    predictive_samples = np.ones((1, 4, 1, 1), dtype=float)
+    neural_path = _write_posterior(tmp_path / "neural.h5", coefficient_samples)
+    predictive_path = _write_posterior(tmp_path / "predictive.h5", predictive_samples)
+    mcmc_path = _write_posterior(tmp_path / "mcmc.h5", coefficient_samples)
+
+    row = compare_beta_posterior_files(
+        neural_posterior=neural_path,
+        neural_predictive_posterior=predictive_path,
+        mcmc_posterior=mcmc_path,
+        distribution="normal",
+        X=pd.DataFrame(index=["s1"]),
+        Y=pd.DataFrame({"sp1": [1.0]}, index=["s1"]),
+        formula="~ 1",
+    )
+
+    assert row["beta_mean_rmse_mcmc"] == pytest.approx(0.0)
+    assert row["neural_posterior_predictive_mean_rmse"] == pytest.approx(0.0)
 
 
 def test_write_benchmark_report_writes_csv_and_markdown(tmp_path):

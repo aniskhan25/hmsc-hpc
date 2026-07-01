@@ -62,6 +62,50 @@ def poisson_predictive_acceptance(
     }
 
 
+def sbc_calibration_acceptance(
+    uncalibrated_row: dict[str, Any],
+    calibrated_row: dict[str, Any],
+    *,
+    min_coverage_95: float = 0.90,
+    max_coverage_error_degradation: float = 0.025,
+    max_rank_mean_degradation: float = 0.025,
+    max_rank_variance_degradation: float = 0.01,
+) -> dict[str, float | bool]:
+    """Require coefficient calibration to preserve SBC rank behavior."""
+    nominal = 0.95
+    expected_mean = float(calibrated_row["sbc_expected_rank_mean"])
+    expected_variance = float(calibrated_row["sbc_expected_rank_variance"])
+    uncalibrated_coverage = float(uncalibrated_row["sbc_beta_interval_coverage_95"])
+    calibrated_coverage = float(calibrated_row["sbc_beta_interval_coverage_95"])
+    uncalibrated_coverage_error = abs(uncalibrated_coverage - nominal)
+    calibrated_coverage_error = abs(calibrated_coverage - nominal)
+    uncalibrated_mean_error = abs(float(uncalibrated_row["sbc_rank_mean"]) - expected_mean)
+    calibrated_mean_error = abs(float(calibrated_row["sbc_rank_mean"]) - expected_mean)
+    uncalibrated_variance_error = abs(
+        float(uncalibrated_row["sbc_rank_variance"]) - expected_variance
+    )
+    calibrated_variance_error = abs(
+        float(calibrated_row["sbc_rank_variance"]) - expected_variance
+    )
+    passed = bool(
+        calibrated_coverage >= min_coverage_95
+        and calibrated_coverage_error
+        <= uncalibrated_coverage_error + max_coverage_error_degradation
+        and calibrated_mean_error <= uncalibrated_mean_error + max_rank_mean_degradation
+        and calibrated_variance_error
+        <= uncalibrated_variance_error + max_rank_variance_degradation
+    )
+    return {
+        "sbc_coverage_error_uncalibrated": uncalibrated_coverage_error,
+        "sbc_coverage_error_calibrated": calibrated_coverage_error,
+        "sbc_rank_mean_error_uncalibrated": uncalibrated_mean_error,
+        "sbc_rank_mean_error_calibrated": calibrated_mean_error,
+        "sbc_rank_variance_error_uncalibrated": uncalibrated_variance_error,
+        "sbc_rank_variance_error_calibrated": calibrated_variance_error,
+        "sbc_acceptance_passed": passed,
+    }
+
+
 def load_truth_beta(path: str | Path) -> pd.DataFrame:
     """Load a benchmark ``truth_beta.csv`` file."""
     return pd.read_csv(path, index_col=0)
@@ -81,6 +125,7 @@ def compare_beta_posteriors(
     Y: pd.DataFrame | np.ndarray | None = None,
     formula: str | None = None,
     poisson_eta_clip: tuple[float, float] | None = None,
+    neural_predictive_fit: HmscFit | None = None,
 ) -> dict[str, Any]:
     """Compare a neural ``Beta`` posterior against an MCMC reference posterior.
 
@@ -91,10 +136,20 @@ def compare_beta_posteriors(
     _validate_levels(credible_levels)
     neural_samples = np.asarray(neural_fit.beta_samples(), dtype=float)
     mcmc_samples = np.asarray(mcmc_fit.beta_samples(), dtype=float)
+    neural_predictive_samples = (
+        neural_samples
+        if neural_predictive_fit is None
+        else np.asarray(neural_predictive_fit.beta_samples(), dtype=float)
+    )
     if neural_samples.shape[2:] != mcmc_samples.shape[2:]:
         raise ValueError(
             "neural and MCMC Beta samples must share covariate/species shape; "
             f"got {neural_samples.shape[2:]} and {mcmc_samples.shape[2:]}"
+        )
+    if neural_predictive_samples.shape[2:] != neural_samples.shape[2:]:
+        raise ValueError(
+            "predictive-only neural samples must match the coefficient posterior shape; "
+            f"got {neural_predictive_samples.shape[2:]} and {neural_samples.shape[2:]}"
         )
 
     distribution = distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
@@ -158,7 +213,7 @@ def compare_beta_posteriors(
         row.update(
             _predictive_metrics(
                 "neural",
-                neural_samples,
+                neural_predictive_samples,
                 X=X,
                 Y=Y,
                 formula=predictive_formula,
@@ -195,6 +250,7 @@ def compare_beta_posterior_files(
     Y: str | Path | pd.DataFrame | np.ndarray | None = None,
     formula: str | None = None,
     poisson_eta_clip: tuple[float, float] | None = None,
+    neural_predictive_posterior: str | Path | None = None,
 ) -> dict[str, Any]:
     """Load posterior files and return one benchmark metric row."""
     truth = _read_optional_frame(truth_beta)
@@ -213,6 +269,11 @@ def compare_beta_posterior_files(
         Y=y_frame,
         formula=formula,
         poisson_eta_clip=poisson_eta_clip,
+        neural_predictive_fit=(
+            None
+            if neural_predictive_posterior is None
+            else HmscFit.from_file(neural_predictive_posterior)
+        ),
     )
 
 
@@ -422,6 +483,7 @@ def render_sbc_markdown(rows: pd.DataFrame | Sequence[dict[str, Any]]) -> str:
         "sbc_chi_square_pvalue",
         "sbc_beta_mean_rmse",
         "sbc_beta_interval_coverage_95",
+        "sbc_acceptance_passed",
         "ood_rmse_ratio_vs_in_distribution",
     ]
     columns = [column for column in preferred if column in frame.columns]
@@ -442,6 +504,7 @@ def render_sbc_markdown(rows: pd.DataFrame | Sequence[dict[str, Any]]) -> str:
         "- Tail imbalance and low chi-square p-values flag posterior bias or dispersion mismatch; they are diagnostics, not independent hypothesis tests.",
         "- OOD rows use the same fitted amortizer and calibration as the in-distribution row.",
         "- `ood_rmse_ratio_vs_in_distribution` measures posterior-mean degradation relative to the matching posterior variant.",
+        "- `sbc_acceptance_passed` requires coefficient calibration to preserve coverage and rank moments.",
         "",
     ]
     return "\n".join(lines)
@@ -473,6 +536,7 @@ def render_benchmark_markdown(
         "neural_calibration_method",
         "neural_calibration_scale_multiplier",
         "neural_calibration_coverage_scale_multiplier",
+        "neural_calibration_predictive_scale_multiplier",
         "neural_calibration_uncalibrated_coverage",
         "neural_calibration_calibrated_coverage",
         "neural_beta_mean_rmse_truth",
@@ -484,6 +548,8 @@ def render_benchmark_markdown(
         "predictive_rmse_ratio_vs_uncalibrated",
         "predictive_rmse_ratio_vs_mcmc",
         "predictive_acceptance_passed",
+        "sbc_acceptance_passed",
+        "qualification_acceptance_passed",
         "speedup_factor",
     ]
     columns = [column for column in preferred if column in frame.columns]
@@ -508,6 +574,8 @@ def render_benchmark_markdown(
         "- predictive RMSE uses posterior mean response predictions from fixed-effect `Beta` samples.",
         "- Poisson predictive metrics report explicit eta bounds when the declared benchmark model uses them.",
         "- `predictive_acceptance_passed` requires calibrated RMSE <= 1.25x uncalibrated RMSE, <= 2x MCMC RMSE, and <1% clipped eta draws.",
+        "- `sbc_acceptance_passed` requires coefficient coverage and rank moments not to degrade materially.",
+        "- `qualification_acceptance_passed` requires both predictive and SBC acceptance.",
         "",
     ]
     return "\n".join(lines)
@@ -726,9 +794,12 @@ def _calibration_report_fields(fit: HmscFit, *, prefix: str) -> dict[str, Any]:
         return {}
     fields: dict[str, Any] = {}
     for source, target in [
+        ("semantics_version", "semantics_version"),
         ("method", "method"),
         ("scale_multiplier", "scale_multiplier"),
         ("coverage_scale_multiplier", "coverage_scale_multiplier"),
+        ("predictive_scale_multiplier", "predictive_scale_multiplier"),
+        ("predictive_method", "predictive_method"),
         ("nominal_level", "nominal_level"),
         ("uncalibrated_coverage", "uncalibrated_coverage"),
         ("calibrated_coverage", "calibrated_coverage"),

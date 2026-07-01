@@ -118,6 +118,19 @@ ridge anchor. Gaussian and probit checkpoints retain identity response
 features. Because this changes checkpoint behavior, version `0.1` checkpoints
 are not loaded as version `0.2` models.
 
+## Coefficient and Predictive Calibration
+
+`apply_beta_scale_calibration` applies only the coefficient-coverage multiplier
+and returns the Beta posterior used for inference. For Poisson models,
+`apply_beta_predictive_calibration` may apply a separate predictive multiplier
+for response-scale scoring. Its output is a predictive-only surrogate and must
+not replace, or be reported as, Beta posterior uncertainty.
+
+Calibration metadata uses `semantics_version: 2`, with separate
+`scale_multiplier` and optional `predictive_scale_multiplier` fields. Loading
+legacy Poisson metadata recovers `coverage_scale_multiplier` as the Beta scale
+and preserves the old applied scale as predictive-only.
+
 ## SBC and OOD Diagnostics
 
 `beta_sbc_rank_diagnostics(samples, truth)` accepts posterior samples with
@@ -130,6 +143,10 @@ The benchmark runner generates independent in-domain simulations plus named
 `neural_hmsc_sbc_diagnostics.{csv,json,md}` and per-distribution
 `sbc_diagnostics.json` files. These are stress diagnostics: OOD calibration is
 measured, not assumed to retain in-domain validity.
+
+Benchmark qualification requires predictive acceptance and SBC
+non-degradation. A checkpoint that improves predictive RMSE while worsening
+coefficient coverage or rank behavior is not qualified.
 
 ## Compatibility Limits
 

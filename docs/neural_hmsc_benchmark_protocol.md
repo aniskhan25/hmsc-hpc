@@ -201,6 +201,16 @@ predictors outside those bounds. Calibration passes predictive acceptance only
 when calibrated RMSE is at most 1.25 times uncalibrated RMSE, at most twice the
 MCMC-reference RMSE, and fewer than 1% of neural predictors require clipping.
 
+Coefficient-posterior and predictive calibration are separate artifacts. The
+Beta posterior uses the coefficient-coverage multiplier. A Poisson
+predictive-only artifact may use a different multiplier for response-scale
+scoring, but must be labelled `predictive_only` and must not be interpreted as
+posterior uncertainty. Overall qualification requires both predictive
+acceptance and SBC acceptance. SBC acceptance requires at least 90% empirical
+95% coverage and no material degradation in coverage error, normalized-rank
+mean error, or normalized-rank variance error relative to the uncalibrated
+posterior.
+
 Initial simulation hyperparameters:
 
 ```text
