@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from scipy.special import ndtr
 
 from pyhmsc.neural.calibration import (
     BetaScaleCalibration,
@@ -43,7 +44,9 @@ def test_beta_scale_calibration_rescales_uncertainty_without_changing_mean():
 
 def test_beta_scale_calibration_rescales_full_covariance_cholesky():
     scale_tril = tf.constant([[[[0.2, 0.0], [0.1, 0.3]]]], dtype=tf.float32)
-    marginal = tf.transpose(tf.sqrt(tf.reduce_sum(tf.square(scale_tril), axis=-1)), [0, 2, 1])
+    marginal = tf.transpose(
+        tf.sqrt(tf.reduce_sum(tf.square(scale_tril), axis=-1)), [0, 2, 1]
+    )
     posterior = BetaPosterior(
         mean=tf.zeros((1, 2, 1), dtype=tf.float32),
         scale=marginal,
@@ -55,7 +58,9 @@ def test_beta_scale_calibration_rescales_full_covariance_cholesky():
         distribution="normal",
     )
 
-    calibrated = apply_beta_scale_calibration(posterior, calibration, distribution="normal")
+    calibrated = apply_beta_scale_calibration(
+        posterior, calibration, distribution="normal"
+    )
 
     np.testing.assert_allclose(
         calibrated.scale_tril.numpy(),
@@ -154,8 +159,14 @@ def test_poisson_calibration_selects_scale_by_predictive_log_score():
     assert calibration.coverage_scale_multiplier > 1.0
     assert calibration.scale_multiplier == calibration.coverage_scale_multiplier
     assert calibration.predictive_scale_multiplier < calibration.scale_multiplier
-    assert calibration.predictive_score_calibrated <= 1.10 * calibration.predictive_score_uncalibrated
-    assert calibration.predictive_rate_rmse_calibrated <= 1.25 * calibration.predictive_rate_rmse_uncalibrated
+    assert (
+        calibration.predictive_score_calibrated
+        <= 1.10 * calibration.predictive_score_uncalibrated
+    )
+    assert (
+        calibration.predictive_rate_rmse_calibrated
+        <= 1.25 * calibration.predictive_rate_rmse_uncalibrated
+    )
     assert calibration.calibrated_coverage >= calibration.uncalibrated_coverage
 
     coefficient_posterior = apply_beta_scale_calibration(
@@ -176,6 +187,54 @@ def test_poisson_calibration_selects_scale_by_predictive_log_score():
         predictive_only.scale.numpy(),
         posterior.scale.numpy() * calibration.predictive_scale_multiplier,
     )
+
+
+def test_probit_calibration_keeps_coefficient_and_predictive_scales_separate():
+    batch = 12
+    sites = 24
+    posterior = BetaPosterior(
+        mean=tf.zeros((batch, 1, 1), dtype=tf.float32),
+        scale=tf.ones((batch, 1, 1), dtype=tf.float32) * 0.2,
+    )
+    truth = np.linspace(-1.5, 1.5, batch, dtype=np.float32).reshape(batch, 1, 1)
+    X = np.ones((batch, sites, 1), dtype=np.float32)
+    probability = ndtr(truth[:, 0, 0])
+    rng = np.random.default_rng(9)
+    Y = rng.binomial(1, probability[:, None, None], size=(batch, sites, 1)).astype(
+        np.float32
+    )
+
+    calibration = fit_beta_scale_calibration(
+        posterior,
+        truth,
+        distribution="probit",
+        predictive_X=X,
+        predictive_Y=Y,
+        predictive_draws=256,
+        predictive_seed=10,
+    )
+
+    assert calibration.method == "temperature_scale"
+    assert calibration.predictive_method == "probit_balanced_score_scale"
+    assert calibration.scale_multiplier > 1.0
+    assert calibration.predictive_scale_multiplier is not None
+    assert calibration.predictive_probability_rmse_calibrated is not None
+    assert calibration.predictive_probability_rmse_uncalibrated is not None
+    coefficient = apply_beta_scale_calibration(
+        posterior, calibration, distribution="probit"
+    )
+    predictive = apply_beta_predictive_calibration(
+        posterior, calibration, distribution="probit"
+    )
+    np.testing.assert_allclose(
+        coefficient.scale.numpy(),
+        posterior.scale.numpy() * calibration.scale_multiplier,
+    )
+    np.testing.assert_allclose(
+        predictive.scale.numpy(),
+        posterior.scale.numpy() * calibration.predictive_scale_multiplier,
+    )
+    assert calibration.to_metadata()["semantics_version"] == 2
 
 
 def test_legacy_poisson_metadata_does_not_replace_beta_uncertainty_scale():

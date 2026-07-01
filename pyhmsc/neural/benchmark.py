@@ -62,6 +62,57 @@ def poisson_predictive_acceptance(
     }
 
 
+def occurrence_predictive_acceptance(
+    uncalibrated_row: dict[str, Any],
+    predictive_row: dict[str, Any],
+    mcmc_row: dict[str, Any],
+    *,
+    max_score_ratio_vs_uncalibrated: float = 1.10,
+    max_score_ratio_vs_mcmc: float = 2.0,
+    max_ecological_ratio_vs_uncalibrated: float = 1.25,
+) -> dict[str, float | bool]:
+    """Evaluate a predictive-only occurrence artifact on untouched observations."""
+    if max_score_ratio_vs_uncalibrated < 1.0:
+        raise ValueError("max_score_ratio_vs_uncalibrated must be at least 1")
+    if max_score_ratio_vs_mcmc < 1.0:
+        raise ValueError("max_score_ratio_vs_mcmc must be at least 1")
+    if max_ecological_ratio_vs_uncalibrated < 1.0:
+        raise ValueError("max_ecological_ratio_vs_uncalibrated must be at least 1")
+
+    epsilon = np.finfo(float).eps
+
+    def ratio(
+        numerator: dict[str, Any], denominator: dict[str, Any], key: str
+    ) -> float:
+        return float(numerator[key]) / max(float(denominator[key]), epsilon)
+
+    brier_vs_uncalibrated = ratio(predictive_row, uncalibrated_row, "brier_score")
+    log_loss_vs_uncalibrated = ratio(predictive_row, uncalibrated_row, "log_loss")
+    brier_vs_mcmc = ratio(predictive_row, mcmc_row, "brier_score")
+    log_loss_vs_mcmc = ratio(predictive_row, mcmc_row, "log_loss")
+    prevalence_vs_uncalibrated = ratio(
+        predictive_row, uncalibrated_row, "prevalence_mae"
+    )
+    richness_vs_uncalibrated = ratio(predictive_row, uncalibrated_row, "richness_mae")
+    passed = bool(
+        brier_vs_uncalibrated <= max_score_ratio_vs_uncalibrated
+        and log_loss_vs_uncalibrated <= max_score_ratio_vs_uncalibrated
+        and brier_vs_mcmc <= max_score_ratio_vs_mcmc
+        and log_loss_vs_mcmc <= max_score_ratio_vs_mcmc
+        and prevalence_vs_uncalibrated <= max_ecological_ratio_vs_uncalibrated
+        and richness_vs_uncalibrated <= max_ecological_ratio_vs_uncalibrated
+    )
+    return {
+        "predictive_brier_ratio_vs_uncalibrated": brier_vs_uncalibrated,
+        "predictive_log_loss_ratio_vs_uncalibrated": log_loss_vs_uncalibrated,
+        "predictive_brier_ratio_vs_mcmc": brier_vs_mcmc,
+        "predictive_log_loss_ratio_vs_mcmc": log_loss_vs_mcmc,
+        "predictive_prevalence_mae_ratio_vs_uncalibrated": prevalence_vs_uncalibrated,
+        "predictive_richness_mae_ratio_vs_uncalibrated": richness_vs_uncalibrated,
+        "predictive_acceptance_passed": passed,
+    }
+
+
 def sbc_calibration_acceptance(
     uncalibrated_row: dict[str, Any],
     calibrated_row: dict[str, Any],
@@ -79,7 +130,9 @@ def sbc_calibration_acceptance(
     calibrated_coverage = float(calibrated_row["sbc_beta_interval_coverage_95"])
     uncalibrated_coverage_error = abs(uncalibrated_coverage - nominal)
     calibrated_coverage_error = abs(calibrated_coverage - nominal)
-    uncalibrated_mean_error = abs(float(uncalibrated_row["sbc_rank_mean"]) - expected_mean)
+    uncalibrated_mean_error = abs(
+        float(uncalibrated_row["sbc_rank_mean"]) - expected_mean
+    )
     calibrated_mean_error = abs(float(calibrated_row["sbc_rank_mean"]) - expected_mean)
     uncalibrated_variance_error = abs(
         float(uncalibrated_row["sbc_rank_variance"]) - expected_variance
@@ -152,7 +205,9 @@ def compare_beta_posteriors(
             f"got {neural_predictive_samples.shape[2:]} and {neural_samples.shape[2:]}"
         )
 
-    distribution = distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
+    distribution = (
+        distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
+    )
     row: dict[str, Any] = {
         "dataset": dataset,
         "distribution": distribution,
@@ -182,7 +237,9 @@ def compare_beta_posteriors(
         suffix = _level_suffix(level)
         n_lo, n_hi = _interval_arrays(neural_samples, level)
         m_lo, m_hi = _interval_arrays(mcmc_samples, level)
-        row[f"beta_ci_overlap_{suffix}"] = _mean_interval_overlap(n_lo, n_hi, m_lo, m_hi)
+        row[f"beta_ci_overlap_{suffix}"] = _mean_interval_overlap(
+            n_lo, n_hi, m_lo, m_hi
+        )
         row[f"neural_beta_interval_width_mean_{suffix}"] = float(np.mean(n_hi - n_lo))
         row[f"mcmc_beta_interval_width_mean_{suffix}"] = float(np.mean(m_hi - m_lo))
 
@@ -199,7 +256,9 @@ def compare_beta_posteriors(
         row["speedup_factor"] = float(mcmc_seconds / neural_seconds)
 
     if X is not None and Y is not None:
-        predictive_formula = formula or _fit_formula(neural_fit) or _fit_formula(mcmc_fit)
+        predictive_formula = (
+            formula or _fit_formula(neural_fit) or _fit_formula(mcmc_fit)
+        )
         if predictive_formula is None:
             raise ValueError("formula is required for predictive benchmark metrics")
         predictive_distribution = distribution or "normal"
@@ -295,7 +354,9 @@ def compare_gamma_posteriors(
             "neural and MCMC Gamma samples must share covariate/trait shape; "
             f"got {neural_samples.shape[2:]} and {mcmc_samples.shape[2:]}"
         )
-    distribution = distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
+    distribution = (
+        distribution or _fit_distribution(neural_fit) or _fit_distribution(mcmc_fit)
+    )
     neural_mean = neural_samples.mean(axis=(0, 1))
     mcmc_mean = mcmc_samples.mean(axis=(0, 1))
     neural_sd = _posterior_sd(neural_samples)
@@ -319,12 +380,16 @@ def compare_gamma_posteriors(
         suffix = _level_suffix(level)
         n_lo, n_hi = _interval_arrays(neural_samples, level)
         m_lo, m_hi = _interval_arrays(mcmc_samples, level)
-        row[f"gamma_ci_overlap_{suffix}"] = _mean_interval_overlap(n_lo, n_hi, m_lo, m_hi)
+        row[f"gamma_ci_overlap_{suffix}"] = _mean_interval_overlap(
+            n_lo, n_hi, m_lo, m_hi
+        )
         row[f"neural_gamma_interval_width_mean_{suffix}"] = float(np.mean(n_hi - n_lo))
         row[f"mcmc_gamma_interval_width_mean_{suffix}"] = float(np.mean(m_hi - m_lo))
     if truth_gamma is not None:
         truth = _align_truth_gamma(truth_gamma, neural_fit, neural_samples.shape[2:])
-        row.update(_gamma_truth_metrics("neural", neural_samples, truth, credible_levels))
+        row.update(
+            _gamma_truth_metrics("neural", neural_samples, truth, credible_levels)
+        )
         row.update(_gamma_truth_metrics("mcmc", mcmc_samples, truth, credible_levels))
     return row
 
@@ -359,7 +424,9 @@ def compare_iid_association_posteriors(
     level: int = 0,
 ) -> dict[str, Any]:
     """Compare identifiable iid species associations from Lambda samples."""
-    neural_samples = neural_fit.species_association_samples(level=level, correlation=False)
+    neural_samples = neural_fit.species_association_samples(
+        level=level, correlation=False
+    )
     mcmc_samples = mcmc_fit.species_association_samples(level=level, correlation=False)
     if neural_samples.shape[2:] != mcmc_samples.shape[2:]:
         raise ValueError(
@@ -382,7 +449,11 @@ def compare_iid_association_posteriors(
         "association_correlation_mcmc": _correlation(neural_mean, mcmc_mean),
     }
     if truth_lambda is not None:
-        truth_loadings = truth_lambda.to_numpy(dtype=float) if isinstance(truth_lambda, pd.DataFrame) else np.asarray(truth_lambda, dtype=float)
+        truth_loadings = (
+            truth_lambda.to_numpy(dtype=float)
+            if isinstance(truth_lambda, pd.DataFrame)
+            else np.asarray(truth_lambda, dtype=float)
+        )
         truth_association = truth_loadings.T @ truth_loadings
         if truth_association.shape != neural_mean.shape:
             raise ValueError(
@@ -390,8 +461,12 @@ def compare_iid_association_posteriors(
             )
         row["neural_association_rmse_truth"] = _rmse(neural_mean, truth_association)
         row["mcmc_association_rmse_truth"] = _rmse(mcmc_mean, truth_association)
-        row["neural_association_correlation_truth"] = _correlation(neural_mean, truth_association)
-        row["mcmc_association_correlation_truth"] = _correlation(mcmc_mean, truth_association)
+        row["neural_association_correlation_truth"] = _correlation(
+            neural_mean, truth_association
+        )
+        row["mcmc_association_correlation_truth"] = _correlation(
+            mcmc_mean, truth_association
+        )
     return row
 
 
@@ -430,7 +505,9 @@ def write_benchmark_report(
     csv_path = output_dir / f"{stem}.csv"
     markdown_path = output_dir / f"{stem}.md"
     frame.to_csv(csv_path, index=False)
-    markdown_path.write_text(render_benchmark_markdown(frame, title=title), encoding="utf-8")
+    markdown_path.write_text(
+        render_benchmark_markdown(frame, title=title), encoding="utf-8"
+    )
     return BenchmarkReportPaths(csv=csv_path, markdown=markdown_path)
 
 
@@ -449,9 +526,17 @@ def write_sbc_report(
     frame = pd.DataFrame(records)
     csv_frame = frame.copy()
     for column in csv_frame.columns:
-        if csv_frame[column].map(lambda value: isinstance(value, (list, tuple, dict))).any():
+        if (
+            csv_frame[column]
+            .map(lambda value: isinstance(value, (list, tuple, dict)))
+            .any()
+        ):
             csv_frame[column] = csv_frame[column].map(
-                lambda value: json.dumps(value) if isinstance(value, (list, tuple, dict)) else value
+                lambda value: (
+                    json.dumps(value)
+                    if isinstance(value, (list, tuple, dict))
+                    else value
+                )
             )
     csv_path = output_dir / f"{stem}.csv"
     markdown_path = output_dir / f"{stem}.md"
@@ -537,6 +622,9 @@ def render_benchmark_markdown(
         "neural_calibration_scale_multiplier",
         "neural_calibration_coverage_scale_multiplier",
         "neural_calibration_predictive_scale_multiplier",
+        "neural_calibration_predictive_method",
+        "neural_calibration_predictive_probability_rmse_uncalibrated",
+        "neural_calibration_predictive_probability_rmse_calibrated",
         "neural_calibration_uncalibrated_coverage",
         "neural_calibration_calibrated_coverage",
         "neural_beta_mean_rmse_truth",
@@ -556,7 +644,9 @@ def render_benchmark_markdown(
     summary = frame.loc[:, columns].copy()
     for column in summary.columns:
         if pd.api.types.is_float_dtype(summary[column]):
-            summary[column] = summary[column].map(lambda value: f"{value:.4g}" if pd.notna(value) else "")
+            summary[column] = summary[column].map(
+                lambda value: f"{value:.4g}" if pd.notna(value) else ""
+            )
 
     lines = [
         f"# {title}",
@@ -595,7 +685,9 @@ def _truth_metrics(
     for level in credible_levels:
         suffix = _level_suffix(level)
         lo, hi = _interval_arrays(samples, level)
-        metrics[f"{prefix}_beta_interval_coverage_truth_{suffix}"] = float(np.mean((truth >= lo) & (truth <= hi)))
+        metrics[f"{prefix}_beta_interval_coverage_truth_{suffix}"] = float(
+            np.mean((truth >= lo) & (truth <= hi))
+        )
     return metrics
 
 
@@ -613,7 +705,9 @@ def _gamma_truth_metrics(
     for level in credible_levels:
         suffix = _level_suffix(level)
         lo, hi = _interval_arrays(samples, level)
-        metrics[f"{prefix}_gamma_interval_coverage_truth_{suffix}"] = float(np.mean((truth >= lo) & (truth <= hi)))
+        metrics[f"{prefix}_gamma_interval_coverage_truth_{suffix}"] = float(
+            np.mean((truth >= lo) & (truth <= hi))
+        )
     return metrics
 
 
@@ -640,28 +734,40 @@ def _predictive_metrics(
     prediction = response.mean(axis=(0, 1))
     observed = y_frame.to_numpy(dtype=float)
     if prediction.shape != observed.shape:
-        raise ValueError(f"prediction and observed Y shapes differ: {prediction.shape} vs {observed.shape}")
+        raise ValueError(
+            f"prediction and observed Y shapes differ: {prediction.shape} vs {observed.shape}"
+        )
     species_prediction = response.mean(axis=2).reshape(-1, response.shape[-1])
     observed_species = observed.mean(axis=0)
     lo = np.quantile(species_prediction, 0.025, axis=0)
     hi = np.quantile(species_prediction, 0.975, axis=0)
     metrics = {
         f"{prefix}_posterior_predictive_mean_rmse": _rmse(prediction, observed),
-        f"{prefix}_species_mean_coverage_95": float(np.mean((observed_species >= lo) & (observed_species <= hi))),
+        f"{prefix}_species_mean_coverage_95": float(
+            np.mean((observed_species >= lo) & (observed_species <= hi))
+        ),
     }
     if str(distribution).lower() == "poisson" and poisson_eta_clip is not None:
         lower, upper = poisson_eta_clip
         metrics.update(
             {
-                f"{prefix}_poisson_eta_below_clip_fraction": float(np.mean(linear < lower)),
-                f"{prefix}_poisson_eta_above_clip_fraction": float(np.mean(linear > upper)),
-                f"{prefix}_poisson_eta_clipped_fraction": float(np.mean((linear < lower) | (linear > upper))),
+                f"{prefix}_poisson_eta_below_clip_fraction": float(
+                    np.mean(linear < lower)
+                ),
+                f"{prefix}_poisson_eta_above_clip_fraction": float(
+                    np.mean(linear > upper)
+                ),
+                f"{prefix}_poisson_eta_clipped_fraction": float(
+                    np.mean((linear < lower) | (linear > upper))
+                ),
             }
         )
     return metrics
 
 
-def _read_optional_frame(value: str | Path | pd.DataFrame | np.ndarray | None) -> pd.DataFrame | np.ndarray | None:
+def _read_optional_frame(
+    value: str | Path | pd.DataFrame | np.ndarray | None,
+) -> pd.DataFrame | np.ndarray | None:
     if value is None:
         return None
     if isinstance(value, (pd.DataFrame, np.ndarray)):
@@ -676,14 +782,20 @@ def _align_truth_beta(
 ) -> np.ndarray:
     if isinstance(truth_beta, pd.DataFrame):
         beta_mean = fit.beta_mean()
-        if set(beta_mean.index).issubset(set(truth_beta.index)) and set(beta_mean.columns).issubset(set(truth_beta.columns)):
-            truth = truth_beta.loc[beta_mean.index, beta_mean.columns].to_numpy(dtype=float)
+        if set(beta_mean.index).issubset(set(truth_beta.index)) and set(
+            beta_mean.columns
+        ).issubset(set(truth_beta.columns)):
+            truth = truth_beta.loc[beta_mean.index, beta_mean.columns].to_numpy(
+                dtype=float
+            )
         else:
             truth = truth_beta.to_numpy(dtype=float)
     else:
         truth = np.asarray(truth_beta, dtype=float)
     if truth.shape != shape:
-        raise ValueError(f"truth_beta shape {truth.shape} does not match Beta shape {shape}")
+        raise ValueError(
+            f"truth_beta shape {truth.shape} does not match Beta shape {shape}"
+        )
     return truth
 
 
@@ -694,14 +806,20 @@ def _align_truth_gamma(
 ) -> np.ndarray:
     if isinstance(truth_gamma, pd.DataFrame):
         gamma_mean = fit.gamma_mean()
-        if set(gamma_mean.index).issubset(set(truth_gamma.index)) and set(gamma_mean.columns).issubset(set(truth_gamma.columns)):
-            truth = truth_gamma.loc[gamma_mean.index, gamma_mean.columns].to_numpy(dtype=float)
+        if set(gamma_mean.index).issubset(set(truth_gamma.index)) and set(
+            gamma_mean.columns
+        ).issubset(set(truth_gamma.columns)):
+            truth = truth_gamma.loc[gamma_mean.index, gamma_mean.columns].to_numpy(
+                dtype=float
+            )
         else:
             truth = truth_gamma.to_numpy(dtype=float)
     else:
         truth = np.asarray(truth_gamma, dtype=float)
     if truth.shape != shape:
-        raise ValueError(f"truth_gamma shape {truth.shape} does not match Gamma shape {shape}")
+        raise ValueError(
+            f"truth_gamma shape {truth.shape} does not match Gamma shape {shape}"
+        )
     return truth
 
 
@@ -709,7 +827,9 @@ def _posterior_sd(samples: np.ndarray) -> np.ndarray:
     return samples.reshape((-1,) + samples.shape[2:]).std(axis=0, ddof=1)
 
 
-def _interval_arrays(samples: np.ndarray, level: float) -> tuple[np.ndarray, np.ndarray]:
+def _interval_arrays(
+    samples: np.ndarray, level: float
+) -> tuple[np.ndarray, np.ndarray]:
     alpha = (1.0 - level) / 2.0
     return (
         np.quantile(samples, alpha, axis=(0, 1)),
@@ -723,10 +843,17 @@ def _mean_interval_overlap(
     right_lo: np.ndarray,
     right_hi: np.ndarray,
 ) -> float:
-    intersection = np.maximum(0.0, np.minimum(left_hi, right_hi) - np.maximum(left_lo, right_lo))
+    intersection = np.maximum(
+        0.0, np.minimum(left_hi, right_hi) - np.maximum(left_lo, right_lo)
+    )
     union = np.maximum(left_hi, right_hi) - np.minimum(left_lo, right_lo)
     exact = (union == 0.0) & (left_lo == right_lo) & (left_hi == right_hi)
-    overlap = np.divide(intersection, union, out=np.zeros_like(intersection, dtype=float), where=union > 0.0)
+    overlap = np.divide(
+        intersection,
+        union,
+        out=np.zeros_like(intersection, dtype=float),
+        where=union > 0.0,
+    )
     overlap = np.where(exact, 1.0, overlap)
     return float(np.mean(overlap))
 
@@ -764,7 +891,9 @@ def _validate_poisson_eta_clip(
     if value is None:
         return None
     if str(distribution).lower() != "poisson":
-        raise ValueError("poisson_eta_clip is only valid for Poisson predictive metrics")
+        raise ValueError(
+            "poisson_eta_clip is only valid for Poisson predictive metrics"
+        )
     if len(value) != 2:
         raise ValueError("poisson_eta_clip must contain exactly two bounds")
     lower, upper = float(value[0]), float(value[1])
@@ -808,6 +937,14 @@ def _calibration_report_fields(fit: HmscFit, *, prefix: str) -> dict[str, Any]:
         ("predictive_score_calibrated", "predictive_score_calibrated"),
         ("predictive_rate_rmse_uncalibrated", "predictive_rate_rmse_uncalibrated"),
         ("predictive_rate_rmse_calibrated", "predictive_rate_rmse_calibrated"),
+        (
+            "predictive_probability_rmse_uncalibrated",
+            "predictive_probability_rmse_uncalibrated",
+        ),
+        (
+            "predictive_probability_rmse_calibrated",
+            "predictive_probability_rmse_calibrated",
+        ),
     ]:
         if source in calibration:
             fields[f"{prefix}_calibration_{target}"] = calibration[source]
@@ -820,11 +957,19 @@ def _calibration_report_fields(fit: HmscFit, *, prefix: str) -> dict[str, Any]:
 
 
 def _rmse(left: np.ndarray, right: np.ndarray) -> float:
-    return float(np.sqrt(np.mean((np.asarray(left, dtype=float) - np.asarray(right, dtype=float)) ** 2)))
+    return float(
+        np.sqrt(
+            np.mean(
+                (np.asarray(left, dtype=float) - np.asarray(right, dtype=float)) ** 2
+            )
+        )
+    )
 
 
 def _mae(left: np.ndarray, right: np.ndarray) -> float:
-    return float(np.mean(np.abs(np.asarray(left, dtype=float) - np.asarray(right, dtype=float))))
+    return float(
+        np.mean(np.abs(np.asarray(left, dtype=float) - np.asarray(right, dtype=float)))
+    )
 
 
 def _correlation(left: np.ndarray, right: np.ndarray) -> float:
@@ -857,10 +1002,18 @@ def _markdown_table(frame: pd.DataFrame) -> str:
         max(len(columns[idx]), *(len(row[idx]) for row in rows))
         for idx in range(len(columns))
     ]
-    header = "| " + " | ".join(column.ljust(widths[idx]) for idx, column in enumerate(columns)) + " |"
-    separator = "| " + " | ".join("-" * widths[idx] for idx in range(len(columns))) + " |"
+    header = (
+        "| "
+        + " | ".join(column.ljust(widths[idx]) for idx, column in enumerate(columns))
+        + " |"
+    )
+    separator = (
+        "| " + " | ".join("-" * widths[idx] for idx in range(len(columns))) + " |"
+    )
     body = [
-        "| " + " | ".join(row[idx].ljust(widths[idx]) for idx in range(len(columns))) + " |"
+        "| "
+        + " | ".join(row[idx].ljust(widths[idx]) for idx in range(len(columns)))
+        + " |"
         for row in rows
     ]
     return "\n".join([header, separator, *body])

@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 import numpy as np
 import tensorflow as tf
-from scipy.special import gammaln, logsumexp
+from scipy.special import gammaln, logsumexp, ndtr
 from scipy.stats import norm
 
 from pyhmsc.neural.posterior_heads import BetaPosterior
@@ -33,6 +33,8 @@ class BetaScaleCalibration:
     predictive_score_calibrated: float | None = None
     predictive_rate_rmse_uncalibrated: float | None = None
     predictive_rate_rmse_calibrated: float | None = None
+    predictive_probability_rmse_uncalibrated: float | None = None
+    predictive_probability_rmse_calibrated: float | None = None
 
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any]) -> "BetaScaleCalibration":
@@ -56,16 +58,38 @@ class BetaScaleCalibration:
             calibrated_coverage=float(metadata["calibrated_coverage"]),
             n_observations=int(metadata["n_observations"]),
             distribution=domain.get("distribution"),
-            n_covariates=None if domain.get("n_covariates") is None else int(domain["n_covariates"]),
-            n_species=None if domain.get("n_species") is None else int(domain["n_species"]),
+            n_covariates=(
+                None
+                if domain.get("n_covariates") is None
+                else int(domain["n_covariates"])
+            ),
+            n_species=(
+                None if domain.get("n_species") is None else int(domain["n_species"])
+            ),
             method=stored_method,
             coverage_scale_multiplier=coverage_multiplier,
             predictive_scale_multiplier=predictive_multiplier,
-            predictive_method=None if predictive_method is None else str(predictive_method),
-            predictive_score_uncalibrated=_optional_float(metadata, "predictive_score_uncalibrated"),
-            predictive_score_calibrated=_optional_float(metadata, "predictive_score_calibrated"),
-            predictive_rate_rmse_uncalibrated=_optional_float(metadata, "predictive_rate_rmse_uncalibrated"),
-            predictive_rate_rmse_calibrated=_optional_float(metadata, "predictive_rate_rmse_calibrated"),
+            predictive_method=(
+                None if predictive_method is None else str(predictive_method)
+            ),
+            predictive_score_uncalibrated=_optional_float(
+                metadata, "predictive_score_uncalibrated"
+            ),
+            predictive_score_calibrated=_optional_float(
+                metadata, "predictive_score_calibrated"
+            ),
+            predictive_rate_rmse_uncalibrated=_optional_float(
+                metadata, "predictive_rate_rmse_uncalibrated"
+            ),
+            predictive_rate_rmse_calibrated=_optional_float(
+                metadata, "predictive_rate_rmse_calibrated"
+            ),
+            predictive_probability_rmse_uncalibrated=_optional_float(
+                metadata, "predictive_probability_rmse_uncalibrated"
+            ),
+            predictive_probability_rmse_calibrated=_optional_float(
+                metadata, "predictive_probability_rmse_calibrated"
+            ),
         )
 
     def validate_domain(
@@ -82,12 +106,20 @@ class BetaScaleCalibration:
                     "calibration distribution mismatch: "
                     f"expected {self.distribution!r}, got {distribution!r}"
                 )
-        if n_covariates is not None and self.n_covariates is not None and int(n_covariates) != self.n_covariates:
+        if (
+            n_covariates is not None
+            and self.n_covariates is not None
+            and int(n_covariates) != self.n_covariates
+        ):
             raise ValueError(
                 "calibration covariate dimension mismatch: "
                 f"expected {self.n_covariates}, got {n_covariates}"
             )
-        if n_species is not None and self.n_species is not None and int(n_species) != self.n_species:
+        if (
+            n_species is not None
+            and self.n_species is not None
+            and int(n_species) != self.n_species
+        ):
             raise ValueError(
                 "calibration species dimension mismatch: "
                 f"expected {self.n_species}, got {n_species}"
@@ -111,19 +143,39 @@ class BetaScaleCalibration:
             },
         }
         if self.coverage_scale_multiplier is not None:
-            metadata["coverage_scale_multiplier"] = float(self.coverage_scale_multiplier)
+            metadata["coverage_scale_multiplier"] = float(
+                self.coverage_scale_multiplier
+            )
         if self.predictive_scale_multiplier is not None:
-            metadata["predictive_scale_multiplier"] = float(self.predictive_scale_multiplier)
+            metadata["predictive_scale_multiplier"] = float(
+                self.predictive_scale_multiplier
+            )
         if self.predictive_method is not None:
             metadata["predictive_method"] = self.predictive_method
         if self.predictive_score_uncalibrated is not None:
-            metadata["predictive_score_uncalibrated"] = float(self.predictive_score_uncalibrated)
+            metadata["predictive_score_uncalibrated"] = float(
+                self.predictive_score_uncalibrated
+            )
         if self.predictive_score_calibrated is not None:
-            metadata["predictive_score_calibrated"] = float(self.predictive_score_calibrated)
+            metadata["predictive_score_calibrated"] = float(
+                self.predictive_score_calibrated
+            )
         if self.predictive_rate_rmse_uncalibrated is not None:
-            metadata["predictive_rate_rmse_uncalibrated"] = float(self.predictive_rate_rmse_uncalibrated)
+            metadata["predictive_rate_rmse_uncalibrated"] = float(
+                self.predictive_rate_rmse_uncalibrated
+            )
         if self.predictive_rate_rmse_calibrated is not None:
-            metadata["predictive_rate_rmse_calibrated"] = float(self.predictive_rate_rmse_calibrated)
+            metadata["predictive_rate_rmse_calibrated"] = float(
+                self.predictive_rate_rmse_calibrated
+            )
+        if self.predictive_probability_rmse_uncalibrated is not None:
+            metadata["predictive_probability_rmse_uncalibrated"] = float(
+                self.predictive_probability_rmse_uncalibrated
+            )
+        if self.predictive_probability_rmse_calibrated is not None:
+            metadata["predictive_probability_rmse_calibrated"] = float(
+                self.predictive_probability_rmse_calibrated
+            )
         return metadata
 
 
@@ -142,6 +194,7 @@ def fit_beta_scale_calibration(
     predictive_seed: int = 123,
     predictive_min_multiplier: float = 0.25,
     max_predictive_rate_rmse_ratio: float = 1.25,
+    max_predictive_probability_rmse_ratio: float = 1.25,
     max_predictive_log_score_ratio: float = 1.10,
 ) -> BetaScaleCalibration:
     """Fit a scalar posterior-scale multiplier from a calibration split.
@@ -159,13 +212,17 @@ def fit_beta_scale_calibration(
         raise ValueError("predictive_draws must be positive")
     if max_predictive_rate_rmse_ratio < 1.0:
         raise ValueError("max_predictive_rate_rmse_ratio must be at least 1")
+    if max_predictive_probability_rmse_ratio < 1.0:
+        raise ValueError("max_predictive_probability_rmse_ratio must be at least 1")
     if max_predictive_log_score_ratio < 1.0:
         raise ValueError("max_predictive_log_score_ratio must be at least 1")
     mean = _as_numpy(posterior.mean)
     scale = _as_numpy(posterior.scale)
     truth = np.asarray(beta_true, dtype=float)
     if mean.shape != scale.shape or mean.shape != truth.shape:
-        raise ValueError("posterior mean, scale, and beta_true must have the same shape")
+        raise ValueError(
+            "posterior mean, scale, and beta_true must have the same shape"
+        )
     if np.any(scale <= 0.0):
         raise ValueError("posterior scales must be positive before calibration")
 
@@ -183,44 +240,80 @@ def fit_beta_scale_calibration(
     predictive_score_calibrated = None
     predictive_rate_rmse_uncalibrated = None
     predictive_rate_rmse_calibrated = None
+    predictive_probability_rmse_uncalibrated = None
+    predictive_probability_rmse_calibrated = None
     predictive_inputs = predictive_X is not None or predictive_Y is not None
     if predictive_inputs:
         if predictive_X is None:
             raise ValueError("predictive_X is required for predictive scale selection")
-        if str(distribution).lower() != "poisson":
-            raise ValueError("predictive scale selection currently supports Poisson calibration only")
-        predictive_response = (
-            _simulate_poisson_replicate(
-                X=np.asarray(predictive_X, dtype=float),
-                beta_true=truth,
-                eta_clip=poisson_eta_clip,
-                seed=predictive_seed + 1,
+        predictive_distribution = str(distribution).lower()
+        predictive_design = np.asarray(predictive_X, dtype=float)
+        if predictive_distribution == "poisson":
+            predictive_response = (
+                _simulate_poisson_replicate(
+                    X=predictive_design,
+                    beta_true=truth,
+                    eta_clip=poisson_eta_clip,
+                    seed=predictive_seed + 1,
+                )
+                if predictive_Y is None
+                else np.asarray(predictive_Y, dtype=float)
             )
-            if predictive_Y is None
-            else np.asarray(predictive_Y, dtype=float)
-        )
-        (
-            predictive_multiplier,
-            predictive_score_uncalibrated,
-            predictive_score_calibrated,
-            predictive_rate_rmse_uncalibrated,
-            predictive_rate_rmse_calibrated,
-        ) = _select_poisson_scale(
-            posterior,
-            X=np.asarray(predictive_X, dtype=float),
-            Y=predictive_response,
-            beta_true=truth,
-            coverage_multiplier=coverage_multiplier,
-            eta_clip=poisson_eta_clip,
-            draws=predictive_draws,
-            seed=predictive_seed,
-            min_multiplier=predictive_min_multiplier,
-            max_rate_rmse_ratio=max_predictive_rate_rmse_ratio,
-            max_log_score_ratio=max_predictive_log_score_ratio,
-        )
-        predictive_method = "poisson_balanced_score_scale"
+            (
+                predictive_multiplier,
+                predictive_score_uncalibrated,
+                predictive_score_calibrated,
+                predictive_rate_rmse_uncalibrated,
+                predictive_rate_rmse_calibrated,
+            ) = _select_poisson_scale(
+                posterior,
+                X=predictive_design,
+                Y=predictive_response,
+                beta_true=truth,
+                coverage_multiplier=coverage_multiplier,
+                eta_clip=poisson_eta_clip,
+                draws=predictive_draws,
+                seed=predictive_seed,
+                min_multiplier=predictive_min_multiplier,
+                max_rate_rmse_ratio=max_predictive_rate_rmse_ratio,
+                max_log_score_ratio=max_predictive_log_score_ratio,
+            )
+            predictive_method = "poisson_balanced_score_scale"
+        elif predictive_distribution == "probit":
+            predictive_response = (
+                _simulate_probit_replicate(
+                    X=predictive_design,
+                    beta_true=truth,
+                    seed=predictive_seed + 1,
+                )
+                if predictive_Y is None
+                else np.asarray(predictive_Y, dtype=float)
+            )
+            (
+                predictive_multiplier,
+                predictive_score_uncalibrated,
+                predictive_score_calibrated,
+                predictive_probability_rmse_uncalibrated,
+                predictive_probability_rmse_calibrated,
+            ) = _select_probit_scale(
+                posterior,
+                X=predictive_design,
+                Y=predictive_response,
+                beta_true=truth,
+                coverage_multiplier=coverage_multiplier,
+                min_multiplier=predictive_min_multiplier,
+                max_probability_rmse_ratio=max_predictive_probability_rmse_ratio,
+                max_log_score_ratio=max_predictive_log_score_ratio,
+            )
+            predictive_method = "probit_balanced_score_scale"
+        else:
+            raise ValueError(
+                "predictive scale selection supports Poisson and probit calibration only"
+            )
     uncalibrated_coverage = _coverage(mean, scale, truth, nominal_level, mask)
-    calibrated_coverage = _coverage(mean, scale * coverage_multiplier, truth, nominal_level, mask)
+    calibrated_coverage = _coverage(
+        mean, scale * coverage_multiplier, truth, nominal_level, mask
+    )
     return BetaScaleCalibration(
         scale_multiplier=coverage_multiplier,
         nominal_level=float(nominal_level),
@@ -238,6 +331,8 @@ def fit_beta_scale_calibration(
         predictive_score_calibrated=predictive_score_calibrated,
         predictive_rate_rmse_uncalibrated=predictive_rate_rmse_uncalibrated,
         predictive_rate_rmse_calibrated=predictive_rate_rmse_calibrated,
+        predictive_probability_rmse_uncalibrated=predictive_probability_rmse_uncalibrated,
+        predictive_probability_rmse_calibrated=predictive_probability_rmse_calibrated,
     )
 
 
@@ -284,7 +379,9 @@ def _apply_beta_multiplier(
     mean = tf.convert_to_tensor(posterior.mean)
     scale = tf.convert_to_tensor(posterior.scale)
     if mean.shape.rank != 3:
-        raise ValueError("Beta calibration expects posterior mean with shape batch x covariates x species")
+        raise ValueError(
+            "Beta calibration expects posterior mean with shape batch x covariates x species"
+        )
     calibration.validate_domain(
         distribution=distribution,
         n_covariates=int(mean.shape[1]),
@@ -294,10 +391,14 @@ def _apply_beta_multiplier(
     scale_tril = None
     if posterior.scale_tril is not None:
         scale_tril = tf.convert_to_tensor(posterior.scale_tril) * scale_multiplier
-    return BetaPosterior(mean=mean, scale=scale * scale_multiplier, scale_tril=scale_tril)
+    return BetaPosterior(
+        mean=mean, scale=scale * scale_multiplier, scale_tril=scale_tril
+    )
 
 
-def calibration_metadata(calibration: BetaScaleCalibration | dict[str, Any]) -> dict[str, Any]:
+def calibration_metadata(
+    calibration: BetaScaleCalibration | dict[str, Any],
+) -> dict[str, Any]:
     """Return JSON-serializable calibration metadata."""
     if isinstance(calibration, BetaScaleCalibration):
         return calibration.to_metadata()
@@ -318,7 +419,9 @@ def _coverage(
     return float(np.mean(covered[mask]))
 
 
-def _calibration_mask(shape: tuple[int, ...], species_mask: np.ndarray | None) -> np.ndarray:
+def _calibration_mask(
+    shape: tuple[int, ...], species_mask: np.ndarray | None
+) -> np.ndarray:
     if species_mask is None:
         return np.ones(shape, dtype=bool)
     mask = np.asarray(species_mask, dtype=bool)
@@ -361,9 +464,15 @@ def _select_poisson_scale(
     if Y.shape != (mean.shape[0], X.shape[1], mean.shape[2]):
         raise ValueError("predictive_Y must have shape batch x sites x species")
     if np.any(Y < 0.0) or np.any(Y != np.floor(Y)):
-        raise ValueError("predictive_Y must contain non-negative integer Poisson counts")
+        raise ValueError(
+            "predictive_Y must contain non-negative integer Poisson counts"
+        )
     if eta_clip is not None:
-        if len(eta_clip) != 2 or not np.all(np.isfinite(eta_clip)) or eta_clip[0] >= eta_clip[1]:
+        if (
+            len(eta_clip) != 2
+            or not np.all(np.isfinite(eta_clip))
+            or eta_clip[0] >= eta_clip[1]
+        ):
             raise ValueError("poisson_eta_clip must contain finite, ordered bounds")
 
     rng = np.random.default_rng(seed)
@@ -374,9 +483,13 @@ def _select_poisson_scale(
         scale_tril = _as_numpy(posterior.scale_tril)
         expected = (mean.shape[0], mean.shape[2], mean.shape[1], mean.shape[1])
         if scale_tril.shape != expected:
-            raise ValueError(f"posterior scale_tril has shape {scale_tril.shape}, expected {expected}")
+            raise ValueError(
+                f"posterior scale_tril has shape {scale_tril.shape}, expected {expected}"
+            )
         noise = rng.normal(size=(draws, mean.shape[0], mean.shape[2], mean.shape[1]))
-        deviations = np.transpose(np.einsum("bsij,dbsj->dbsi", scale_tril, noise), (0, 1, 3, 2))
+        deviations = np.transpose(
+            np.einsum("bsij,dbsj->dbsi", scale_tril, noise), (0, 1, 3, 2)
+        )
 
     upper = max(float(coverage_multiplier), 1.0)
     bounded_coverage_multiplier = max(float(coverage_multiplier), float(min_multiplier))
@@ -409,9 +522,8 @@ def _select_poisson_scale(
     rate_rmses = np.asarray(rate_rmses)
     baseline_index = int(np.argmin(np.abs(candidates - 1.0)))
     eligible = (
-        (rate_rmses <= rate_rmses[baseline_index] * float(max_rate_rmse_ratio))
-        & (scores <= scores[baseline_index] * float(max_log_score_ratio))
-    )
+        rate_rmses <= rate_rmses[baseline_index] * float(max_rate_rmse_ratio)
+    ) & (scores <= scores[baseline_index] * float(max_log_score_ratio))
     eligible_indices = np.flatnonzero(eligible)
     best_index = int(eligible_indices[np.argmin(rate_rmses[eligible_indices])])
     return (
@@ -434,7 +546,11 @@ def _simulate_poisson_replicate(
         raise ValueError("predictive_X and beta_true must be batched arrays")
     linear = np.einsum("bnk,bks->bns", X, beta_true)
     if eta_clip is not None:
-        if len(eta_clip) != 2 or not np.all(np.isfinite(eta_clip)) or eta_clip[0] >= eta_clip[1]:
+        if (
+            len(eta_clip) != 2
+            or not np.all(np.isfinite(eta_clip))
+            or eta_clip[0] >= eta_clip[1]
+        ):
             raise ValueError("poisson_eta_clip must contain finite, ordered bounds")
         linear = np.clip(linear, eta_clip[0], eta_clip[1])
     return np.random.default_rng(seed).poisson(np.exp(linear)).astype(float)
@@ -460,3 +576,105 @@ def _poisson_predictive_score(
     log_probability = Y[None, ...] * linear - rate - gammaln(Y[None, ...] + 1.0)
     log_predictive = logsumexp(log_probability, axis=0) - np.log(deviations.shape[0])
     return float(-np.mean(log_predictive)), rate.mean(axis=0)
+
+
+def _select_probit_scale(
+    posterior: BetaPosterior,
+    *,
+    X: np.ndarray,
+    Y: np.ndarray,
+    beta_true: np.ndarray,
+    coverage_multiplier: float,
+    min_multiplier: float,
+    max_probability_rmse_ratio: float,
+    max_log_score_ratio: float,
+) -> tuple[float, float, float, float, float]:
+    mean = _as_numpy(posterior.mean)
+    if X.ndim != 3 or X.shape[0] != mean.shape[0] or X.shape[2] != mean.shape[1]:
+        raise ValueError("predictive_X must have shape batch x sites x covariates")
+    if Y.shape != (mean.shape[0], X.shape[1], mean.shape[2]):
+        raise ValueError("predictive_Y must have shape batch x sites x species")
+    if np.any((Y != 0.0) & (Y != 1.0)):
+        raise ValueError("predictive_Y must contain binary probit observations")
+
+    linear_mean = np.einsum("bnk,bks->bns", X, mean)
+    if posterior.scale_tril is None:
+        variance = np.einsum(
+            "bnk,bks->bns", np.square(X), np.square(_as_numpy(posterior.scale))
+        )
+    else:
+        scale_tril = _as_numpy(posterior.scale_tril)
+        expected = (mean.shape[0], mean.shape[2], mean.shape[1], mean.shape[1])
+        if scale_tril.shape != expected:
+            raise ValueError(
+                f"posterior scale_tril has shape {scale_tril.shape}, expected {expected}"
+            )
+        projected_scale = np.einsum("bnk,bskj->bnsj", X, scale_tril)
+        variance = np.sum(np.square(projected_scale), axis=-1)
+
+    upper = max(float(coverage_multiplier), 1.0)
+    bounded_coverage_multiplier = max(float(coverage_multiplier), float(min_multiplier))
+    candidates = np.unique(
+        np.concatenate(
+            [
+                np.geomspace(min_multiplier, upper, 31),
+                np.asarray([1.0, bounded_coverage_multiplier], dtype=float),
+            ]
+        )
+    )
+    truth_probability = ndtr(np.einsum("bnk,bks->bns", X, beta_true))
+    scores = []
+    probability_rmses = []
+    for multiplier in candidates:
+        score, predictive_probability = _probit_predictive_score(
+            linear_mean,
+            variance,
+            Y,
+            multiplier,
+        )
+        scores.append(score)
+        probability_rmses.append(
+            float(np.sqrt(np.mean((predictive_probability - truth_probability) ** 2)))
+        )
+    scores = np.asarray(scores)
+    probability_rmses = np.asarray(probability_rmses)
+    baseline_index = int(np.argmin(np.abs(candidates - 1.0)))
+    eligible = (
+        probability_rmses
+        <= probability_rmses[baseline_index] * float(max_probability_rmse_ratio)
+    ) & (scores <= scores[baseline_index] * float(max_log_score_ratio))
+    eligible_indices = np.flatnonzero(eligible)
+    best_index = int(eligible_indices[np.argmin(probability_rmses[eligible_indices])])
+    return (
+        float(candidates[best_index]),
+        float(scores[baseline_index]),
+        float(scores[best_index]),
+        float(probability_rmses[baseline_index]),
+        float(probability_rmses[best_index]),
+    )
+
+
+def _simulate_probit_replicate(
+    *,
+    X: np.ndarray,
+    beta_true: np.ndarray,
+    seed: int,
+) -> np.ndarray:
+    if X.ndim != 3 or beta_true.ndim != 3:
+        raise ValueError("predictive_X and beta_true must be batched arrays")
+    probability = ndtr(np.einsum("bnk,bks->bns", X, beta_true))
+    return np.random.default_rng(seed).binomial(1, probability).astype(float)
+
+
+def _probit_predictive_score(
+    linear_mean: np.ndarray,
+    linear_variance: np.ndarray,
+    Y: np.ndarray,
+    multiplier: float,
+) -> tuple[float, np.ndarray]:
+    denominator = np.sqrt(1.0 + np.square(float(multiplier)) * linear_variance)
+    probability = ndtr(linear_mean / denominator)
+    epsilon = np.finfo(float).eps
+    probability = np.clip(probability, epsilon, 1.0 - epsilon)
+    log_score = -(Y * np.log(probability) + (1.0 - Y) * np.log(1.0 - probability))
+    return float(np.mean(log_score)), probability

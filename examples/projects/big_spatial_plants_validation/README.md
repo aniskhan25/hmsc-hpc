@@ -45,6 +45,20 @@ The hold-out analyzer reports Brier score, log loss, macro AUC, prevalence and
 richness MAE, plus elapsed time, peak RSS, compiled size, and posterior size.
 The spatial models use conditional prediction at the unseen coordinates.
 
+## Frozen Neural-HMSC Transfer
+
+The independent Neural-HMSC transfer workflow projects this dataset to the
+fixed shape of the qualified Whittaker checkpoint: 40 coordinate-maximin
+training sites, 75 training-selected species, and standardized maximum
+temperature as the single environmental gradient. The remaining 360 sites are
+used only for final evaluation. Neural weights and calibration scales are not
+updated.
+
+```bash
+RUN_NAME=neural_big_spatial_transfer_20260701 \
+  sbatch docs/lumi_neural_hmsc_big_spatial_transfer_sbatch.sh
+```
+
 Validated hold-out run `big_spatial_holdout_validation_short` completed on
 LUMI as job `19435459` with two chains, 250 saved draws, 250 transient
 iterations, and thin 5. GPP had the best Brier score (`0.069072`) and macro AUC

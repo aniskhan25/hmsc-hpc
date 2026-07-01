@@ -7,6 +7,7 @@ import pytest
 
 from pyhmsc.neural.benchmark import (
     compare_beta_posterior_files,
+    occurrence_predictive_acceptance,
     poisson_predictive_acceptance,
     sbc_calibration_acceptance,
     write_benchmark_report,
@@ -108,7 +109,9 @@ def test_compare_beta_posterior_files_adds_predictive_and_runtime_metrics(tmp_pa
 
 def test_poisson_predictive_metrics_respect_declared_eta_clip(tmp_path):
     samples = np.array([[[[10.0]], [[12.0]], [[14.0]]]], dtype=float)
-    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    neural_path = _write_posterior(
+        tmp_path / "neural.h5", samples, distribution="poisson"
+    )
     mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
     X = pd.DataFrame(index=["s1"])
     Y = pd.DataFrame({"sp1": [np.exp(6.0)]}, index=X.index)
@@ -133,7 +136,9 @@ def test_poisson_predictive_metrics_respect_declared_eta_clip(tmp_path):
 
 def test_poisson_predictive_metrics_reject_invalid_eta_clip(tmp_path):
     samples = np.zeros((1, 2, 1, 1), dtype=float)
-    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    neural_path = _write_posterior(
+        tmp_path / "neural.h5", samples, distribution="poisson"
+    )
     mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
 
     with pytest.raises(ValueError, match="finite, ordered bounds"):
@@ -150,7 +155,9 @@ def test_poisson_predictive_metrics_reject_invalid_eta_clip(tmp_path):
 
 def test_poisson_predictive_metrics_fail_loudly_on_unbounded_overflow(tmp_path):
     samples = np.full((1, 2, 1, 1), 1000.0, dtype=float)
-    neural_path = _write_posterior(tmp_path / "neural.h5", samples, distribution="poisson")
+    neural_path = _write_posterior(
+        tmp_path / "neural.h5", samples, distribution="poisson"
+    )
     mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples, distribution="poisson")
 
     with pytest.raises(ValueError, match="Poisson response predictions overflowed"):
@@ -179,6 +186,48 @@ def test_poisson_acceptance_requires_mcmc_relative_accuracy():
     assert result["predictive_acceptance_passed"] is False
 
 
+def test_occurrence_acceptance_combines_scores_and_ecological_metrics():
+    uncalibrated = {
+        "brier_score": 0.10,
+        "log_loss": 0.35,
+        "prevalence_mae": 0.12,
+        "richness_mae": 5.0,
+    }
+    predictive = {
+        "brier_score": 0.095,
+        "log_loss": 0.34,
+        "prevalence_mae": 0.11,
+        "richness_mae": 4.8,
+    }
+    mcmc = {
+        "brier_score": 0.08,
+        "log_loss": 0.30,
+        "prevalence_mae": 0.09,
+        "richness_mae": 4.0,
+    }
+
+    result = occurrence_predictive_acceptance(uncalibrated, predictive, mcmc)
+
+    assert result["predictive_brier_ratio_vs_uncalibrated"] == pytest.approx(0.95)
+    assert result["predictive_log_loss_ratio_vs_mcmc"] == pytest.approx(0.34 / 0.30)
+    assert result["predictive_acceptance_passed"] is True
+
+
+def test_occurrence_acceptance_rejects_richness_degradation():
+    uncalibrated = {
+        "brier_score": 0.10,
+        "log_loss": 0.35,
+        "prevalence_mae": 0.12,
+        "richness_mae": 5.0,
+    }
+    predictive = dict(uncalibrated, richness_mae=7.0)
+    mcmc = dict(uncalibrated)
+
+    result = occurrence_predictive_acceptance(uncalibrated, predictive, mcmc)
+
+    assert result["predictive_acceptance_passed"] is False
+
+
 def test_sbc_acceptance_rejects_rank_variance_degradation():
     uncalibrated = {
         "sbc_expected_rank_mean": 0.5,
@@ -197,7 +246,10 @@ def test_sbc_acceptance_rejects_rank_variance_degradation():
 
     result = sbc_calibration_acceptance(uncalibrated, calibrated)
 
-    assert result["sbc_coverage_error_calibrated"] < result["sbc_coverage_error_uncalibrated"]
+    assert (
+        result["sbc_coverage_error_calibrated"]
+        < result["sbc_coverage_error_uncalibrated"]
+    )
     assert result["sbc_acceptance_passed"] is False
 
 
@@ -239,7 +291,9 @@ def test_write_benchmark_report_writes_csv_and_markdown(tmp_path):
 
     assert paths.csv.exists()
     assert paths.markdown.exists()
-    assert "Neural-HMSC MCMC Reference Benchmark" in paths.markdown.read_text(encoding="utf-8")
+    assert "Neural-HMSC MCMC Reference Benchmark" in paths.markdown.read_text(
+        encoding="utf-8"
+    )
     assert pd.read_csv(paths.csv).loc[0, "dataset"] == "normal"
 
 
@@ -254,7 +308,9 @@ def test_benchmark_report_exposes_neural_calibration_metadata(tmp_path):
         "n_observations": 4,
         "domain": {"distribution": "normal", "n_covariates": 2, "n_species": 1},
     }
-    neural_path = _write_posterior(tmp_path / "neural.h5", samples, calibration=calibration)
+    neural_path = _write_posterior(
+        tmp_path / "neural.h5", samples, calibration=calibration
+    )
     mcmc_path = _write_posterior(tmp_path / "mcmc.h5", samples)
 
     row = compare_beta_posterior_files(

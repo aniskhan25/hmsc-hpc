@@ -202,14 +202,40 @@ when calibrated RMSE is at most 1.25 times uncalibrated RMSE, at most twice the
 MCMC-reference RMSE, and fewer than 1% of neural predictors require clipping.
 
 Coefficient-posterior and predictive calibration are separate artifacts. The
-Beta posterior uses the coefficient-coverage multiplier. A Poisson
-predictive-only artifact may use a different multiplier for response-scale
+Beta posterior uses the coefficient-coverage multiplier. Poisson and probit
+predictive-only artifacts may use a different multiplier for response-scale
 scoring, but must be labelled `predictive_only` and must not be interpreted as
-posterior uncertainty. Overall qualification requires both predictive
-acceptance and SBC acceptance. SBC acceptance requires at least 90% empirical
-95% coverage and no material degradation in coverage error, normalized-rank
-mean error, or normalized-rank variance error relative to the uncalibrated
-posterior.
+posterior uncertainty. Probit scale selection uses the exact Gaussian-probit
+expectation and is fitted only on independent simulated calibration data.
+Overall qualification requires both predictive acceptance and SBC acceptance.
+SBC acceptance requires at least 90% empirical 95% coverage and no material
+degradation in coverage error, normalized-rank mean error, or normalized-rank
+variance error relative to the uncalibrated posterior.
+
+For a real occurrence holdout, predictive acceptance requires predictive-only
+Brier score and log loss no worse than 1.10 times the uncalibrated neural
+values and no worse than twice the MCMC values. Prevalence and richness MAE
+must each be no worse than 1.25 times the uncalibrated neural values. These
+thresholds evaluate a frozen calibration procedure; held-out observations
+must never be used to select the predictive multiplier.
+
+### Independent real-data transfer
+
+A second ecological dataset must evaluate a frozen checkpoint and frozen
+calibration procedure. The transfer workflow must record content hashes for
+the checkpoint, coefficient source artifact, calibration metadata, and source
+acceptance report. It must not call neural training or calibration-fitting
+APIs. Target species may be selected using target training observations, but
+target holdout observations may not influence site selection, species
+selection, weights, calibration scales, or acceptance thresholds.
+
+Predictive-transfer acceptance requires the source run to have passed its
+coefficient SBC and combined qualification gates, and the target
+predictive-only artifact to pass the unchanged real-occurrence predictive
+gate. Reports must use the explicit key
+`predictive_transfer_acceptance_passed`; a generic transfer-qualification label
+is not permitted. Coefficient-posterior calibration cannot be claimed for a
+real target dataset without simulated coefficient truth.
 
 Initial simulation hyperparameters:
 

@@ -121,15 +121,23 @@ are not loaded as version `0.2` models.
 ## Coefficient and Predictive Calibration
 
 `apply_beta_scale_calibration` applies only the coefficient-coverage multiplier
-and returns the Beta posterior used for inference. For Poisson models,
-`apply_beta_predictive_calibration` may apply a separate predictive multiplier
-for response-scale scoring. Its output is a predictive-only surrogate and must
-not replace, or be reported as, Beta posterior uncertainty.
+and returns the Beta posterior used for inference. For Poisson and probit
+models, `apply_beta_predictive_calibration` may apply a separately fitted
+predictive multiplier for response-scale scoring. Probit predictive calibration
+uses the exact Gaussian-probit expectation. Its output is a predictive-only
+surrogate and must not replace, or be reported as, Beta posterior uncertainty.
 
 Calibration metadata uses `semantics_version: 2`, with separate
 `scale_multiplier` and optional `predictive_scale_multiplier` fields. Loading
 legacy Poisson metadata recovers `coverage_scale_multiplier` as the Beta scale
 and preserves the old applied scale as predictive-only.
+
+For cross-dataset transfer, load the existing checkpoint with
+`NeuralHmscInference.load(...)` and reconstruct calibration from the stored
+coefficient-posterior metadata with `BetaScaleCalibration.from_metadata(...)`.
+Do not call `fit` or `fit_beta_scale_calibration` on the target dataset. Record
+content hashes for both frozen artifacts and keep target holdout responses out
+of all projection and species-selection decisions.
 
 ## SBC and OOD Diagnostics
 

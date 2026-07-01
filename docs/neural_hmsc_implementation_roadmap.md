@@ -874,6 +874,41 @@ that scalar simulation calibration worsened real probability and richness
 metrics despite restoring nominal synthetic coverage. Calibrated neural draws
 must therefore remain experimental until calibration transfers to real data.
 
+The Whittaker requalification workflow now separates three neural artifacts:
+the uncalibrated coefficient posterior, the coefficient-calibrated posterior,
+and a probit predictive-only distribution fitted on independent simulations.
+Coefficient acceptance is determined only by SBC; predictive acceptance is
+determined only on untouched Whittaker holdout observations. The combined
+qualification gate requires both decisions to pass. Results from the earlier
+job `19609057` must not be interpreted under these corrected semantics.
+
+LUMI requalification job `19637813` completed on 2026-07-01. The independent
+probit predictive scale was `0.934528`, avoiding the severe held-out
+degradation caused by applying the `5.241370` coefficient scale to prediction.
+Coefficient SBC, held-out predictive, and combined qualification gates passed.
+Calibrated SBC ranks remain nonuniform, however, with variance `0.05081`
+against the `0.08333` expectation and a chi-square p-value effectively zero.
+This is qualification under the current coverage/non-degradation policy, not a
+claim of posterior equivalence.
+
+The second real-data validation uses the independent Big Spatial Plant
+community dataset. A deterministic projection selects 40 spatially distributed
+training sites, 75 species by training prevalence, and holds out the remaining
+360 sites. Standardized maximum temperature is mapped to the checkpoint's
+single environmental-gradient input. The workflow reuses the exact Whittaker
+checkpoint and both calibration scales, records content hashes, and forbids
+neural or calibration fitting. Target results must be documented separately
+from the Whittaker qualification result.
+
+LUMI job `19638224` completed the frozen Big Spatial Plant transfer on
+2026-07-01. The predictive-only artifact passed the independent held-out gate,
+with Brier `0.05672` versus `0.05698` uncalibrated and `0.04750` for MCMC.
+Checkpoint and calibration hashes matched the frozen source artifacts, and no
+parameters were updated. Coefficient-posterior agreement remained incomplete:
+95% interval overlap with MCMC was `0.1648`. The result qualifies predictive
+transfer only; target coefficient calibration remains not assessable without
+coefficient truth.
+
 Risk: latent factor targets are non-identifiable.
 
 Mitigation:

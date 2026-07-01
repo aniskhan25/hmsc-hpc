@@ -1,5 +1,47 @@
 # Neural-HMSC Whittaker Real-Data Validation
 
+> Historical result: this run predates split coefficient/predictive calibration.
+> Its generic "calibrated" artifact used the coefficient scale for prediction.
+> The replacement requalification workflow writes separately labelled
+> coefficient-posterior and predictive-only artifacts and applies independent
+> SBC, predictive, and combined acceptance gates.
+
+## Split-Calibration Requalification (2026-07-01)
+
+LUMI job `19637813` reran the same holdout with corrected calibration semantics.
+It completed in 2 minutes 45 seconds with exit code `0:0` and wrote:
+
+- `neural_posterior.h5` as the coefficient posterior,
+- `neural_predictive_distribution.h5` as a predictive-only artifact, and
+- `whittaker_acceptance.json` with separate SBC, predictive, and combined gates.
+
+The coefficient scale was `5.241370`; the independently fitted probit
+predictive-only scale was `0.934528`. The latter was fitted on simulated
+calibration observations using the exact Gaussian-probit expectation, without
+using Whittaker holdout responses.
+
+| Model | Brier | Log loss | Macro AUC | Prevalence MAE | Richness MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Neural uncalibrated | 0.09243 | 0.32743 | 0.58537 | 0.12089 | 5.4554 |
+| Neural coefficient-calibrated | 0.12724 | 0.42339 | 0.59042 | 0.22245 | 14.7232 |
+| Neural predictive-only | 0.09237 | 0.32732 | 0.58813 | 0.12018 | 5.3727 |
+| MCMC fixed | 0.07406 | 0.26264 | 0.54329 | 0.06969 | 3.3755 |
+
+The predictive-only artifact passed the held-out gate. Relative to the
+uncalibrated neural output, its Brier and log-loss ratios were `0.9993` and
+`0.9997`; prevalence and richness MAE ratios were `0.9941` and `0.9848`.
+
+Coefficient SBC coverage increased from `0.51875` to `0.95521`. Rank-mean
+error decreased from `0.01636` to `0.01060`, and rank-variance error decreased
+from `0.08463` to `0.03253`; the coefficient SBC gate therefore passed. The
+calibrated rank variance was still `0.05081` versus an expectation of
+`0.08333`, and the rank chi-square p-value remained effectively zero. Thus the
+combined gate passed under the current coverage and non-degradation criteria,
+but the result does not establish an HMSC-equivalent posterior.
+
+Neural training took 104.6 seconds, neural real-data inference 0.121 seconds,
+and MCMC sampling 32.6 seconds, for a 270x inference-only speedup.
+
 This validation applies the experimental fixed-effect Neural-HMSC posterior to
 the real Whittaker plant community dataset. It uses the repository's
 deterministic 40-site training and 12-site held-out split with 75 species.
