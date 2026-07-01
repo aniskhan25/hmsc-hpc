@@ -793,6 +793,74 @@ Status:
 - Added `docs/neural_hmsc_public_api_tutorial.md` with a documented
   train/save/load/infer workflow and explicit limitations.
 
+## Milestone 12: Conditional Coefficient Calibration
+
+Purpose:
+
+Replace the single global probit coefficient-scale multiplier with a
+simulation-trained conditional calibration model that can represent different
+uncertainty corrections for rare and common species and for intercept and
+environmental coefficients.
+
+Why this is next:
+
+- Whittaker predictive-only calibration transferred successfully to an
+  independent ecological dataset, so the predictive path is now a frozen
+  baseline rather than the immediate blocker.
+- Whittaker calibrated SBC coverage reached 95.5%, but rank variance remained
+  `0.05081` versus the `0.08333` expectation and the rank histogram remained
+  strongly nonuniform.
+- On the independent Big Spatial Plant dataset, coefficient posterior means
+  correlated `0.9322` with MCMC, while 95% interval overlap was only `0.1648`.
+  This indicates useful mean recovery but poorly transferred uncertainty.
+- Applying the global `5.241370` coefficient scale to predictions degraded both
+  real-data benchmarks, confirming that coefficient and predictive calibration
+  must remain separate.
+
+Implementation direction:
+
+- keep the current `0.934528` probit predictive-only scale and both real-data
+  workflows unchanged as regression baselines
+- add coefficient-level SBC summaries stratified by training prevalence,
+  coefficient type, and design information
+- derive calibration features only from simulated training/calibration data,
+  including species prevalence, effective sample size, raw posterior scale,
+  coefficient identity, and fixed-effect design curvature
+- learn positive coefficient-specific scale corrections with a small monotone
+  calibrator or structured scale head; do not alter posterior means
+- preserve covariance structure when scaling full-covariance posterior families
+- add a probit-aware IRLS/Laplace encoder anchor only if conditional scale
+  correction cannot satisfy the coefficient gates
+- never fit coefficient calibration from Whittaker, Big Spatial, or their
+  MCMC reference posteriors
+
+Acceptance gates:
+
+- at least 90% empirical 95% coverage overall and in every sufficiently
+  populated prevalence stratum
+- absolute normalized-rank mean error no greater than `0.025`
+- absolute normalized-rank variance error no greater than `0.015`
+- no material degradation in posterior-mean RMSE relative to the uncalibrated
+  checkpoint
+- improvement over the global scalar in multi-seed in-domain and OOD SBC
+- no regression in frozen Whittaker or Big Spatial predictive-only metrics
+- real-data MCMC interval overlap and coefficient-SD RMSE reported as transfer
+  diagnostics, never used to fit the calibrator
+
+Deliverables:
+
+```text
+pyhmsc/neural/conditional_calibration.py
+tests/test_neural_hmsc_conditional_calibration.py
+examples/run_neural_hmsc_conditional_calibration.py
+docs/neural_hmsc_conditional_calibration_YYYY-MM-DD.md
+```
+
+Status:
+
+- Next active milestone.
+- Design and implementation have not started.
+
 ## Testing Strategy
 
 Unit tests:
@@ -932,7 +1000,10 @@ Mitigation:
 - do not promote the model beyond "predictive neural JSDM" unless posterior
   calibration passes
 
-## First Concrete Pull Request
+## Historical First Concrete Pull Request
+
+This section records the initial proposed scope. Milestones 0 through 11 and
+the subsequent real-data qualification work have superseded it.
 
 The first implementation PR should be intentionally small.
 
