@@ -207,6 +207,12 @@ predictive-only artifacts may use a different multiplier for response-scale
 scoring, but must be labelled `predictive_only` and must not be interpreted as
 posterior uncertainty. Probit scale selection uses the exact Gaussian-probit
 expectation and is fitted only on independent simulated calibration data.
+Conditional coefficient calibration may replace the global coefficient scale,
+but it must retain this separation: conditional version 3 metadata belongs to
+the coefficient artifact, while the predictive-only artifact retains its
+scalar version 2 metadata. Conditional features and weights must be fitted only
+from simulated calibration data and must be computable without coefficient
+truth when applied.
 Overall qualification requires both predictive acceptance and SBC acceptance.
 SBC acceptance requires at least 90% empirical 95% coverage and no material
 degradation in coverage error, normalized-rank mean error, or normalized-rank

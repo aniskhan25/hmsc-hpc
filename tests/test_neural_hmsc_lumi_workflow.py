@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from examples.run_neural_hmsc_benchmark import distribution_seed
+from pyhmsc.posterior import HmscFit
 
 
 def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
@@ -105,3 +106,55 @@ def test_neural_benchmark_runner_writes_metadata_and_reuses_outputs(tmp_path):
     overall_rows = [row for row in sbc_rows if row["sbc_stratum_kind"] == "overall"]
     assert overall_rows
     assert all(row["sbc_stratum_label"] == "overall" for row in overall_rows)
+
+
+def test_conditional_calibration_entrypoint_keeps_predictive_scalar(tmp_path):
+    output = tmp_path / "conditional"
+    cmd = [
+        sys.executable,
+        "examples/run_neural_hmsc_conditional_calibration.py",
+        "--output",
+        str(output),
+        "--suite",
+        "probit",
+        "--n-sites",
+        "8",
+        "--n-species",
+        "2",
+        "--train-datasets",
+        "2",
+        "--calibration-datasets",
+        "2",
+        "--epochs",
+        "1",
+        "--batch-size",
+        "1",
+        "--conditional-calibration-epochs",
+        "5",
+        "--neural-chains",
+        "1",
+        "--neural-draws",
+        "3",
+        "--sbc-datasets",
+        "2",
+        "--sbc-draws",
+        "8",
+        "--sbc-bins",
+        "4",
+        "--ood-regimes",
+    ]
+
+    subprocess.run(cmd, check=True)
+
+    manifest = json.loads(
+        (output / "benchmark_manifest.json").read_text(encoding="utf-8")
+    )
+    record = manifest["datasets"][0]
+    coefficient_fit = HmscFit.from_file(record["neural_posterior"])
+    predictive_fit = HmscFit.from_file(record["neural_predictive_distribution"])
+
+    assert manifest["coefficient_calibration"] == "conditional"
+    assert record["calibration"]["method"] == "conditional_structured_scale"
+    assert record["predictive_calibration"]["method"] == "temperature_scale"
+    assert coefficient_fit.metadata["calibration"]["semantics_version"] == 3
+    assert predictive_fit.metadata["calibration"]["semantics_version"] == 2

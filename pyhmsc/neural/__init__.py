@@ -46,6 +46,8 @@ __all__ = [
     "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
     "BetaScaleCalibration",
+    "ConditionalBetaScaleCalibration",
+    "apply_conditional_beta_scale_calibration",
     "apply_beta_predictive_calibration",
     "apply_beta_scale_calibration",
     "beta_sbc_rank_diagnostics",
@@ -66,6 +68,8 @@ __all__ = [
     "evaluate_spatial_latent_posterior",
     "fixed_shape_training_data",
     "fit_beta_scale_calibration",
+    "fit_conditional_beta_scale_calibration",
+    "conditional_beta_scale_multipliers",
     "generate_fixed_effect_corpus",
     "iid_latent_training_data",
     "predict_beta_posterior",
@@ -94,6 +98,25 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
+    if name in {
+        "ConditionalBetaScaleCalibration",
+        "apply_conditional_beta_scale_calibration",
+        "conditional_beta_scale_multipliers",
+        "fit_conditional_beta_scale_calibration",
+    }:
+        from pyhmsc.neural.conditional_calibration import (
+            ConditionalBetaScaleCalibration,
+            apply_conditional_beta_scale_calibration,
+            conditional_beta_scale_multipliers,
+            fit_conditional_beta_scale_calibration,
+        )
+
+        return {
+            "ConditionalBetaScaleCalibration": ConditionalBetaScaleCalibration,
+            "apply_conditional_beta_scale_calibration": apply_conditional_beta_scale_calibration,
+            "conditional_beta_scale_multipliers": conditional_beta_scale_multipliers,
+            "fit_conditional_beta_scale_calibration": fit_conditional_beta_scale_calibration,
+        }[name]
     if name == "FixedShapeBetaPosteriorModel":
         from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
 

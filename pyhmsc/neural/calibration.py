@@ -396,15 +396,19 @@ def _apply_beta_multiplier(
     )
 
 
-def calibration_metadata(
-    calibration: BetaScaleCalibration | dict[str, Any],
-) -> dict[str, Any]:
+def calibration_metadata(calibration: Any) -> dict[str, Any]:
     """Return JSON-serializable calibration metadata."""
     if isinstance(calibration, BetaScaleCalibration):
         return calibration.to_metadata()
     if isinstance(calibration, dict):
         return dict(calibration)
-    raise TypeError("calibration must be a BetaScaleCalibration or metadata dict")
+    to_metadata = getattr(calibration, "to_metadata", None)
+    if callable(to_metadata):
+        metadata = to_metadata()
+        if not isinstance(metadata, dict):
+            raise TypeError("calibration to_metadata() must return a dict")
+        return metadata
+    raise TypeError("calibration must expose to_metadata() or be a metadata dict")
 
 
 def _coverage(

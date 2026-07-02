@@ -877,8 +877,14 @@ Status:
   identity, expected design information, and a prevalence-by-coefficient
   interaction. Posterior means remain fixed and covariance scaling uses
   `D Sigma D`.
-- Next substep: implement the conditional calibrator and compare it against the
-  frozen five-seed scalar baseline under the same in-domain and OOD gates.
+- Implemented the conditional calibration module, serializable version 3
+  metadata, exact diagonal and full-covariance application, a dedicated
+  benchmark entry point, and end-to-end coefficient/predictive semantics tests.
+  Implementation details are recorded in
+  `docs/neural_hmsc_conditional_calibration_2026-07-01.md`.
+- Next substep: run the conditional calibrator across the frozen five-seed
+  in-domain/OOD benchmark and compare it with the scalar baseline under the
+  same absolute and non-degradation gates.
 
 ## Testing Strategy
 

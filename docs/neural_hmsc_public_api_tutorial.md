@@ -132,12 +132,25 @@ Calibration metadata uses `semantics_version: 2`, with separate
 legacy Poisson metadata recovers `coverage_scale_multiplier` as the Beta scale
 and preserves the old applied scale as predictive-only.
 
+Milestone 12 adds `fit_conditional_beta_scale_calibration` and
+`apply_conditional_beta_scale_calibration` for simulation-trained coefficient
+scaling. The conditional artifact uses `semantics_version: 3`, stores its
+feature normalization and structured-head weights, and requires `X`, `Y`, and
+matching coefficient names when applied. It uses prevalence, expected design
+information, raw posterior scale, and coefficient identity. Full-covariance
+posteriors are transformed as `D Sigma D`; posterior means are unchanged.
+
+The conditional artifact applies only to coefficient uncertainty. Continue to
+use the separately fitted `BetaScaleCalibration` with
+`apply_beta_predictive_calibration` for predictive-only scoring.
+
 For cross-dataset transfer, load the existing checkpoint with
 `NeuralHmscInference.load(...)` and reconstruct calibration from the stored
-coefficient-posterior metadata with `BetaScaleCalibration.from_metadata(...)`.
-Do not call `fit` or `fit_beta_scale_calibration` on the target dataset. Record
-content hashes for both frozen artifacts and keep target holdout responses out
-of all projection and species-selection decisions.
+coefficient-posterior metadata with `BetaScaleCalibration.from_metadata(...)`
+or `ConditionalBetaScaleCalibration.from_metadata(...)`, according to its
+method. Do not fit either calibrator on the target dataset. Record content
+hashes for both frozen artifacts and keep target holdout responses out of all
+projection and species-selection decisions.
 
 ## SBC and OOD Diagnostics
 

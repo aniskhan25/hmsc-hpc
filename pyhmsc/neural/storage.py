@@ -8,7 +8,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from pyhmsc.neural.calibration import BetaScaleCalibration, calibration_metadata
+from pyhmsc.neural.calibration import calibration_metadata
 from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior, IidLatentPosterior
 
 
@@ -24,7 +24,7 @@ def write_beta_posterior_hdf5(
     draws: int = 100,
     seed: int | None = None,
     metadata: dict[str, Any] | None = None,
-    calibration: BetaScaleCalibration | dict[str, Any] | None = None,
+    calibration: Any | None = None,
 ) -> Path:
     """Write a neural Beta posterior to HDF5 using pyhmsc posterior shapes.
 
@@ -305,7 +305,7 @@ def _neural_metadata(
     draws: int,
     seed: int | None,
     metadata: dict[str, Any] | None,
-    calibration: BetaScaleCalibration | dict[str, Any] | None,
+    calibration: Any | None,
     posterior_family: str = "diagonal_normal",
 ) -> dict[str, Any]:
     base = {

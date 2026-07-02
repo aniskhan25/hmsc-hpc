@@ -50,6 +50,11 @@ from pyhmsc.neural.calibration import (
     apply_beta_scale_calibration,
     fit_beta_scale_calibration,
 )
+from pyhmsc.neural.conditional_calibration import (
+    ConditionalBetaScaleCalibration,
+    apply_conditional_beta_scale_calibration,
+    fit_conditional_beta_scale_calibration,
+)
 from pyhmsc.neural.diagnostics import beta_sbc_stratified_diagnostics
 from pyhmsc.neural.inference import NeuralHmscInference
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
@@ -99,6 +104,19 @@ def main() -> None:
         default="auto",
     )
     parser.add_argument("--disable-calibration", action="store_true")
+    parser.add_argument(
+        "--coefficient-calibration",
+        choices=["scalar", "conditional"],
+        default="scalar",
+        help="coefficient-posterior calibration method; predictive calibration remains scalar",
+    )
+    parser.add_argument("--conditional-calibration-epochs", type=int, default=400)
+    parser.add_argument(
+        "--conditional-calibration-learning-rate", type=float, default=0.03
+    )
+    parser.add_argument(
+        "--conditional-calibration-regularization", type=float, default=1e-3
+    )
     parser.add_argument("--sbc-datasets", type=int, default=32)
     parser.add_argument("--sbc-draws", type=int, default=256)
     parser.add_argument("--sbc-bins", type=int, default=10)
@@ -129,6 +147,12 @@ def main() -> None:
         parser.error("--sbc-draws must be positive")
     if args.sbc_bins < 2 or args.sbc_bins > args.sbc_draws + 1:
         parser.error("--sbc-bins must be between 2 and --sbc-draws + 1")
+    if args.conditional_calibration_epochs <= 0:
+        parser.error("--conditional-calibration-epochs must be positive")
+    if args.conditional_calibration_learning_rate <= 0.0:
+        parser.error("--conditional-calibration-learning-rate must be positive")
+    if args.conditional_calibration_regularization < 0.0:
+        parser.error("--conditional-calibration-regularization must be non-negative")
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -151,6 +175,7 @@ def main() -> None:
         "posterior_family_policy": args.posterior_family,
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
+        "coefficient_calibration": args.coefficient_calibration,
         "sbc_datasets": args.sbc_datasets,
         "sbc_draws": args.sbc_draws,
         "sbc_bins": args.sbc_bins,
@@ -216,9 +241,14 @@ def main() -> None:
                             "calibration"
                         )
                         if isinstance(metadata, dict):
-                            calibration_result = BetaScaleCalibration.from_metadata(
-                                metadata
-                            )
+                            if metadata.get("method") == "conditional_structured_scale":
+                                calibration_result = (
+                                    ConditionalBetaScaleCalibration.from_metadata(metadata)
+                                )
+                            else:
+                                calibration_result = BetaScaleCalibration.from_metadata(
+                                    metadata
+                                )
                     distribution_sbc_rows = _sbc_rows(
                         engine=engine,
                         calibration=calibration_result,
@@ -324,10 +354,11 @@ def main() -> None:
             calibration_result = None
             posterior = uncalibrated_posterior
             predictive_posterior = uncalibrated_posterior
+            predictive_calibration_result = None
         else:
             calibration_data = fixed_shape_training_data(calibration)
             calibration_posterior = engine.predict_beta_posterior(calibration_data)
-            calibration_result = fit_beta_scale_calibration(
+            predictive_calibration_result = fit_beta_scale_calibration(
                 calibration_posterior,
                 calibration_data.Beta,
                 nominal_level=0.95,
@@ -336,14 +367,38 @@ def main() -> None:
                 poisson_eta_clip=(-6.0, 6.0) if distribution == "poisson" else None,
                 predictive_seed=args.model_seed + suite_idx + 50,
             )
-            posterior = apply_beta_scale_calibration(
-                uncalibrated_posterior,
-                calibration_result,
-                distribution=distribution,
-            )
+            if args.coefficient_calibration == "conditional":
+                calibration_result = fit_conditional_beta_scale_calibration(
+                    calibration_posterior,
+                    calibration_data.Beta,
+                    X=calibration_data.X,
+                    Y=calibration_data.Y,
+                    distribution=distribution,
+                    coefficient_names=engine.covariate_names,
+                    baseline_calibration=predictive_calibration_result,
+                    nominal_level=0.95,
+                    regularization=args.conditional_calibration_regularization,
+                    epochs=args.conditional_calibration_epochs,
+                    learning_rate=args.conditional_calibration_learning_rate,
+                )
+                posterior = apply_conditional_beta_scale_calibration(
+                    uncalibrated_posterior,
+                    calibration_result,
+                    X=fixed_shape_training_data([test]).X,
+                    Y=fixed_shape_training_data([test]).Y,
+                    distribution=distribution,
+                    coefficient_names=engine.covariate_names,
+                )
+            else:
+                calibration_result = predictive_calibration_result
+                posterior = apply_beta_scale_calibration(
+                    uncalibrated_posterior,
+                    calibration_result,
+                    distribution=distribution,
+                )
             predictive_posterior = apply_beta_predictive_calibration(
                 uncalibrated_posterior,
-                calibration_result,
+                predictive_calibration_result,
                 distribution=distribution,
             )
         neural_path = write_beta_posterior_hdf5(
@@ -382,7 +437,7 @@ def main() -> None:
                 },
                 "artifact_role": "predictive_only",
             },
-            calibration=calibration_result,
+            calibration=predictive_calibration_result,
         )
         neural_seconds = time.perf_counter() - start
 
@@ -426,6 +481,10 @@ def main() -> None:
             record["sbc_diagnostics"] = str(sbc_path)
         if calibration_result is not None:
             record["calibration"] = calibration_result.to_metadata()
+        if predictive_calibration_result is not None:
+            record["predictive_calibration"] = (
+                predictive_calibration_result.to_metadata()
+            )
         if args.run_mcmc_reference:
             mcmc_seconds = _run_mcmc_reference(
                 test,
@@ -505,7 +564,7 @@ def _datasets(
 def _sbc_rows(
     *,
     engine: NeuralHmscInference,
-    calibration: BetaScaleCalibration | None,
+    calibration: BetaScaleCalibration | ConditionalBetaScaleCalibration | None,
     distribution: str,
     n_sites: int,
     n_species: int,
@@ -552,14 +611,25 @@ def _sbc_rows(
         uncalibrated = engine.predict_beta_posterior(data)
         variants = [("uncalibrated", uncalibrated)]
         if calibration is not None:
+            if isinstance(calibration, ConditionalBetaScaleCalibration):
+                calibrated = apply_conditional_beta_scale_calibration(
+                    uncalibrated,
+                    calibration,
+                    X=data.X,
+                    Y=data.Y,
+                    distribution=distribution,
+                    coefficient_names=engine.covariate_names,
+                )
+            else:
+                calibrated = apply_beta_scale_calibration(
+                    uncalibrated,
+                    calibration,
+                    distribution=distribution,
+                )
             variants.append(
                 (
                     "calibrated",
-                    apply_beta_scale_calibration(
-                        uncalibrated,
-                        calibration,
-                        distribution=distribution,
-                    ),
+                    calibrated,
                 )
             )
         for variant_idx, (posterior_variant, posterior) in enumerate(variants):
