@@ -882,9 +882,17 @@ Status:
   benchmark entry point, and end-to-end coefficient/predictive semantics tests.
   Implementation details are recorded in
   `docs/neural_hmsc_conditional_calibration_2026-07-01.md`.
-- Next substep: run the conditional calibrator across the frozen five-seed
-  in-domain/OOD benchmark and compare it with the scalar baseline under the
-  same absolute and non-degradation gates.
+- Completed the frozen-checkpoint five-seed comparison on LUMI. Uncalibrated
+  diagnostics reproduced the scalar runs exactly. Conditional scaling reduced
+  in-domain rank-variance error from `0.0243` to `0.0055`, but rare coverage
+  was `0.8718`, rare/intermediate rank-mean errors worsened to `0.1291` and
+  `0.0823`, and every OOD regime degraded relative to scalar calibration. The
+  comparison is recorded in
+  `docs/neural_hmsc_conditional_comparison_2026-07-02.md`.
+- The first conditional architecture is not qualified. Next substep: add a
+  rank-aware, prevalence-weighted calibration objective and a support-aware
+  gate that shrinks conditional adjustments to the scalar multiplier under
+  feature shift, then repeat the same frozen five-seed comparison.
 
 ## Testing Strategy
 

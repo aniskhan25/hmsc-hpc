@@ -25,6 +25,9 @@ def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
         assert "wall_time.txt" in text
         assert "--sbc-datasets" in text
         assert "--ood-regimes" in text
+    assert "--coefficient-calibration" in benchmark_text
+    assert "CONDITIONAL_CALIBRATION_EPOCHS" in benchmark_text
+    assert "NEURAL_CHECKPOINT" in benchmark_text
     assert "--run-mcmc-reference" not in train_text
     assert "--run-mcmc-reference" in benchmark_text
 

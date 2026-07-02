@@ -72,6 +72,7 @@ full-covariance transformation. An end-to-end benchmark smoke test verifies
 that coefficient artifacts carry version 3 metadata while predictive artifacts
 remain on version 2.
 
-The implementation is not yet qualified. The next validation is the frozen
-five-seed in-domain/OOD comparison against the scalar results recorded in
-`docs/neural_hmsc_stratified_sbc_baseline_2026-07-01.md`.
+The frozen five-seed in-domain/OOD comparison is recorded in
+`docs/neural_hmsc_conditional_comparison_2026-07-02.md`. The implementation
+fixed overall in-domain rank variance but failed rare-prevalence and OOD gates;
+it is not qualified.

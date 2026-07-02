@@ -96,6 +96,10 @@ def main() -> None:
     parser.add_argument("--mse-weight", type=float)
     parser.add_argument("--seed", type=int, default=20260626)
     parser.add_argument("--model-seed", type=int)
+    parser.add_argument(
+        "--checkpoint",
+        help="reuse a frozen Neural-HMSC checkpoint instead of training a new amortizer",
+    )
     parser.add_argument("--neural-chains", type=int, default=2)
     parser.add_argument("--neural-draws", type=int, default=200)
     parser.add_argument(
@@ -153,6 +157,8 @@ def main() -> None:
         parser.error("--conditional-calibration-learning-rate must be positive")
     if args.conditional_calibration_regularization < 0.0:
         parser.error("--conditional-calibration-regularization must be non-negative")
+    if args.checkpoint and len(args.suite) != 1:
+        parser.error("--checkpoint requires exactly one distribution in --suite")
 
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -290,13 +296,15 @@ def main() -> None:
             record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
             continue
 
-        train = _datasets(
-            count=args.train_datasets,
-            n_sites=args.n_sites,
-            n_species=args.n_species,
-            distribution=distribution,
-            seed=distribution_seed(args.seed, distribution),
-        )
+        train = None
+        if not args.checkpoint:
+            train = _datasets(
+                count=args.train_datasets,
+                n_sites=args.n_sites,
+                n_species=args.n_species,
+                distribution=distribution,
+                seed=distribution_seed(args.seed, distribution),
+            )
         calibration = _datasets(
             count=args.calibration_datasets,
             n_sites=args.n_sites,
@@ -312,27 +320,48 @@ def main() -> None:
         )
         _write_dataset(test, dataset_dir)
 
-        tf.keras.utils.set_random_seed(args.model_seed + suite_idx)
-        engine = NeuralHmscInference.for_fixed_effects(
-            n_sites=args.n_sites,
-            n_species=args.n_species,
-            n_covariates=3,
-            distribution=distribution,
-            formula="~ x1 + x2",
-            covariate_names=list(test.truth_beta.index),
-            species_names=list(test.truth_beta.columns),
-            hidden_units=(96, 96),
-            posterior_family=args.posterior_family,
-        )
-        training_history = engine.fit(
-            train,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            seed=args.model_seed + suite_idx,
-            mse_weight=args.mse_weight,
-        )
-        engine.save(checkpoint_dir)
-        engine = NeuralHmscInference.load(checkpoint_dir)
+        if args.checkpoint:
+            checkpoint_source = Path(args.checkpoint)
+            engine = NeuralHmscInference.load(checkpoint_source)
+            if engine.distribution != distribution:
+                raise ValueError(
+                    "checkpoint distribution mismatch: "
+                    f"expected {distribution!r}, got {engine.distribution!r}"
+                )
+            if engine.dimensions != {
+                "n_sites": args.n_sites,
+                "n_covariates": 3,
+                "n_species": args.n_species,
+            }:
+                raise ValueError(
+                    "checkpoint dimensions do not match the requested benchmark shape"
+                )
+            training_history = None
+        else:
+            if train is None:
+                raise RuntimeError("training datasets are unavailable")
+            tf.keras.utils.set_random_seed(args.model_seed + suite_idx)
+            engine = NeuralHmscInference.for_fixed_effects(
+                n_sites=args.n_sites,
+                n_species=args.n_species,
+                n_covariates=3,
+                distribution=distribution,
+                formula="~ x1 + x2",
+                covariate_names=list(test.truth_beta.index),
+                species_names=list(test.truth_beta.columns),
+                hidden_units=(96, 96),
+                posterior_family=args.posterior_family,
+            )
+            training_history = engine.fit(
+                train,
+                epochs=args.epochs,
+                batch_size=args.batch_size,
+                seed=args.model_seed + suite_idx,
+                mse_weight=args.mse_weight,
+            )
+            engine.save(checkpoint_dir)
+            checkpoint_source = checkpoint_dir
+            engine = NeuralHmscInference.load(checkpoint_source)
 
         start = time.perf_counter()
         uncalibrated_fit = engine.infer(
@@ -468,15 +497,18 @@ def main() -> None:
             "neural_posterior": str(neural_path),
             "neural_predictive_distribution": str(predictive_path),
             "neural_posterior_uncalibrated": str(uncalibrated_path),
-            "neural_checkpoint": str(checkpoint_dir),
+            "neural_checkpoint": str(checkpoint_source),
             "data_dir": str(dataset_dir),
             "neural_inference_wall_time_seconds": neural_seconds,
-            "training_history": {
+        }
+        if training_history is None:
+            record["reused_frozen_checkpoint"] = True
+        else:
+            record["training_history"] = {
                 "loss": training_history.loss,
                 "beta_rmse": training_history.beta_rmse,
                 "scale_mean": training_history.scale_mean,
-            },
-        }
+            }
         if distribution_sbc_rows:
             record["sbc_diagnostics"] = str(sbc_path)
         if calibration_result is not None:

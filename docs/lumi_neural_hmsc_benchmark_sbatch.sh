@@ -49,8 +49,13 @@ MCMC_THIN="${MCMC_THIN:-5}"
 MCMC_VERBOSE="${MCMC_VERBOSE:-100}"
 SEED="${SEED:-20260626}"
 MODEL_SEED="${MODEL_SEED:-${SEED}}"
+NEURAL_CHECKPOINT="${NEURAL_CHECKPOINT:-}"
 RUN_MCMC_REFERENCE="${RUN_MCMC_REFERENCE:-1}"
 SKIP_EXISTING="${SKIP_EXISTING:-1}"
+COEFFICIENT_CALIBRATION="${COEFFICIENT_CALIBRATION:-scalar}"
+CONDITIONAL_CALIBRATION_EPOCHS="${CONDITIONAL_CALIBRATION_EPOCHS:-400}"
+CONDITIONAL_CALIBRATION_LEARNING_RATE="${CONDITIONAL_CALIBRATION_LEARNING_RATE:-0.03}"
+CONDITIONAL_CALIBRATION_REGULARIZATION="${CONDITIONAL_CALIBRATION_REGULARIZATION:-0.001}"
 GPU_LOG_INTERVAL="${GPU_LOG_INTERVAL:-60}"
 
 mkdir -p output "${RUN_ROOT}" "${OUTPUT_DIR}"
@@ -78,8 +83,11 @@ echo "Shape: sites=${N_SITES}, species=${N_SPECIES}"
 echo "Training datasets: ${TRAIN_DATASETS}; calibration datasets: ${CALIBRATION_DATASETS}"
 echo "SBC datasets/draws/bins: ${SBC_DATASETS}/${SBC_DRAWS}/${SBC_BINS}; OOD: ${OOD_REGIMES}"
 echo "Epochs/batch size: ${EPOCHS}/${BATCH_SIZE}"
+echo "Coefficient calibration: ${COEFFICIENT_CALIBRATION}"
+echo "Conditional calibration epochs/learning rate/regularization: ${CONDITIONAL_CALIBRATION_EPOCHS}/${CONDITIONAL_CALIBRATION_LEARNING_RATE}/${CONDITIONAL_CALIBRATION_REGULARIZATION}"
 echo "MCMC chains/samples/transient/thin: ${MCMC_CHAINS}/${MCMC_SAMPLES}/${MCMC_TRANSIENT}/${MCMC_THIN}"
 echo "Simulation/model seed: ${SEED}/${MODEL_SEED}"
+echo "Frozen checkpoint: ${NEURAL_CHECKPOINT:-none}"
 echo "Python: ${PYTHON}"
 "${PYTHON}" -c "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
 "${PYTHON}" -c "import tensorflow_probability as tfp; print('TFP:', tfp.__version__)"
@@ -118,6 +126,10 @@ args=(
   --ood-regimes ${OOD_REGIMES}
   --epochs "${EPOCHS}"
   --batch-size "${BATCH_SIZE}"
+  --coefficient-calibration "${COEFFICIENT_CALIBRATION}"
+  --conditional-calibration-epochs "${CONDITIONAL_CALIBRATION_EPOCHS}"
+  --conditional-calibration-learning-rate "${CONDITIONAL_CALIBRATION_LEARNING_RATE}"
+  --conditional-calibration-regularization "${CONDITIONAL_CALIBRATION_REGULARIZATION}"
   --neural-chains "${NEURAL_CHAINS}"
   --neural-draws "${NEURAL_DRAWS}"
   --seed "${SEED}"
@@ -130,6 +142,9 @@ args=(
 )
 if [[ "${RUN_MCMC_REFERENCE}" == "1" ]]; then
   args+=(--run-mcmc-reference)
+fi
+if [[ -n "${NEURAL_CHECKPOINT}" ]]; then
+  args+=(--checkpoint "${NEURAL_CHECKPOINT}")
 fi
 if [[ "${SKIP_EXISTING}" == "1" ]]; then
   args+=(--skip-existing)
