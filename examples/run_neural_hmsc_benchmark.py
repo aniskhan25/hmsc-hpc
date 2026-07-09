@@ -53,6 +53,7 @@ from pyhmsc.neural.calibration import (
 from pyhmsc.neural.conditional_calibration import (
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
+    conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
 )
 from pyhmsc.neural.diagnostics import beta_sbc_stratified_diagnostics
@@ -121,6 +122,20 @@ def main() -> None:
     parser.add_argument(
         "--conditional-calibration-regularization", type=float, default=1e-3
     )
+    parser.add_argument(
+        "--conditional-calibration-rank-penalty-weight", type=float, default=0.02
+    )
+    parser.add_argument("--conditional-calibration-rare-weight", type=float, default=4.0)
+    parser.add_argument(
+        "--conditional-calibration-intermediate-weight", type=float, default=2.0
+    )
+    parser.add_argument("--conditional-calibration-common-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--conditional-calibration-support-quantile", type=float, default=0.99
+    )
+    parser.add_argument(
+        "--conditional-calibration-fallback-strength", type=float, default=2.0
+    )
     parser.add_argument("--sbc-datasets", type=int, default=32)
     parser.add_argument("--sbc-draws", type=int, default=256)
     parser.add_argument("--sbc-bins", type=int, default=10)
@@ -157,6 +172,18 @@ def main() -> None:
         parser.error("--conditional-calibration-learning-rate must be positive")
     if args.conditional_calibration_regularization < 0.0:
         parser.error("--conditional-calibration-regularization must be non-negative")
+    if args.conditional_calibration_rank_penalty_weight < 0.0:
+        parser.error("--conditional-calibration-rank-penalty-weight must be non-negative")
+    if min(
+        args.conditional_calibration_rare_weight,
+        args.conditional_calibration_intermediate_weight,
+        args.conditional_calibration_common_weight,
+    ) <= 0.0:
+        parser.error("conditional prevalence weights must be positive")
+    if not 0.5 < args.conditional_calibration_support_quantile < 1.0:
+        parser.error("--conditional-calibration-support-quantile must be between 0.5 and 1")
+    if args.conditional_calibration_fallback_strength < 0.0:
+        parser.error("--conditional-calibration-fallback-strength must be non-negative")
     if args.checkpoint and len(args.suite) != 1:
         parser.error("--checkpoint requires exactly one distribution in --suite")
 
@@ -247,7 +274,10 @@ def main() -> None:
                             "calibration"
                         )
                         if isinstance(metadata, dict):
-                            if metadata.get("method") == "conditional_structured_scale":
+                            if metadata.get("method") in {
+                                "conditional_structured_scale",
+                                "conditional_rank_aware_scale",
+                            }:
                                 calibration_result = (
                                     ConditionalBetaScaleCalibration.from_metadata(metadata)
                                 )
@@ -409,6 +439,16 @@ def main() -> None:
                     regularization=args.conditional_calibration_regularization,
                     epochs=args.conditional_calibration_epochs,
                     learning_rate=args.conditional_calibration_learning_rate,
+                    prevalence_weights=(
+                        args.conditional_calibration_rare_weight,
+                        args.conditional_calibration_intermediate_weight,
+                        args.conditional_calibration_common_weight,
+                    ),
+                    rank_penalty_weight=(
+                        args.conditional_calibration_rank_penalty_weight
+                    ),
+                    support_quantile=args.conditional_calibration_support_quantile,
+                    fallback_strength=args.conditional_calibration_fallback_strength,
                 )
                 posterior = apply_conditional_beta_scale_calibration(
                     uncalibrated_posterior,
@@ -642,8 +682,17 @@ def _sbc_rows(
         data = fixed_shape_training_data(datasets)
         uncalibrated = engine.predict_beta_posterior(data)
         variants = [("uncalibrated", uncalibrated)]
+        conditional_trust = None
         if calibration is not None:
             if isinstance(calibration, ConditionalBetaScaleCalibration):
+                conditional_trust = conditional_beta_support_trust(
+                    uncalibrated,
+                    calibration,
+                    X=data.X,
+                    Y=data.Y,
+                    distribution=distribution,
+                    coefficient_names=engine.covariate_names,
+                )
                 calibrated = apply_conditional_beta_scale_calibration(
                     uncalibrated,
                     calibration,
@@ -693,6 +742,20 @@ def _sbc_rows(
                     "simulation_beta_scale": metadata.get("beta_scale"),
                 }
                 row.update(stratum.report_fields())
+                if posterior_variant == "calibrated" and conditional_trust is not None:
+                    row.update(
+                        {
+                            "conditional_support_trust_mean": float(
+                                np.mean(conditional_trust)
+                            ),
+                            "conditional_support_trust_min": float(
+                                np.min(conditional_trust)
+                            ),
+                            "conditional_support_fallback_fraction": float(
+                                np.mean(conditional_trust < 0.5)
+                            ),
+                        }
+                    )
                 rows.append(row)
 
     in_distribution_rmse = {

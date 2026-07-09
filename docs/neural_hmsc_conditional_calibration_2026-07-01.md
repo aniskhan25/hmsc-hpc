@@ -16,11 +16,17 @@ inference time:
 - prevalence-by-coefficient interaction
 
 Each continuous feature has a linear and positive-hinge term. The model is
-initialized from the existing global scalar multiplier and fitted by minimizing
-conditional Gaussian log score on simulated calibration truth. Ridge
-regularization shrinks it toward the scalar baseline. A final scalar
-normalization targets nominal marginal coverage while preserving conditional
-scale ratios.
+initialized from the existing global scalar multiplier. Version 4 combines a
+prevalence-weighted Gaussian log score with differentiable analytic SBC
+rank-mean and rank-variance penalties. Rare and intermediate species receive
+greater fitting weight. Ridge regularization shrinks the head toward the scalar
+baseline, and a final scalar normalization targets nominal marginal coverage.
+
+Version 4 also stores robust feature bounds and a regularized Mahalanobis
+support radius from simulated calibration data. Conditional adjustments are
+blended with the scalar multiplier in log space; trust decays beyond either
+support boundary and reaches the scalar fallback under substantial feature
+shift.
 
 The calibrator does not alter posterior means. For a full-covariance posterior,
 coefficient scales form a diagonal matrix `D` and each per-species Cholesky
@@ -28,14 +34,16 @@ factor becomes `D L`, giving covariance `D Sigma D`.
 
 ## Semantics
 
-Conditional calibration metadata uses `semantics_version: 3` and method
-`conditional_structured_scale`. It stores feature normalization, weights,
-coefficient names, multiplier bounds, fitting hyperparameters, calibration
-coverage, and scalar-versus-conditional log scores.
+Current conditional calibration metadata uses `semantics_version: 4` and
+method `conditional_rank_aware_scale`. It stores feature normalization,
+weights, coefficient names, multiplier bounds, rank-objective settings,
+feature-support geometry, fitting hyperparameters, calibration coverage, and
+scalar-versus-conditional log scores and rank losses. Version 3
+`conditional_structured_scale` metadata remains loadable for reproducibility.
 
 Coefficient and predictive calibration remain separate:
 
-- coefficient artifacts may use the conditional version 3 calibrator
+- coefficient artifacts may use the conditional version 4 calibrator
 - predictive-only artifacts continue to use the scalar version 2 calibrator
 - neither ecological dataset nor an MCMC posterior may be used to fit the
   conditional head
@@ -62,17 +70,23 @@ The general runner exposes the same mode through
 `--coefficient-calibration conditional`. Optimization can be controlled with
 `--conditional-calibration-epochs`,
 `--conditional-calibration-learning-rate`, and
-`--conditional-calibration-regularization`.
+`--conditional-calibration-regularization`. Rank weighting is controlled by
+`--conditional-calibration-rank-penalty-weight` and the three prevalence
+weights. Support fallback is controlled by
+`--conditional-calibration-support-quantile` and
+`--conditional-calibration-fallback-strength`.
 
 ## Validation State
 
 Unit coverage verifies conditional prevalence response, nominal calibration,
-metadata round trips, domain rejection, unchanged means, and exact
+metadata round trips, version 3 compatibility, rank-loss improvement, scalar
+fallback outside feature support, domain rejection, unchanged means, and exact
 full-covariance transformation. An end-to-end benchmark smoke test verifies
-that coefficient artifacts carry version 3 metadata while predictive artifacts
-remain on version 2.
+that coefficient artifacts carry version 4 metadata while predictive artifacts
+remain on version 2 and SBC rows expose support-trust diagnostics.
 
 The frozen five-seed in-domain/OOD comparison is recorded in
 `docs/neural_hmsc_conditional_comparison_2026-07-02.md`. The implementation
-fixed overall in-domain rank variance but failed rare-prevalence and OOD gates;
-it is not qualified.
+fixed overall in-domain rank variance but failed rare-prevalence and OOD gates.
+That result applies to the version 3 objective. Version 4 must repeat the same
+frozen five-seed comparison before qualification.

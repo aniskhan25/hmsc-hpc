@@ -893,6 +893,13 @@ Status:
   rank-aware, prevalence-weighted calibration objective and a support-aware
   gate that shrinks conditional adjustments to the scalar multiplier under
   feature shift, then repeat the same frozen five-seed comparison.
+- Implemented the rank-aware revision with analytic posterior-CDF rank moments,
+  explicit rare/intermediate prevalence weighting, robust feature bounds,
+  regularized Mahalanobis support, and log-scale fallback to the frozen scalar
+  multiplier. Version 3 artifacts remain readable; new artifacts use
+  `semantics_version: 4` and expose support-trust diagnostics in SBC rows.
+- Next substep: repeat the frozen five-seed in-domain/OOD comparison for the
+  version 4 calibrator before returning to either ecological dataset.
 
 ## Testing Strategy
 

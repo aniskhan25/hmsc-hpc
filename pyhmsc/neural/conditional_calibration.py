@@ -15,6 +15,10 @@ from pyhmsc.neural.posterior_heads import BetaPosterior
 
 
 _RAW_FEATURE_NAMES = ("prevalence_logit", "log_design_information", "log_raw_scale")
+_CONDITIONAL_METHODS = {
+    "conditional_structured_scale",
+    "conditional_rank_aware_scale",
+}
 
 
 @dataclass(frozen=True)
@@ -40,9 +44,26 @@ class ConditionalBetaScaleCalibration:
     learning_rate: float
     scalar_nll: float
     conditional_nll: float
+    scalar_rank_loss: float = 0.0
+    conditional_rank_loss: float = 0.0
+    prevalence_weights: tuple[float, float, float] = (4.0, 2.0, 1.0)
+    prevalence_edges: tuple[float, float] = (0.1, 0.3)
+    rank_penalty_weight: float = 0.02
+    rank_mean_tolerance: float = 0.025
+    rank_variance_tolerance: float = 0.015
+    support_lower: tuple[float, float, float] = (-1e9, -1e9, -1e9)
+    support_upper: tuple[float, float, float] = (1e9, 1e9, 1e9)
+    support_precision: tuple[tuple[float, float, float], ...] = (
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+    )
+    support_radius: float = 1e9
+    support_quantile: float = 0.99
+    fallback_strength: float = 2.0
     min_multiplier: float = 0.1
     max_multiplier: float = 20.0
-    method: str = "conditional_structured_scale"
+    method: str = "conditional_rank_aware_scale"
 
     @property
     def scale_multiplier(self) -> float:
@@ -84,7 +105,9 @@ class ConditionalBetaScaleCalibration:
     def to_metadata(self) -> dict[str, Any]:
         """Return JSON-serializable conditional-calibration metadata."""
         return {
-            "semantics_version": 3,
+            "semantics_version": (
+                4 if self.method == "conditional_rank_aware_scale" else 3
+            ),
             "method": self.method,
             "parameter": "Beta",
             "scale_multiplier": float(self.normalization_multiplier),
@@ -113,6 +136,25 @@ class ConditionalBetaScaleCalibration:
                 "learning_rate": float(self.learning_rate),
                 "scalar_nll": float(self.scalar_nll),
                 "conditional_nll": float(self.conditional_nll),
+                "scalar_rank_loss": float(self.scalar_rank_loss),
+                "conditional_rank_loss": float(self.conditional_rank_loss),
+            },
+            "rank_aware": {
+                "prevalence_weights": list(self.prevalence_weights),
+                "prevalence_edges": list(self.prevalence_edges),
+                "penalty_weight": float(self.rank_penalty_weight),
+                "mean_tolerance": float(self.rank_mean_tolerance),
+                "variance_tolerance": float(self.rank_variance_tolerance),
+            },
+            "support": {
+                "lower": list(self.support_lower),
+                "upper": list(self.support_upper),
+                "precision": [list(row) for row in self.support_precision],
+                "radius": float(self.support_radius),
+                "quantile": float(self.support_quantile),
+                "fallback_strength": float(self.fallback_strength),
+                "fallback_multiplier": float(self.global_scale_multiplier),
+                "blend_space": "log_scale",
             },
             "multiplier_bounds": [
                 float(self.min_multiplier),
@@ -123,7 +165,8 @@ class ConditionalBetaScaleCalibration:
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any]) -> "ConditionalBetaScaleCalibration":
         """Reconstruct a conditional calibrator from stored metadata."""
-        if metadata.get("method") != "conditional_structured_scale":
+        method = str(metadata.get("method"))
+        if method not in _CONDITIONAL_METHODS:
             raise ValueError("metadata does not describe conditional structured scaling")
         domain = metadata["domain"]
         features = metadata["features"]
@@ -140,6 +183,21 @@ class ConditionalBetaScaleCalibration:
         feature_scale = tuple(float(value) for value in features["scale"])
         if len(location) != 3 or len(feature_scale) != 3:
             raise ValueError("conditional calibration requires three raw features")
+        rank_aware = metadata.get("rank_aware", {})
+        support = metadata.get("support", {})
+        support_lower = tuple(float(value) for value in support.get("lower", (-1e9,) * 3))
+        support_upper = tuple(float(value) for value in support.get("upper", (1e9,) * 3))
+        support_precision = tuple(
+            tuple(float(value) for value in row)
+            for row in support.get("precision", np.eye(3).tolist())
+        )
+        if (
+            len(support_lower) != 3
+            or len(support_upper) != 3
+            or len(support_precision) != 3
+            or any(len(row) != 3 for row in support_precision)
+        ):
+            raise ValueError("conditional calibration support must have three dimensions")
         return cls(
             global_scale_multiplier=float(metadata["global_scale_multiplier"]),
             normalization_multiplier=float(metadata["scale_multiplier"]),
@@ -160,8 +218,30 @@ class ConditionalBetaScaleCalibration:
             learning_rate=float(training["learning_rate"]),
             scalar_nll=float(training["scalar_nll"]),
             conditional_nll=float(training["conditional_nll"]),
+            scalar_rank_loss=float(training.get("scalar_rank_loss", 0.0)),
+            conditional_rank_loss=float(training.get("conditional_rank_loss", 0.0)),
+            prevalence_weights=tuple(
+                float(value)
+                for value in rank_aware.get("prevalence_weights", (1.0, 1.0, 1.0))
+            ),
+            prevalence_edges=tuple(
+                float(value)
+                for value in rank_aware.get("prevalence_edges", (0.1, 0.3))
+            ),
+            rank_penalty_weight=float(rank_aware.get("penalty_weight", 0.0)),
+            rank_mean_tolerance=float(rank_aware.get("mean_tolerance", 0.025)),
+            rank_variance_tolerance=float(
+                rank_aware.get("variance_tolerance", 0.015)
+            ),
+            support_lower=support_lower,
+            support_upper=support_upper,
+            support_precision=support_precision,
+            support_radius=float(support.get("radius", 1e9)),
+            support_quantile=float(support.get("quantile", 1.0)),
+            fallback_strength=float(support.get("fallback_strength", 0.0)),
             min_multiplier=float(bounds[0]),
             max_multiplier=float(bounds[1]),
+            method=method,
         )
 
 
@@ -179,14 +259,23 @@ def fit_conditional_beta_scale_calibration(
     regularization: float = 1e-3,
     epochs: int = 400,
     learning_rate: float = 0.03,
+    prevalence_weights: tuple[float, float, float] = (4.0, 2.0, 1.0),
+    prevalence_edges: tuple[float, float] = (0.1, 0.3),
+    rank_penalty_weight: float = 0.02,
+    rank_mean_tolerance: float = 0.025,
+    rank_variance_tolerance: float = 0.015,
+    support_quantile: float = 0.99,
+    fallback_strength: float = 2.0,
+    support_ridge: float = 1e-4,
     min_multiplier: float = 0.1,
     max_multiplier: float = 20.0,
 ) -> ConditionalBetaScaleCalibration:
     """Fit a structured conditional scale head on simulated calibration truth.
 
-    The head minimizes conditional Gaussian log score around the frozen neural
-    posterior mean. A final scalar normalization restores nominal marginal
-    coverage without discarding the learned coefficient-level scale ratios.
+    The head combines prevalence-weighted Gaussian log score with analytic SBC
+    rank-moment penalties. A final scalar normalization restores nominal
+    marginal coverage, while a feature-support gate falls back to the frozen
+    scalar multiplier under covariate shift.
     """
     if not 0.0 < nominal_level < 1.0:
         raise ValueError("nominal_level must be between zero and one")
@@ -196,6 +285,19 @@ def fit_conditional_beta_scale_calibration(
         raise ValueError("epochs must be positive")
     if learning_rate <= 0.0:
         raise ValueError("learning_rate must be positive")
+    if len(prevalence_weights) != 3 or any(value <= 0.0 for value in prevalence_weights):
+        raise ValueError("prevalence_weights must contain three positive values")
+    low_prevalence, high_prevalence = (float(value) for value in prevalence_edges)
+    if not 0.0 < low_prevalence < high_prevalence < 1.0:
+        raise ValueError("prevalence_edges must be ordered values between zero and one")
+    if rank_penalty_weight < 0.0:
+        raise ValueError("rank_penalty_weight must be non-negative")
+    if rank_mean_tolerance <= 0.0 or rank_variance_tolerance <= 0.0:
+        raise ValueError("rank tolerances must be positive")
+    if not 0.5 < support_quantile < 1.0:
+        raise ValueError("support_quantile must be between 0.5 and 1")
+    if fallback_strength < 0.0 or support_ridge <= 0.0:
+        raise ValueError("fallback_strength must be non-negative and support_ridge positive")
     if not 0.0 < min_multiplier < max_multiplier:
         raise ValueError("multiplier bounds must be positive and ordered")
 
@@ -234,6 +336,26 @@ def fit_conditional_beta_scale_calibration(
     location = np.mean(selected_raw, axis=0)
     feature_scale = np.std(selected_raw, axis=0)
     feature_scale = np.where(feature_scale > 1e-8, feature_scale, 1.0)
+    selected_standardized = (selected_raw - location) / feature_scale
+    support_tail = (1.0 - support_quantile) / 2.0
+    support_lower = np.quantile(selected_standardized, support_tail, axis=0)
+    support_upper = np.quantile(selected_standardized, 1.0 - support_tail, axis=0)
+    support_covariance = np.cov(selected_standardized, rowvar=False)
+    support_precision = np.linalg.inv(
+        support_covariance + float(support_ridge) * np.eye(3)
+    )
+    support_distance = np.sqrt(
+        np.maximum(
+            np.einsum(
+                "ni,ij,nj->n",
+                selected_standardized,
+                support_precision,
+                selected_standardized,
+            ),
+            0.0,
+        )
+    )
+    support_radius = float(np.quantile(support_distance, support_quantile))
     feature_design, feature_names = _structured_design(
         raw_features,
         location=location,
@@ -241,14 +363,30 @@ def fit_conditional_beta_scale_calibration(
         n_covariates=mean.shape[1],
     )
 
-    standardized_error = np.abs(mean - truth) / scale
+    signed_standardized_error = (truth - mean) / scale
+    standardized_error = np.abs(signed_standardized_error)
     selected_design = feature_design[mask.reshape(-1)]
     selected_error = standardized_error[mask]
+    selected_signed_error = signed_standardized_error[mask]
+    prevalence = _prevalence(response)
+    prevalence_by_coefficient = np.broadcast_to(prevalence[:, None, :], mean.shape)
+    selected_prevalence = prevalence_by_coefficient[mask]
+    observation_weights = _prevalence_observation_weights(
+        selected_prevalence,
+        prevalence_weights=prevalence_weights,
+        prevalence_edges=prevalence_edges,
+    )
+    rank_groups = _prevalence_group_masks(
+        selected_prevalence, prevalence_edges=prevalence_edges
+    )
     weights = tf.Variable(
         np.zeros(selected_design.shape[1], dtype=np.float64), dtype=tf.float64
     )
     design_tensor = tf.constant(selected_design, dtype=tf.float64)
     error_tensor = tf.constant(selected_error, dtype=tf.float64)
+    signed_error_tensor = tf.constant(selected_signed_error, dtype=tf.float64)
+    observation_weight_tensor = tf.constant(observation_weights, dtype=tf.float64)
+    rank_group_tensors = [tf.constant(group) for group in rank_groups]
     base_log_scale = tf.constant(np.log(baseline.scale_multiplier), dtype=tf.float64)
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     for _ in range(epochs):
@@ -258,14 +396,26 @@ def fit_conditional_beta_scale_calibration(
                 np.log(min_multiplier),
                 np.log(max_multiplier),
             )
-            nll = tf.reduce_mean(
+            coefficient_nll = (
                 log_multiplier
                 + 0.5 * tf.square(error_tensor) * tf.exp(-2.0 * log_multiplier)
+            )
+            nll = tf.reduce_sum(observation_weight_tensor * coefficient_nll) / tf.reduce_sum(
+                observation_weight_tensor
+            )
+            rank_probability = _tf_normal_cdf(
+                signed_error_tensor * tf.exp(-log_multiplier)
+            )
+            rank_loss = _tf_rank_moment_loss(
+                rank_probability,
+                rank_group_tensors,
+                mean_tolerance=rank_mean_tolerance,
+                variance_tolerance=rank_variance_tolerance,
             )
             penalty = tf.cast(regularization, tf.float64) * tf.reduce_mean(
                 tf.square(weights)
             )
-            loss = nll + penalty
+            loss = nll + tf.cast(rank_penalty_weight, tf.float64) * rank_loss + penalty
         gradient = tape.gradient(loss, weights)
         optimizer.apply_gradients([(gradient, weights)])
 
@@ -273,13 +423,35 @@ def fit_conditional_beta_scale_calibration(
     adjustment = np.exp(
         np.clip(feature_design @ fitted_weights, -20.0, 20.0)
     ).reshape(mean.shape)
-    z_value = float(norm.ppf(0.5 + nominal_level / 2.0))
-    normalization = float(
-        np.quantile((standardized_error / adjustment)[mask], nominal_level) / z_value
+    support_trust = _support_trust(
+        raw_features,
+        location=location,
+        scale=feature_scale,
+        lower=support_lower,
+        upper=support_upper,
+        precision=support_precision,
+        radius=support_radius,
+        fallback_strength=fallback_strength,
     )
-    normalization = float(np.clip(normalization, min_multiplier, max_multiplier))
-    multipliers = np.clip(
-        normalization * adjustment, min_multiplier, max_multiplier
+    z_value = float(norm.ppf(0.5 + nominal_level / 2.0))
+    normalization = _fit_coverage_normalization(
+        standardized_error=standardized_error,
+        adjustment=adjustment,
+        trust=support_trust,
+        global_multiplier=baseline.scale_multiplier,
+        mask=mask,
+        nominal_level=nominal_level,
+        z_value=z_value,
+        min_multiplier=min_multiplier,
+        max_multiplier=max_multiplier,
+    )
+    multipliers = _blend_with_scalar_fallback(
+        adjustment,
+        support_trust,
+        normalization=normalization,
+        global_multiplier=baseline.scale_multiplier,
+        min_multiplier=min_multiplier,
+        max_multiplier=max_multiplier,
     )
     uncalibrated_coverage = _coverage(mean, scale, truth, mask, z_value)
     calibrated_coverage = _coverage(
@@ -308,6 +480,31 @@ def fit_conditional_beta_scale_calibration(
         learning_rate=float(learning_rate),
         scalar_nll=_scale_nll(selected_error, scalar_multiplier),
         conditional_nll=_scale_nll(selected_error, conditional_multiplier),
+        scalar_rank_loss=_rank_moment_loss(
+            selected_signed_error / scalar_multiplier,
+            rank_groups,
+            mean_tolerance=rank_mean_tolerance,
+            variance_tolerance=rank_variance_tolerance,
+        ),
+        conditional_rank_loss=_rank_moment_loss(
+            selected_signed_error / conditional_multiplier,
+            rank_groups,
+            mean_tolerance=rank_mean_tolerance,
+            variance_tolerance=rank_variance_tolerance,
+        ),
+        prevalence_weights=tuple(float(value) for value in prevalence_weights),
+        prevalence_edges=(low_prevalence, high_prevalence),
+        rank_penalty_weight=float(rank_penalty_weight),
+        rank_mean_tolerance=float(rank_mean_tolerance),
+        rank_variance_tolerance=float(rank_variance_tolerance),
+        support_lower=tuple(float(value) for value in support_lower),
+        support_upper=tuple(float(value) for value in support_upper),
+        support_precision=tuple(
+            tuple(float(value) for value in row) for row in support_precision
+        ),
+        support_radius=support_radius,
+        support_quantile=float(support_quantile),
+        fallback_strength=float(fallback_strength),
         min_multiplier=float(min_multiplier),
         max_multiplier=float(max_multiplier),
     )
@@ -349,10 +546,60 @@ def conditional_beta_scale_multipliers(
     adjustment = np.exp(
         np.clip(feature_design @ np.asarray(calibration.weights), -20.0, 20.0)
     ).reshape(mean.shape)
-    return np.clip(
-        calibration.normalization_multiplier * adjustment,
-        calibration.min_multiplier,
-        calibration.max_multiplier,
+    trust = _support_trust(
+        raw_features,
+        location=np.asarray(calibration.feature_location),
+        scale=np.asarray(calibration.feature_scale),
+        lower=np.asarray(calibration.support_lower),
+        upper=np.asarray(calibration.support_upper),
+        precision=np.asarray(calibration.support_precision),
+        radius=calibration.support_radius,
+        fallback_strength=calibration.fallback_strength,
+    )
+    return _blend_with_scalar_fallback(
+        adjustment,
+        trust,
+        normalization=calibration.normalization_multiplier,
+        global_multiplier=calibration.global_scale_multiplier,
+        min_multiplier=calibration.min_multiplier,
+        max_multiplier=calibration.max_multiplier,
+    )
+
+
+def conditional_beta_support_trust(
+    posterior: BetaPosterior,
+    calibration: ConditionalBetaScaleCalibration,
+    *,
+    X: np.ndarray,
+    Y: np.ndarray,
+    distribution: str | None = None,
+    coefficient_names: Sequence[str] | None = None,
+) -> np.ndarray:
+    """Return coefficient-level trust in the learned conditional adjustment."""
+    mean, scale, design, response = _validated_arrays(posterior, X=X, Y=Y)
+    names = calibration.coefficient_names if coefficient_names is None else coefficient_names
+    calibration.validate_domain(
+        distribution=distribution or calibration.distribution,
+        n_covariates=mean.shape[1],
+        n_species=mean.shape[2],
+        coefficient_names=names,
+    )
+    raw_features = _raw_features(
+        mean=mean,
+        scale=scale,
+        X=design,
+        Y=response,
+        distribution=distribution or calibration.distribution,
+    )
+    return _support_trust(
+        raw_features,
+        location=np.asarray(calibration.feature_location),
+        scale=np.asarray(calibration.feature_scale),
+        lower=np.asarray(calibration.support_lower),
+        upper=np.asarray(calibration.support_upper),
+        precision=np.asarray(calibration.support_precision),
+        radius=calibration.support_radius,
+        fallback_strength=calibration.fallback_strength,
     )
 
 
@@ -429,7 +676,7 @@ def _raw_features(
     Y: np.ndarray,
     distribution: str,
 ) -> np.ndarray:
-    prevalence = np.mean(Y > 0.0, axis=1)
+    prevalence = _prevalence(Y)
     epsilon = 0.5 / float(X.shape[1] + 1)
     prevalence = np.clip(prevalence, epsilon, 1.0 - epsilon)
     prevalence_logit = np.log(prevalence / (1.0 - prevalence))
@@ -443,6 +690,38 @@ def _raw_features(
         ],
         axis=-1,
     )
+
+
+def _prevalence(Y: np.ndarray) -> np.ndarray:
+    return np.mean(np.asarray(Y) > 0.0, axis=1)
+
+
+def _prevalence_observation_weights(
+    prevalence: np.ndarray,
+    *,
+    prevalence_weights: tuple[float, float, float],
+    prevalence_edges: tuple[float, float],
+) -> np.ndarray:
+    low, high = prevalence_edges
+    rare, intermediate, common = prevalence_weights
+    return np.where(
+        prevalence <= low,
+        rare,
+        np.where(prevalence <= high, intermediate, common),
+    ).astype(float)
+
+
+def _prevalence_group_masks(
+    prevalence: np.ndarray, *, prevalence_edges: tuple[float, float]
+) -> list[np.ndarray]:
+    low, high = prevalence_edges
+    candidates = [
+        np.ones(prevalence.shape, dtype=bool),
+        prevalence <= low,
+        (prevalence > low) & (prevalence <= high),
+        prevalence > high,
+    ]
+    return [mask for mask in candidates if np.count_nonzero(mask) >= 2]
 
 
 def _expected_design_information(
@@ -494,6 +773,136 @@ def _structured_design(
         columns.append(centered_identity[:, index] * prevalence)
         names.append(f"prevalence_by_coefficient_{index}")
     return np.column_stack(columns), tuple(names)
+
+
+def _support_trust(
+    raw_features: np.ndarray,
+    *,
+    location: np.ndarray,
+    scale: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    precision: np.ndarray,
+    radius: float,
+    fallback_strength: float,
+) -> np.ndarray:
+    if fallback_strength <= 0.0:
+        return np.ones(raw_features.shape[:3], dtype=float)
+    standardized = (raw_features - location) / scale
+    lower_excess = np.maximum(lower - standardized, 0.0)
+    upper_excess = np.maximum(standardized - upper, 0.0)
+    box_excess = np.sqrt(np.sum(np.square(lower_excess + upper_excess), axis=-1))
+    distance = np.sqrt(
+        np.maximum(
+            np.einsum(
+                "...i,ij,...j->...",
+                standardized,
+                precision,
+                standardized,
+            ),
+            0.0,
+        )
+    )
+    radial_excess = np.maximum(distance - float(radius), 0.0)
+    total_excess = np.sqrt(np.square(box_excess) + np.square(radial_excess))
+    return np.exp(-float(fallback_strength) * np.square(total_excess))
+
+
+def _blend_with_scalar_fallback(
+    adjustment: np.ndarray,
+    trust: np.ndarray,
+    *,
+    normalization: float,
+    global_multiplier: float,
+    min_multiplier: float,
+    max_multiplier: float,
+) -> np.ndarray:
+    conditional = np.clip(
+        float(normalization) * adjustment,
+        min_multiplier,
+        max_multiplier,
+    )
+    log_multiplier = (
+        trust * np.log(conditional)
+        + (1.0 - trust) * np.log(float(global_multiplier))
+    )
+    return np.clip(np.exp(log_multiplier), min_multiplier, max_multiplier)
+
+
+def _fit_coverage_normalization(
+    *,
+    standardized_error: np.ndarray,
+    adjustment: np.ndarray,
+    trust: np.ndarray,
+    global_multiplier: float,
+    mask: np.ndarray,
+    nominal_level: float,
+    z_value: float,
+    min_multiplier: float,
+    max_multiplier: float,
+) -> float:
+    lower = float(min_multiplier)
+    upper = float(max_multiplier)
+    for _ in range(64):
+        midpoint = float(np.sqrt(lower * upper))
+        multiplier = _blend_with_scalar_fallback(
+            adjustment,
+            trust,
+            normalization=midpoint,
+            global_multiplier=global_multiplier,
+            min_multiplier=min_multiplier,
+            max_multiplier=max_multiplier,
+        )
+        coverage = float(
+            np.mean(standardized_error[mask] <= z_value * multiplier[mask])
+        )
+        if coverage < nominal_level:
+            lower = midpoint
+        else:
+            upper = midpoint
+    return upper
+
+
+def _tf_normal_cdf(value: tf.Tensor) -> tf.Tensor:
+    return 0.5 * (1.0 + tf.math.erf(value / tf.sqrt(tf.constant(2.0, tf.float64))))
+
+
+def _tf_rank_moment_loss(
+    rank_probability: tf.Tensor,
+    groups: list[tf.Tensor],
+    *,
+    mean_tolerance: float,
+    variance_tolerance: float,
+) -> tf.Tensor:
+    losses = []
+    expected_variance = tf.constant(1.0 / 12.0, dtype=tf.float64)
+    for group in groups:
+        selected = tf.boolean_mask(rank_probability, group)
+        rank_mean = tf.reduce_mean(selected)
+        rank_variance = tf.reduce_mean(tf.square(selected - rank_mean))
+        losses.append(
+            tf.square((rank_mean - 0.5) / mean_tolerance)
+            + tf.square((rank_variance - expected_variance) / variance_tolerance)
+        )
+    return tf.reduce_mean(tf.stack(losses))
+
+
+def _rank_moment_loss(
+    signed_standardized_error: np.ndarray,
+    groups: list[np.ndarray],
+    *,
+    mean_tolerance: float,
+    variance_tolerance: float,
+) -> float:
+    ranks = ndtr(signed_standardized_error)
+    losses = []
+    for group in groups:
+        selected = ranks[group]
+        losses.append(
+            ((float(np.mean(selected)) - 0.5) / mean_tolerance) ** 2
+            + ((float(np.var(selected)) - 1.0 / 12.0) / variance_tolerance) ** 2
+        )
+    return float(np.mean(losses))
 
 
 def _coefficient_names(

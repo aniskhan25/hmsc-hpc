@@ -157,7 +157,17 @@ def test_conditional_calibration_entrypoint_keeps_predictive_scalar(tmp_path):
     predictive_fit = HmscFit.from_file(record["neural_predictive_distribution"])
 
     assert manifest["coefficient_calibration"] == "conditional"
-    assert record["calibration"]["method"] == "conditional_structured_scale"
+    assert record["calibration"]["method"] == "conditional_rank_aware_scale"
     assert record["predictive_calibration"]["method"] == "temperature_scale"
-    assert coefficient_fit.metadata["calibration"]["semantics_version"] == 3
+    assert coefficient_fit.metadata["calibration"]["semantics_version"] == 4
     assert predictive_fit.metadata["calibration"]["semantics_version"] == 2
+    assert "rank_aware" in record["calibration"]
+    assert "support" in record["calibration"]
+    sbc_rows = json.loads(
+        (output / "neural_hmsc_sbc_diagnostics.json").read_text(encoding="utf-8")
+    )
+    calibrated_rows = [
+        row for row in sbc_rows if row["posterior_variant"] == "calibrated"
+    ]
+    assert calibrated_rows
+    assert all("conditional_support_trust_mean" in row for row in calibrated_rows)

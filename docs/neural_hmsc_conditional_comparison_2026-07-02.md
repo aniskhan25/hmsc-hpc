@@ -82,3 +82,6 @@ The first conditional architecture is not qualified. The next revision will:
 - rerun the same frozen five-seed comparison before either real-data workflow
 
 The acceptance gates and scalar baseline remain unchanged.
+
+Implementation status: these corrections are implemented in conditional
+metadata version 4 and must now be evaluated with the same frozen checkpoints.

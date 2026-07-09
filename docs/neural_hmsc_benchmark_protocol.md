@@ -208,11 +208,15 @@ scoring, but must be labelled `predictive_only` and must not be interpreted as
 posterior uncertainty. Probit scale selection uses the exact Gaussian-probit
 expectation and is fitted only on independent simulated calibration data.
 Conditional coefficient calibration may replace the global coefficient scale,
-but it must retain this separation: conditional version 3 metadata belongs to
+but it must retain this separation: conditional version 4 metadata belongs to
 the coefficient artifact, while the predictive-only artifact retains its
 scalar version 2 metadata. Conditional features and weights must be fitted only
 from simulated calibration data and must be computable without coefficient
 truth when applied.
+Rank-aware fitting must report its prevalence weights and rank-moment penalty.
+Support-aware fitting must store the calibration support definition and scalar
+fallback. SBC rows must report mean/minimum support trust and the fraction of
+coefficients with trust below `0.5`, separately for in-domain and OOD data.
 Overall qualification requires both predictive acceptance and SBC acceptance.
 SBC acceptance requires at least 90% empirical 95% coverage and no material
 degradation in coverage error, normalized-rank mean error, or normalized-rank

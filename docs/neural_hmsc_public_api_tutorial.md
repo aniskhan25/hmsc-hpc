@@ -134,11 +134,14 @@ and preserves the old applied scale as predictive-only.
 
 Milestone 12 adds `fit_conditional_beta_scale_calibration` and
 `apply_conditional_beta_scale_calibration` for simulation-trained coefficient
-scaling. The conditional artifact uses `semantics_version: 3`, stores its
-feature normalization and structured-head weights, and requires `X`, `Y`, and
-matching coefficient names when applied. It uses prevalence, expected design
-information, raw posterior scale, and coefficient identity. Full-covariance
-posteriors are transformed as `D Sigma D`; posterior means are unchanged.
+scaling. The current conditional artifact uses `semantics_version: 4`, stores
+its rank-aware objective, feature normalization, structured-head weights, and
+support geometry, and requires `X`, `Y`, and matching coefficient names when
+applied. It uses prevalence, expected design information, raw posterior scale,
+and coefficient identity. `conditional_beta_support_trust` exposes the
+coefficient-level blend weight; zero trust applies the frozen scalar fallback.
+Full-covariance posteriors are transformed as `D Sigma D`; posterior means are
+unchanged. Version 3 conditional metadata remains readable.
 
 The conditional artifact applies only to coefficient uncertainty. Continue to
 use the separately fitted `BetaScaleCalibration` with
