@@ -4,7 +4,10 @@ import pytest
 import tensorflow as tf
 
 from pyhmsc.neural.evaluation import evaluate_beta_posterior, predict_beta_posterior
-from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
+from pyhmsc.neural.models import (
+    FixedShapeBetaPosteriorModel,
+    probit_irls_laplace_anchor,
+)
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
 from pyhmsc.neural.simulator import FixedEffectDataset, simulate_fixed_effect_dataset
 from pyhmsc.neural.train import fixed_shape_training_data
@@ -93,6 +96,61 @@ def test_poisson_fixed_shape_model_uses_log_response_ridge_anchor():
     posterior = model({"X": X, "Y": Y}, training=False)
 
     assert posterior.mean.numpy()[0, 0, 0] == pytest.approx(2.0, abs=0.01)
+
+
+def test_probit_irls_anchor_improves_untrained_mean_recovery():
+    datasets = [
+        simulate_fixed_effect_dataset(
+            n_sites=160,
+            n_species=6,
+            distribution="probit",
+            seed=6100 + index,
+        )
+        for index in range(4)
+    ]
+    data = fixed_shape_training_data(datasets)
+    ridge_model = FixedShapeBetaPosteriorModel(
+        n_sites=160,
+        n_covariates=3,
+        n_species=6,
+        distribution="probit",
+        probit_anchor="ridge",
+    )
+    anchored_model = FixedShapeBetaPosteriorModel(
+        n_sites=160,
+        n_covariates=3,
+        n_species=6,
+        distribution="probit",
+        probit_anchor="irls_laplace",
+    )
+
+    ridge = ridge_model({"X": data.X, "Y": data.Y}, training=False)
+    anchored = anchored_model({"X": data.X, "Y": data.Y}, training=False)
+    ridge_rmse = float(np.sqrt(np.mean((ridge.mean.numpy() - data.Beta) ** 2)))
+    anchored_rmse = float(np.sqrt(np.mean((anchored.mean.numpy() - data.Beta) ** 2)))
+
+    assert anchored_rmse < 0.5 * ridge_rmse
+    assert anchored_model.probit_anchor == "irls_laplace"
+
+
+def test_probit_irls_laplace_anchor_is_finite_for_all_zero_species():
+    X = tf.stack(
+        [
+            tf.ones(40, dtype=tf.float32),
+            tf.linspace(-1.0, 1.0, 40),
+        ],
+        axis=1,
+    )[None, :, :]
+    Y = tf.zeros((1, 40, 2), dtype=tf.float32)
+
+    mean, scale = probit_irls_laplace_anchor(X, Y)
+
+    assert mean.shape == (1, 2, 2)
+    assert scale.shape == (1, 2, 2)
+    assert np.all(np.isfinite(mean.numpy()))
+    assert np.all(np.isfinite(scale.numpy()))
+    assert float(tf.reduce_min(scale)) > 0.0
+    assert np.all(mean.numpy()[:, 0, :] < 0.0)
 
 
 def test_fixed_shape_training_data_rejects_mixed_shapes():

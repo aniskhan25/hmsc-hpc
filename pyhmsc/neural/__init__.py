@@ -70,6 +70,7 @@ __all__ = [
     "fit_beta_scale_calibration",
     "fit_conditional_beta_scale_calibration",
     "conditional_beta_scale_multipliers",
+    "conditional_beta_mean_support_diagnostics",
     "conditional_beta_support_trust",
     "generate_fixed_effect_corpus",
     "iid_latent_training_data",
@@ -78,6 +79,7 @@ __all__ = [
     "predict_iid_latent_posterior",
     "predict_spatial_latent_posterior",
     "predict_variable_beta_posterior",
+    "probit_irls_laplace_anchor",
     "simulate_fixed_effect_dataset",
     "simulate_fixed_effect_ood_dataset",
     "simulate_iid_latent_effect_dataset",
@@ -99,10 +101,15 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
+    if name == "probit_irls_laplace_anchor":
+        from pyhmsc.neural.models import probit_irls_laplace_anchor
+
+        return probit_irls_laplace_anchor
     if name in {
         "ConditionalBetaScaleCalibration",
         "apply_conditional_beta_scale_calibration",
         "conditional_beta_scale_multipliers",
+        "conditional_beta_mean_support_diagnostics",
         "conditional_beta_support_trust",
         "fit_conditional_beta_scale_calibration",
     }:
@@ -110,6 +117,7 @@ def __getattr__(name: str) -> object:
             ConditionalBetaScaleCalibration,
             apply_conditional_beta_scale_calibration,
             conditional_beta_scale_multipliers,
+            conditional_beta_mean_support_diagnostics,
             conditional_beta_support_trust,
             fit_conditional_beta_scale_calibration,
         )
@@ -118,6 +126,7 @@ def __getattr__(name: str) -> object:
             "ConditionalBetaScaleCalibration": ConditionalBetaScaleCalibration,
             "apply_conditional_beta_scale_calibration": apply_conditional_beta_scale_calibration,
             "conditional_beta_scale_multipliers": conditional_beta_scale_multipliers,
+            "conditional_beta_mean_support_diagnostics": conditional_beta_mean_support_diagnostics,
             "conditional_beta_support_trust": conditional_beta_support_trust,
             "fit_conditional_beta_scale_calibration": fit_conditional_beta_scale_calibration,
         }[name]

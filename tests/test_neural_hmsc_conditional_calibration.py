@@ -5,6 +5,7 @@ import tensorflow as tf
 from pyhmsc.neural.conditional_calibration import (
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
+    conditional_beta_mean_support_diagnostics,
     conditional_beta_scale_multipliers,
     conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
@@ -96,8 +97,8 @@ def test_conditional_calibration_preserves_mean_and_round_trips_metadata(
 
     np.testing.assert_allclose(calibrated.mean.numpy(), posterior.mean.numpy())
     np.testing.assert_allclose(original_multipliers, restored_multipliers)
-    assert restored.method == "conditional_rank_aware_scale"
-    assert restored.to_metadata()["semantics_version"] == 4
+    assert restored.method == "conditional_rank_aware_anchor_scale"
+    assert restored.to_metadata()["semantics_version"] == 5
 
 
 def test_conditional_calibration_falls_back_to_scalar_outside_support(
@@ -125,8 +126,43 @@ def test_conditional_calibration_falls_back_to_scalar_outside_support(
         distribution="probit",
         coefficient_names=("Intercept", "x1"),
     )
+    assert np.max(trust) < 1e-6
+    np.testing.assert_allclose(
+        multipliers,
+        calibration.global_scale_multiplier,
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+
+def test_conditional_calibration_detects_posterior_mean_shift(conditional_case):
+    posterior, _, X, Y, calibration = conditional_case
+    shifted = BetaPosterior(
+        mean=posterior.mean + 50.0,
+        scale=posterior.scale,
+    )
+
+    trust = conditional_beta_support_trust(
+        shifted,
+        calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+    multipliers = conditional_beta_scale_multipliers(
+        shifted,
+        calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+    diagnostics = conditional_beta_mean_support_diagnostics(shifted, calibration)
 
     assert np.max(trust) < 1e-6
+    assert diagnostics["conditional_mean_magnitude_support_outside_fraction"] == 1.0
+    assert diagnostics["conditional_mean_magnitude_support_max_abs_z"] > 1.0
     np.testing.assert_allclose(
         multipliers,
         calibration.global_scale_multiplier,
@@ -150,6 +186,20 @@ def test_conditional_calibration_loads_version_three_metadata(conditional_case):
     assert restored.method == "conditional_structured_scale"
     assert restored.rank_penalty_weight == 0.0
     assert restored.fallback_strength == 0.0
+
+
+def test_conditional_calibration_loads_version_four_metadata(conditional_case):
+    _, _, _, _, calibration = conditional_case
+    metadata = calibration.to_metadata()
+    metadata["semantics_version"] = 4
+    metadata["method"] = "conditional_rank_aware_scale"
+    metadata["support"].pop("mean_magnitude")
+
+    restored = ConditionalBetaScaleCalibration.from_metadata(metadata)
+
+    assert restored.method == "conditional_rank_aware_scale"
+    assert restored.mean_magnitude_lower == -1e9
+    assert restored.mean_magnitude_upper == 1e9
 
 
 def test_conditional_calibration_applies_d_sigma_d_to_full_covariance(

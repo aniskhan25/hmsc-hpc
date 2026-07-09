@@ -34,16 +34,18 @@ factor becomes `D L`, giving covariance `D Sigma D`.
 
 ## Semantics
 
-Current conditional calibration metadata uses `semantics_version: 4` and
-method `conditional_rank_aware_scale`. It stores feature normalization,
+Anchored-model conditional calibration metadata uses `semantics_version: 5`
+and method `conditional_rank_aware_anchor_scale`. It stores feature normalization,
 weights, coefficient names, multiplier bounds, rank-objective settings,
-feature-support geometry, fitting hyperparameters, calibration coverage, and
+feature-support geometry including posterior-mean magnitude, fitting
+hyperparameters, calibration coverage, and
 scalar-versus-conditional log scores and rank losses. Version 3
-`conditional_structured_scale` metadata remains loadable for reproducibility.
+`conditional_structured_scale` and version 4
+`conditional_rank_aware_scale` metadata remain loadable for reproducibility.
 
 Coefficient and predictive calibration remain separate:
 
-- coefficient artifacts may use the conditional version 4 calibrator
+- coefficient artifacts may use the conditional version 5 calibrator
 - predictive-only artifacts continue to use the scalar version 2 calibrator
 - neither ecological dataset nor an MCMC posterior may be used to fit the
   conditional head
@@ -79,14 +81,19 @@ weights. Support fallback is controlled by
 ## Validation State
 
 Unit coverage verifies conditional prevalence response, nominal calibration,
-metadata round trips, version 3 compatibility, rank-loss improvement, scalar
-fallback outside feature support, domain rejection, unchanged means, and exact
-full-covariance transformation. An end-to-end benchmark smoke test verifies
-that coefficient artifacts carry version 4 metadata while predictive artifacts
-remain on version 2 and SBC rows expose support-trust diagnostics.
+metadata round trips, version 3/4 compatibility, rank-loss improvement, scalar
+fallback outside feature support, posterior-mean shift detection, domain
+rejection, unchanged means, and exact full-covariance transformation. An
+end-to-end benchmark smoke test verifies that anchored coefficient artifacts
+carry version 5 metadata while predictive artifacts remain on version 2 and
+SBC rows expose support-trust and mean-magnitude diagnostics.
 
 The frozen five-seed in-domain/OOD comparison is recorded in
 `docs/neural_hmsc_conditional_comparison_2026-07-02.md`. The implementation
 fixed overall in-domain rank variance but failed rare-prevalence and OOD gates.
-That result applies to the version 3 objective. Version 4 must repeat the same
-frozen five-seed comparison before qualification.
+That result applies to the version 3 objective. The version 4 comparison is
+recorded in `docs/neural_hmsc_rankaware_v4_comparison_2026-07-09.md`. Version 4
+fixed rare coverage and recovered most OOD degradation, but prevalence
+rank-mean and intercept rank-variance gates still failed. It is not qualified.
+The IRLS/Laplace anchor and version 5 support extension are implemented but not
+yet LUMI-qualified.

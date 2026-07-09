@@ -26,6 +26,10 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         min_scale: float = 1e-3,
         posterior_family: str = "diagonal_normal",
         distribution: str = "normal",
+        probit_anchor: str = "auto",
+        probit_anchor_iterations: int = 8,
+        probit_anchor_prior_precision: float = 1.0,
+        probit_anchor_eta_clip: float = 6.0,
         **kwargs: object,
     ) -> None:
         super().__init__(**kwargs)
@@ -35,6 +39,22 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         if distribution not in {"normal", "probit", "poisson"}:
             raise ValueError("distribution must be 'normal', 'probit', or 'poisson'")
         self.distribution = str(distribution)
+        if probit_anchor == "auto":
+            probit_anchor = "irls_laplace" if distribution == "probit" else "ridge"
+        if probit_anchor not in {"ridge", "irls_laplace"}:
+            raise ValueError("probit_anchor must be 'auto', 'ridge', or 'irls_laplace'")
+        if probit_anchor == "irls_laplace" and distribution != "probit":
+            raise ValueError("irls_laplace probit anchor requires distribution='probit'")
+        if probit_anchor_iterations <= 0:
+            raise ValueError("probit_anchor_iterations must be positive")
+        if probit_anchor_prior_precision <= 0.0:
+            raise ValueError("probit_anchor_prior_precision must be positive")
+        if probit_anchor_eta_clip <= 0.0:
+            raise ValueError("probit_anchor_eta_clip must be positive")
+        self.probit_anchor = str(probit_anchor)
+        self.probit_anchor_iterations = int(probit_anchor_iterations)
+        self.probit_anchor_prior_precision = float(probit_anchor_prior_precision)
+        self.probit_anchor_eta_clip = float(probit_anchor_eta_clip)
         if posterior_family not in {"diagonal_normal", "full_covariance_normal"}:
             raise ValueError("posterior_family must be 'diagonal_normal' or 'full_covariance_normal'")
         self.posterior_family = str(posterior_family)
@@ -67,23 +87,40 @@ class FixedShapeBetaPosteriorModel(tf.keras.Model):
         xty = tf.einsum("bnk,bns->bks", design, feature_response) / tf.cast(self.n_sites, tf.float32)
         xtx = tf.einsum("bnk,bnl->bkl", design, design) / tf.cast(self.n_sites, tf.float32)
         ridge = _ridge_beta_estimate(xtx, xty)
+        anchor = ridge
+        anchor_scale = None
+        if self.probit_anchor == "irls_laplace":
+            anchor, anchor_scale = probit_irls_laplace_anchor(
+                design,
+                response,
+                iterations=self.probit_anchor_iterations,
+                prior_precision=self.probit_anchor_prior_precision,
+                eta_clip=self.probit_anchor_eta_clip,
+            )
         y_mean = tf.reduce_mean(feature_response, axis=1)
         y_sd = tf.math.reduce_std(feature_response, axis=1)
-        features = tf.concat(
-            [
-                tf.reshape(xty, (tf.shape(design)[0], -1)),
-                tf.reshape(xtx, (tf.shape(design)[0], -1)),
-                tf.reshape(ridge, (tf.shape(design)[0], -1)),
-                y_mean,
-                y_sd,
-            ],
-            axis=-1,
-        )
+        feature_parts = [
+            tf.reshape(xty, (tf.shape(design)[0], -1)),
+            tf.reshape(xtx, (tf.shape(design)[0], -1)),
+            tf.reshape(ridge, (tf.shape(design)[0], -1)),
+        ]
+        if anchor_scale is not None:
+            feature_parts.extend(
+                [
+                    tf.reshape(anchor, (tf.shape(design)[0], -1)),
+                    tf.reshape(
+                        tf.math.log(tf.maximum(anchor_scale, 1e-6)),
+                        (tf.shape(design)[0], -1),
+                    ),
+                ]
+            )
+        feature_parts.extend([y_mean, y_sd])
+        features = tf.concat(feature_parts, axis=-1)
         for layer in self.encoder_layers:
             features = layer(features)
         residual = self.head(features)
         return BetaPosterior(
-            mean=ridge + residual.mean,
+            mean=anchor + residual.mean,
             scale=residual.scale,
             scale_tril=residual.scale_tril,
         )
@@ -455,6 +492,89 @@ def _ridge_beta_estimate(xtx: tf.Tensor, xty: tf.Tensor, ridge: float = 1e-4) ->
     n_covariates = tf.shape(xtx)[-1]
     penalty = tf.eye(n_covariates, batch_shape=[tf.shape(xtx)[0]], dtype=xtx.dtype) * ridge
     return tf.linalg.solve(xtx + penalty, xty)
+
+
+def probit_irls_laplace_anchor(
+    design: tf.Tensor,
+    response: tf.Tensor,
+    *,
+    iterations: int = 8,
+    prior_precision: float = 1.0,
+    eta_clip: float = 6.0,
+) -> tuple[tf.Tensor, tf.Tensor]:
+    """Return a penalized probit mode and Laplace marginal standard deviations."""
+    design = tf.cast(design, tf.float32)
+    response = tf.cast(response, tf.float32)
+    if design.shape.rank != 3 or response.shape.rank != 3:
+        raise ValueError("probit anchor expects batch x site x variable tensors")
+    if design.shape[0] != response.shape[0] or design.shape[1] != response.shape[1]:
+        raise ValueError("probit anchor X and Y batch/site dimensions must match")
+    if iterations <= 0:
+        raise ValueError("iterations must be positive")
+    if prior_precision <= 0.0 or eta_clip <= 0.0:
+        raise ValueError("prior_precision and eta_clip must be positive")
+
+    n_covariates = tf.shape(design)[2]
+    xtx = tf.einsum("bnk,bnl->bkl", design, design)
+    xty = tf.einsum("bnk,bns->bks", design, response)
+    beta = _ridge_beta_estimate(xtx, xty, ridge=prior_precision)
+    prevalence = tf.clip_by_value(tf.reduce_mean(response, axis=1), 1e-4, 1.0 - 1e-4)
+    intercept = tf.sqrt(tf.constant(2.0, dtype=design.dtype)) * tf.math.erfinv(
+        2.0 * prevalence - 1.0
+    )
+    beta = tf.concat([intercept[:, None, :], beta[:, 1:, :]], axis=1)
+
+    precision = None
+    for _ in range(int(iterations)):
+        eta = tf.clip_by_value(
+            tf.einsum("bnk,bks->bns", design, beta),
+            -float(eta_clip),
+            float(eta_clip),
+        )
+        probability = tf.clip_by_value(
+            0.5
+            * (
+                1.0
+                + tf.math.erf(
+                    eta / tf.sqrt(tf.constant(2.0, dtype=design.dtype))
+                )
+            ),
+            1e-6,
+            1.0 - 1e-6,
+        )
+        density = tf.maximum(
+            tf.exp(-0.5 * tf.square(eta))
+            / tf.sqrt(tf.constant(2.0 * 3.141592653589793, dtype=design.dtype)),
+            1e-6,
+        )
+        weight = tf.square(density) / (probability * (1.0 - probability))
+        working_response = eta + (response - probability) / density
+        precision = tf.einsum(
+            "bnk,bns,bnl->bskl", design, weight, design
+        )
+        penalty = (
+            tf.eye(
+                n_covariates,
+                batch_shape=[tf.shape(design)[0], tf.shape(response)[2]],
+                dtype=design.dtype,
+            )
+            * float(prior_precision)
+        )
+        precision = precision + penalty
+        right_hand_side = tf.einsum(
+            "bnk,bns,bns->bsk", design, weight, working_response
+        )
+        beta_by_species = tf.linalg.solve(precision, right_hand_side[..., None])
+        beta = tf.transpose(beta_by_species[..., 0], [0, 2, 1])
+
+    if precision is None:
+        raise RuntimeError("probit anchor did not execute an IRLS iteration")
+    covariance = tf.linalg.inv(precision)
+    marginal_scale = tf.sqrt(tf.maximum(tf.linalg.diag_part(covariance), 1e-12))
+    return (
+        tf.stop_gradient(beta),
+        tf.stop_gradient(tf.transpose(marginal_scale, [0, 2, 1])),
+    )
 
 
 def _ridge_gamma_estimate(beta: tf.Tensor, traits: tf.Tensor, ridge: float = 1e-4) -> tf.Tensor:

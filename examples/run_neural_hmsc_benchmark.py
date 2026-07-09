@@ -53,6 +53,7 @@ from pyhmsc.neural.calibration import (
 from pyhmsc.neural.conditional_calibration import (
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
+    conditional_beta_mean_support_diagnostics,
     conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
 )
@@ -108,6 +109,15 @@ def main() -> None:
         choices=["auto", "diagonal_normal", "full_covariance_normal"],
         default="auto",
     )
+    parser.add_argument(
+        "--probit-anchor",
+        choices=["auto", "ridge", "irls_laplace"],
+        default="auto",
+        help="deterministic coefficient anchor used by newly trained probit amortizers",
+    )
+    parser.add_argument("--probit-anchor-iterations", type=int, default=8)
+    parser.add_argument("--probit-anchor-prior-precision", type=float, default=1.0)
+    parser.add_argument("--probit-anchor-eta-clip", type=float, default=6.0)
     parser.add_argument("--disable-calibration", action="store_true")
     parser.add_argument(
         "--coefficient-calibration",
@@ -166,6 +176,12 @@ def main() -> None:
         parser.error("--sbc-draws must be positive")
     if args.sbc_bins < 2 or args.sbc_bins > args.sbc_draws + 1:
         parser.error("--sbc-bins must be between 2 and --sbc-draws + 1")
+    if args.probit_anchor_iterations <= 0:
+        parser.error("--probit-anchor-iterations must be positive")
+    if args.probit_anchor_prior_precision <= 0.0:
+        parser.error("--probit-anchor-prior-precision must be positive")
+    if args.probit_anchor_eta_clip <= 0.0:
+        parser.error("--probit-anchor-eta-clip must be positive")
     if args.conditional_calibration_epochs <= 0:
         parser.error("--conditional-calibration-epochs must be positive")
     if args.conditional_calibration_learning_rate <= 0.0:
@@ -206,6 +222,7 @@ def main() -> None:
         "calibration_datasets": args.calibration_datasets,
         "epochs": args.epochs,
         "posterior_family_policy": args.posterior_family,
+        "probit_anchor_policy": args.probit_anchor,
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
         "coefficient_calibration": args.coefficient_calibration,
@@ -277,6 +294,7 @@ def main() -> None:
                             if metadata.get("method") in {
                                 "conditional_structured_scale",
                                 "conditional_rank_aware_scale",
+                                "conditional_rank_aware_anchor_scale",
                             }:
                                 calibration_result = (
                                     ConditionalBetaScaleCalibration.from_metadata(metadata)
@@ -381,6 +399,10 @@ def main() -> None:
                 species_names=list(test.truth_beta.columns),
                 hidden_units=(96, 96),
                 posterior_family=args.posterior_family,
+                probit_anchor=args.probit_anchor,
+                probit_anchor_iterations=args.probit_anchor_iterations,
+                probit_anchor_prior_precision=args.probit_anchor_prior_precision,
+                probit_anchor_eta_clip=args.probit_anchor_eta_clip,
             )
             training_history = engine.fit(
                 train,
@@ -533,6 +555,7 @@ def main() -> None:
         record: dict[str, object] = {
             "distribution": distribution,
             "posterior_family": engine.model.posterior_family,
+            "probit_anchor": engine.model.probit_anchor,
             "model_seed": args.model_seed + suite_idx,
             "neural_posterior": str(neural_path),
             "neural_predictive_distribution": str(predictive_path),
@@ -683,8 +706,14 @@ def _sbc_rows(
         uncalibrated = engine.predict_beta_posterior(data)
         variants = [("uncalibrated", uncalibrated)]
         conditional_trust = None
+        conditional_mean_support = None
         if calibration is not None:
             if isinstance(calibration, ConditionalBetaScaleCalibration):
+                conditional_mean_support = (
+                    conditional_beta_mean_support_diagnostics(
+                        uncalibrated, calibration
+                    )
+                )
                 conditional_trust = conditional_beta_support_trust(
                     uncalibrated,
                     calibration,
@@ -756,6 +785,8 @@ def _sbc_rows(
                             ),
                         }
                     )
+                    if conditional_mean_support is not None:
+                        row.update(conditional_mean_support)
                 rows.append(row)
 
     in_distribution_rmse = {

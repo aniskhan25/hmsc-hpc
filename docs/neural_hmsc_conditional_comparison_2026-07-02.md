@@ -84,4 +84,5 @@ The first conditional architecture is not qualified. The next revision will:
 The acceptance gates and scalar baseline remain unchanged.
 
 Implementation status: these corrections are implemented in conditional
-metadata version 4 and must now be evaluated with the same frozen checkpoints.
+metadata version 4. Their frozen-checkpoint evaluation is recorded in
+`docs/neural_hmsc_rankaware_v4_comparison_2026-07-09.md`.

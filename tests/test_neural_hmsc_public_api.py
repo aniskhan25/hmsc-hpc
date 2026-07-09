@@ -126,6 +126,7 @@ def test_public_neural_hmsc_checkpoint_manifest_is_versioned(tmp_path):
     assert manifest["training_corpus_version"] == "0.1"
     assert manifest["model_family"] == "fixed_effect_beta"
     assert manifest["posterior_family"] == "diagonal_normal"
+    assert manifest["probit_anchor"] == "ridge"
     assert "limitations" in manifest
 
 
@@ -139,11 +140,39 @@ def test_public_neural_hmsc_loads_legacy_diagonal_checkpoint(tmp_path):
     manifest_path = checkpoint / "neural_checkpoint.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     del manifest["posterior_family"]
+    manifest["checkpoint_version"] = "0.2"
+    for key in (
+        "probit_anchor",
+        "probit_anchor_iterations",
+        "probit_anchor_prior_precision",
+        "probit_anchor_eta_clip",
+    ):
+        manifest.pop(key)
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     loaded = NeuralHmscInference.load(checkpoint)
 
     assert loaded.model.posterior_family == "diagonal_normal"
+    assert loaded.model.probit_anchor == "ridge"
+
+
+def test_public_neural_hmsc_round_trips_probit_anchor_configuration(tmp_path):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+        probit_anchor="irls_laplace",
+        probit_anchor_iterations=6,
+        probit_anchor_prior_precision=1.5,
+        probit_anchor_eta_clip=5.0,
+    )
+
+    loaded = NeuralHmscInference.load(engine.save(tmp_path / "anchor_checkpoint"))
+
+    assert loaded.model.probit_anchor == "irls_laplace"
+    assert loaded.model.probit_anchor_iterations == 6
+    assert loaded.model.probit_anchor_prior_precision == pytest.approx(1.5)
+    assert loaded.model.probit_anchor_eta_clip == pytest.approx(5.0)
 
 
 @pytest.mark.parametrize(

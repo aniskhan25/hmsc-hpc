@@ -898,8 +898,24 @@ Status:
   regularized Mahalanobis support, and log-scale fallback to the frozen scalar
   multiplier. Version 3 artifacts remain readable; new artifacts use
   `semantics_version: 4` and expose support-trust diagnostics in SBC rows.
-- Next substep: repeat the frozen five-seed in-domain/OOD comparison for the
-  version 4 calibrator before returning to either ecological dataset.
+- Completed the frozen five-seed version 4 comparison on LUMI. Rare coverage
+  improved from `0.8718` to `0.9372`, but rare/intermediate rank-mean errors
+  remained `0.0917` and `0.0643`, intercept rank-variance error was `0.0189`,
+  and OOD results did not improve over scalar calibration. The result is
+  recorded in `docs/neural_hmsc_rankaware_v4_comparison_2026-07-09.md`.
+- Version 4 is not qualified. Scale-only conditional calibration is now
+  exhausted. Next substep: add the reserved probit-aware IRLS/Laplace encoder
+  anchor to improve amortized posterior means, add posterior-mean magnitude to
+  support diagnostics, and repeat the frozen five-seed comparison.
+- Implemented the penalized probit IRLS mode and Laplace information anchor for
+  new probit amortizers. New checkpoints use version `0.3`; version `0.2`
+  checkpoints retain the exact ridge architecture. Anchored calibration uses
+  semantics version 5 and adds posterior-mean magnitude to support fallback.
+  Implementation details are recorded in
+  `docs/neural_hmsc_irls_laplace_anchor_2026-07-09.md`.
+- Next substep: run a paired five-seed LUMI benchmark that retrains anchored and
+  legacy candidates from identical seeded corpora, then compare raw means and
+  version 5 calibration against the frozen scalar/version 4 references.
 
 ## Testing Strategy
 

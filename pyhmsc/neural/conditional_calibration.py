@@ -18,6 +18,7 @@ _RAW_FEATURE_NAMES = ("prevalence_logit", "log_design_information", "log_raw_sca
 _CONDITIONAL_METHODS = {
     "conditional_structured_scale",
     "conditional_rank_aware_scale",
+    "conditional_rank_aware_anchor_scale",
 }
 
 
@@ -61,9 +62,13 @@ class ConditionalBetaScaleCalibration:
     support_radius: float = 1e9
     support_quantile: float = 0.99
     fallback_strength: float = 2.0
+    mean_magnitude_location: float = 0.0
+    mean_magnitude_scale: float = 1.0
+    mean_magnitude_lower: float = -1e9
+    mean_magnitude_upper: float = 1e9
     min_multiplier: float = 0.1
     max_multiplier: float = 20.0
-    method: str = "conditional_rank_aware_scale"
+    method: str = "conditional_rank_aware_anchor_scale"
 
     @property
     def scale_multiplier(self) -> float:
@@ -105,9 +110,11 @@ class ConditionalBetaScaleCalibration:
     def to_metadata(self) -> dict[str, Any]:
         """Return JSON-serializable conditional-calibration metadata."""
         return {
-            "semantics_version": (
-                4 if self.method == "conditional_rank_aware_scale" else 3
-            ),
+            "semantics_version": {
+                "conditional_structured_scale": 3,
+                "conditional_rank_aware_scale": 4,
+                "conditional_rank_aware_anchor_scale": 5,
+            }[self.method],
             "method": self.method,
             "parameter": "Beta",
             "scale_multiplier": float(self.normalization_multiplier),
@@ -155,6 +162,13 @@ class ConditionalBetaScaleCalibration:
                 "fallback_strength": float(self.fallback_strength),
                 "fallback_multiplier": float(self.global_scale_multiplier),
                 "blend_space": "log_scale",
+                "mean_magnitude": {
+                    "transform": "log1p_abs",
+                    "location": float(self.mean_magnitude_location),
+                    "scale": float(self.mean_magnitude_scale),
+                    "lower": float(self.mean_magnitude_lower),
+                    "upper": float(self.mean_magnitude_upper),
+                },
             },
             "multiplier_bounds": [
                 float(self.min_multiplier),
@@ -198,6 +212,7 @@ class ConditionalBetaScaleCalibration:
             or any(len(row) != 3 for row in support_precision)
         ):
             raise ValueError("conditional calibration support must have three dimensions")
+        mean_support = support.get("mean_magnitude", {})
         return cls(
             global_scale_multiplier=float(metadata["global_scale_multiplier"]),
             normalization_multiplier=float(metadata["scale_multiplier"]),
@@ -239,6 +254,10 @@ class ConditionalBetaScaleCalibration:
             support_radius=float(support.get("radius", 1e9)),
             support_quantile=float(support.get("quantile", 1.0)),
             fallback_strength=float(support.get("fallback_strength", 0.0)),
+            mean_magnitude_location=float(mean_support.get("location", 0.0)),
+            mean_magnitude_scale=float(mean_support.get("scale", 1.0)),
+            mean_magnitude_lower=float(mean_support.get("lower", -1e9)),
+            mean_magnitude_upper=float(mean_support.get("upper", 1e9)),
             min_multiplier=float(bounds[0]),
             max_multiplier=float(bounds[1]),
             method=method,
@@ -356,6 +375,20 @@ def fit_conditional_beta_scale_calibration(
         )
     )
     support_radius = float(np.quantile(support_distance, support_quantile))
+    selected_mean_magnitude = np.log1p(np.abs(mean))[mask]
+    mean_magnitude_location = float(np.mean(selected_mean_magnitude))
+    mean_magnitude_scale = float(np.std(selected_mean_magnitude))
+    if mean_magnitude_scale <= 1e-8:
+        mean_magnitude_scale = 1.0
+    standardized_mean_magnitude = (
+        selected_mean_magnitude - mean_magnitude_location
+    ) / mean_magnitude_scale
+    mean_magnitude_lower = float(
+        np.quantile(standardized_mean_magnitude, support_tail)
+    )
+    mean_magnitude_upper = float(
+        np.quantile(standardized_mean_magnitude, 1.0 - support_tail)
+    )
     feature_design, feature_names = _structured_design(
         raw_features,
         location=location,
@@ -432,6 +465,11 @@ def fit_conditional_beta_scale_calibration(
         precision=support_precision,
         radius=support_radius,
         fallback_strength=fallback_strength,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=mean_magnitude_location,
+        mean_magnitude_scale=mean_magnitude_scale,
+        mean_magnitude_lower=mean_magnitude_lower,
+        mean_magnitude_upper=mean_magnitude_upper,
     )
     z_value = float(norm.ppf(0.5 + nominal_level / 2.0))
     normalization = _fit_coverage_normalization(
@@ -505,6 +543,10 @@ def fit_conditional_beta_scale_calibration(
         support_radius=support_radius,
         support_quantile=float(support_quantile),
         fallback_strength=float(fallback_strength),
+        mean_magnitude_location=mean_magnitude_location,
+        mean_magnitude_scale=mean_magnitude_scale,
+        mean_magnitude_lower=mean_magnitude_lower,
+        mean_magnitude_upper=mean_magnitude_upper,
         min_multiplier=float(min_multiplier),
         max_multiplier=float(max_multiplier),
     )
@@ -555,6 +597,11 @@ def conditional_beta_scale_multipliers(
         precision=np.asarray(calibration.support_precision),
         radius=calibration.support_radius,
         fallback_strength=calibration.fallback_strength,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+        mean_magnitude_lower=calibration.mean_magnitude_lower,
+        mean_magnitude_upper=calibration.mean_magnitude_upper,
     )
     return _blend_with_scalar_fallback(
         adjustment,
@@ -600,7 +647,42 @@ def conditional_beta_support_trust(
         precision=np.asarray(calibration.support_precision),
         radius=calibration.support_radius,
         fallback_strength=calibration.fallback_strength,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+        mean_magnitude_lower=calibration.mean_magnitude_lower,
+        mean_magnitude_upper=calibration.mean_magnitude_upper,
     )
+
+
+def conditional_beta_mean_support_diagnostics(
+    posterior: BetaPosterior,
+    calibration: ConditionalBetaScaleCalibration,
+) -> dict[str, float]:
+    """Summarize posterior-mean magnitude relative to calibration support."""
+    mean = _as_numpy(posterior.mean)
+    if mean.ndim != 3:
+        raise ValueError(
+            "posterior mean must have batch x covariate x species shape"
+        )
+    calibration.validate_domain(
+        n_covariates=mean.shape[1],
+        n_species=mean.shape[2],
+    )
+    standardized = (
+        np.log1p(np.abs(mean)) - calibration.mean_magnitude_location
+    ) / calibration.mean_magnitude_scale
+    outside = (standardized < calibration.mean_magnitude_lower) | (
+        standardized > calibration.mean_magnitude_upper
+    )
+    return {
+        "conditional_mean_magnitude_support_outside_fraction": float(
+            np.mean(outside)
+        ),
+        "conditional_mean_magnitude_support_max_abs_z": float(
+            np.max(np.abs(standardized))
+        ),
+    }
 
 
 def apply_conditional_beta_scale_calibration(
@@ -785,6 +867,11 @@ def _support_trust(
     precision: np.ndarray,
     radius: float,
     fallback_strength: float,
+    mean_magnitude: np.ndarray,
+    mean_magnitude_location: float,
+    mean_magnitude_scale: float,
+    mean_magnitude_lower: float,
+    mean_magnitude_upper: float,
 ) -> np.ndarray:
     if fallback_strength <= 0.0:
         return np.ones(raw_features.shape[:3], dtype=float)
@@ -804,7 +891,15 @@ def _support_trust(
         )
     )
     radial_excess = np.maximum(distance - float(radius), 0.0)
-    total_excess = np.sqrt(np.square(box_excess) + np.square(radial_excess))
+    standardized_mean = (
+        mean_magnitude - float(mean_magnitude_location)
+    ) / float(mean_magnitude_scale)
+    mean_excess = np.maximum(
+        float(mean_magnitude_lower) - standardized_mean, 0.0
+    ) + np.maximum(standardized_mean - float(mean_magnitude_upper), 0.0)
+    total_excess = np.sqrt(
+        np.square(box_excess) + np.square(radial_excess) + np.square(mean_excess)
+    )
     return np.exp(-float(fallback_strength) * np.square(total_excess))
 
 

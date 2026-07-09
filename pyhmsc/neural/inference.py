@@ -38,7 +38,8 @@ from pyhmsc.posterior import HmscFit
 from pyhmsc.serialization import read_compiled_model
 
 
-NEURAL_CHECKPOINT_VERSION = "0.2"
+NEURAL_CHECKPOINT_VERSION = "0.3"
+LEGACY_NEURAL_CHECKPOINT_VERSIONS = {"0.2"}
 NEURAL_TRAINING_CORPUS_VERSION = "0.1"
 SUPPORTED_MODEL_FAMILY = "fixed_effect_beta"
 CHECKPOINT_MANIFEST = "neural_checkpoint.json"
@@ -82,6 +83,10 @@ class NeuralHmscInference:
         species_names: Sequence[str] | None = None,
         hidden_units: Sequence[int] = (64, 64),
         posterior_family: str = "auto",
+        probit_anchor: str = "auto",
+        probit_anchor_iterations: int = 8,
+        probit_anchor_prior_precision: float = 1.0,
+        probit_anchor_eta_clip: float = 6.0,
     ) -> "NeuralHmscInference":
         """Create an untrained fixed-effect Beta inference engine."""
         covariate_names = tuple(covariate_names or _default_covariate_names(n_covariates))
@@ -99,6 +104,10 @@ class NeuralHmscInference:
             hidden_units=hidden_units,
             posterior_family=posterior_family,
             distribution=str(distribution),
+            probit_anchor=probit_anchor,
+            probit_anchor_iterations=probit_anchor_iterations,
+            probit_anchor_prior_precision=probit_anchor_prior_precision,
+            probit_anchor_eta_clip=probit_anchor_eta_clip,
         )
         _build_fixed_shape_model(model)
         return cls(
@@ -119,10 +128,10 @@ class NeuralHmscInference:
             raise FileNotFoundError(f"Neural-HMSC checkpoint manifest not found: {manifest_path}")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         version = str(manifest.get("checkpoint_version", ""))
-        if version != NEURAL_CHECKPOINT_VERSION:
+        if version not in {NEURAL_CHECKPOINT_VERSION, *LEGACY_NEURAL_CHECKPOINT_VERSIONS}:
             raise NeuralHmscCompatibilityError(
                 f"unsupported Neural-HMSC checkpoint version {version!r}; "
-                f"expected {NEURAL_CHECKPOINT_VERSION!r}"
+                f"expected one of {sorted({NEURAL_CHECKPOINT_VERSION, *LEGACY_NEURAL_CHECKPOINT_VERSIONS})!r}"
             )
         model_family = str(manifest.get("model_family", ""))
         if model_family != SUPPORTED_MODEL_FAMILY:
@@ -140,6 +149,16 @@ class NeuralHmscInference:
             hidden_units=hidden_units,
             posterior_family=posterior_family,
             distribution=str(manifest.get("distribution", "normal")),
+            probit_anchor=str(manifest.get("probit_anchor", "ridge")),
+            probit_anchor_iterations=int(
+                manifest.get("probit_anchor_iterations", 8)
+            ),
+            probit_anchor_prior_precision=float(
+                manifest.get("probit_anchor_prior_precision", 1.0)
+            ),
+            probit_anchor_eta_clip=float(
+                manifest.get("probit_anchor_eta_clip", 6.0)
+            ),
         )
         _build_fixed_shape_model(model)
         model.load_weights(checkpoint / CHECKPOINT_WEIGHTS)
@@ -153,7 +172,7 @@ class NeuralHmscInference:
             covariate_names=tuple(str(name) for name in names.get("covariates", _default_covariate_names(model.n_covariates))),
             species_names=tuple(str(name) for name in names.get("species", [f"sp{idx + 1}" for idx in range(model.n_species)])),
             hidden_units=hidden_units,
-            checkpoint_version=version,
+            checkpoint_version=NEURAL_CHECKPOINT_VERSION,
             training_corpus_version=str(manifest.get("training_corpus_version", NEURAL_TRAINING_CORPUS_VERSION)),
         )
 
@@ -257,6 +276,7 @@ class NeuralHmscInference:
             "compatible": True,
             "model_family": self.model_family,
             "posterior_family": self.model.posterior_family,
+            "probit_anchor": self.model.probit_anchor,
             "distribution": context.distribution,
             "formula": context.formula,
             "dimensions": {
@@ -430,6 +450,10 @@ class NeuralHmscInference:
             "model_family": self.model_family,
             "posterior_family": self.model.posterior_family,
             "distribution": self.distribution,
+            "probit_anchor": self.model.probit_anchor,
+            "probit_anchor_iterations": self.model.probit_anchor_iterations,
+            "probit_anchor_prior_precision": self.model.probit_anchor_prior_precision,
+            "probit_anchor_eta_clip": self.model.probit_anchor_eta_clip,
             "formula": {"X": self.formula},
             "dimensions": self.dimensions,
             "names": {

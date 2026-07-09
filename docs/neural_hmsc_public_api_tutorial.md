@@ -99,11 +99,13 @@ The manifest records:
 - `training_corpus_version`
 - `model_family`
 - `posterior_family`
+- probit anchor type and numerical settings
 - distribution, formula, dimensions, and names
 - public limitations for the checkpoint family
 
-The distribution-aware encoder uses checkpoint version `0.2`; training corpus
-version remains `0.1`.
+The IRLS/Laplace-aware encoder uses checkpoint version `0.3`; training corpus
+version remains `0.1`. Version `0.2` checkpoints remain loadable with their
+legacy ridge anchor.
 Future incompatible checkpoint formats must bump `checkpoint_version`. Changes
 to generated training-data semantics must bump `training_corpus_version`.
 
@@ -115,8 +117,11 @@ models store correlated draws in the existing `Beta` HDF5 sample shape.
 
 Poisson checkpoints use `log1p(Y)` encoder summaries before constructing the
 ridge anchor. Gaussian and probit checkpoints retain identity response
-features. Because this changes checkpoint behavior, version `0.1` checkpoints
-are not loaded as version `0.2` models.
+features. New probit checkpoints use a penalized probit IRLS mode as the mean
+anchor and include log Laplace marginal scales in encoder features. The
+manifest records `probit_anchor`, iterations, prior precision, and eta clip.
+`probit_anchor: auto` selects IRLS/Laplace only for probit. Version `0.2`
+checkpoints without these fields load with the exact legacy ridge architecture.
 
 ## Coefficient and Predictive Calibration
 
@@ -134,14 +139,15 @@ and preserves the old applied scale as predictive-only.
 
 Milestone 12 adds `fit_conditional_beta_scale_calibration` and
 `apply_conditional_beta_scale_calibration` for simulation-trained coefficient
-scaling. The current conditional artifact uses `semantics_version: 4`, stores
+scaling. Anchored-model conditional artifacts use `semantics_version: 5`, store
 its rank-aware objective, feature normalization, structured-head weights, and
 support geometry, and requires `X`, `Y`, and matching coefficient names when
 applied. It uses prevalence, expected design information, raw posterior scale,
-and coefficient identity. `conditional_beta_support_trust` exposes the
-coefficient-level blend weight; zero trust applies the frozen scalar fallback.
+posterior-mean magnitude, and coefficient identity.
+`conditional_beta_support_trust` exposes the coefficient-level blend weight;
+zero trust applies the frozen scalar fallback.
 Full-covariance posteriors are transformed as `D Sigma D`; posterior means are
-unchanged. Version 3 conditional metadata remains readable.
+unchanged. Version 3 and 4 conditional metadata remain readable.
 
 The conditional artifact applies only to coefficient uncertainty. Continue to
 use the separately fitted `BetaScaleCalibration` with
