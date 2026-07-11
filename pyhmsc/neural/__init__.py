@@ -71,6 +71,7 @@ __all__ = [
     "fit_conditional_beta_scale_calibration",
     "conditional_beta_scale_multipliers",
     "conditional_beta_mean_support_diagnostics",
+    "conditional_beta_ood_uncertainty_inflation",
     "conditional_beta_support_trust",
     "generate_fixed_effect_corpus",
     "iid_latent_training_data",
@@ -110,6 +111,7 @@ def __getattr__(name: str) -> object:
         "apply_conditional_beta_scale_calibration",
         "conditional_beta_scale_multipliers",
         "conditional_beta_mean_support_diagnostics",
+        "conditional_beta_ood_uncertainty_inflation",
         "conditional_beta_support_trust",
         "fit_conditional_beta_scale_calibration",
     }:
@@ -118,6 +120,7 @@ def __getattr__(name: str) -> object:
             apply_conditional_beta_scale_calibration,
             conditional_beta_scale_multipliers,
             conditional_beta_mean_support_diagnostics,
+            conditional_beta_ood_uncertainty_inflation,
             conditional_beta_support_trust,
             fit_conditional_beta_scale_calibration,
         )
@@ -127,6 +130,7 @@ def __getattr__(name: str) -> object:
             "apply_conditional_beta_scale_calibration": apply_conditional_beta_scale_calibration,
             "conditional_beta_scale_multipliers": conditional_beta_scale_multipliers,
             "conditional_beta_mean_support_diagnostics": conditional_beta_mean_support_diagnostics,
+            "conditional_beta_ood_uncertainty_inflation": conditional_beta_ood_uncertainty_inflation,
             "conditional_beta_support_trust": conditional_beta_support_trust,
             "fit_conditional_beta_scale_calibration": fit_conditional_beta_scale_calibration,
         }[name]

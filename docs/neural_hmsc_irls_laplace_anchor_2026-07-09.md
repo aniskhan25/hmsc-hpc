@@ -46,10 +46,13 @@ Calibration remains separate and cannot modify posterior means.
 - checkpoint manifests store anchor type, iterations, prior precision, and
   eta-clipping threshold
 
-Calibration artifacts fitted to anchored models use `semantics_version: 5`
-and method `conditional_rank_aware_anchor_scale`. Version 5 extends support
-diagnostics with standardized `log1p(abs(posterior_mean))` bounds so effect-size
-shift can trigger scalar fallback. Versions 3 and 4 remain loadable.
+Calibration artifacts fitted to anchored models initially used
+`semantics_version: 5` and method `conditional_rank_aware_anchor_scale`.
+Version 5 extends support diagnostics with standardized
+`log1p(abs(posterior_mean))` bounds so effect-size shift can trigger scalar
+fallback. The subsequent OOD-aware uncertainty update writes
+`semantics_version: 6` for the same method and adds bounded support-excess
+inflation after scalar fallback. Versions 3, 4, and legacy 5 remain loadable.
 
 ## Benchmark Controls
 
@@ -60,6 +63,8 @@ The general and LUMI benchmark workflows expose:
 --probit-anchor-iterations
 --probit-anchor-prior-precision
 --probit-anchor-eta-clip
+--conditional-calibration-ood-uncertainty-strength
+--conditional-calibration-ood-uncertainty-max-multiplier
 ```
 
 The next validation must train anchored and legacy candidates from the same

@@ -66,6 +66,8 @@ class ConditionalBetaScaleCalibration:
     mean_magnitude_scale: float = 1.0
     mean_magnitude_lower: float = -1e9
     mean_magnitude_upper: float = 1e9
+    ood_uncertainty_strength: float = 0.0
+    ood_uncertainty_max_multiplier: float = 1.0
     min_multiplier: float = 0.1
     max_multiplier: float = 20.0
     method: str = "conditional_rank_aware_anchor_scale"
@@ -109,12 +111,19 @@ class ConditionalBetaScaleCalibration:
 
     def to_metadata(self) -> dict[str, Any]:
         """Return JSON-serializable conditional-calibration metadata."""
+        semantics_version = {
+            "conditional_structured_scale": 3,
+            "conditional_rank_aware_scale": 4,
+            "conditional_rank_aware_anchor_scale": 5,
+        }[self.method]
+        if (
+            self.method == "conditional_rank_aware_anchor_scale"
+            and self.ood_uncertainty_strength > 0.0
+            and self.ood_uncertainty_max_multiplier > 1.0
+        ):
+            semantics_version = 6
         return {
-            "semantics_version": {
-                "conditional_structured_scale": 3,
-                "conditional_rank_aware_scale": 4,
-                "conditional_rank_aware_anchor_scale": 5,
-            }[self.method],
+            "semantics_version": semantics_version,
             "method": self.method,
             "parameter": "Beta",
             "scale_multiplier": float(self.normalization_multiplier),
@@ -169,6 +178,11 @@ class ConditionalBetaScaleCalibration:
                     "lower": float(self.mean_magnitude_lower),
                     "upper": float(self.mean_magnitude_upper),
                 },
+                "ood_uncertainty": {
+                    "transform": "support_excess_exp",
+                    "strength": float(self.ood_uncertainty_strength),
+                    "max_multiplier": float(self.ood_uncertainty_max_multiplier),
+                },
             },
             "multiplier_bounds": [
                 float(self.min_multiplier),
@@ -213,6 +227,7 @@ class ConditionalBetaScaleCalibration:
         ):
             raise ValueError("conditional calibration support must have three dimensions")
         mean_support = support.get("mean_magnitude", {})
+        ood_uncertainty = support.get("ood_uncertainty", {})
         return cls(
             global_scale_multiplier=float(metadata["global_scale_multiplier"]),
             normalization_multiplier=float(metadata["scale_multiplier"]),
@@ -258,6 +273,10 @@ class ConditionalBetaScaleCalibration:
             mean_magnitude_scale=float(mean_support.get("scale", 1.0)),
             mean_magnitude_lower=float(mean_support.get("lower", -1e9)),
             mean_magnitude_upper=float(mean_support.get("upper", 1e9)),
+            ood_uncertainty_strength=float(ood_uncertainty.get("strength", 0.0)),
+            ood_uncertainty_max_multiplier=float(
+                ood_uncertainty.get("max_multiplier", 1.0)
+            ),
             min_multiplier=float(bounds[0]),
             max_multiplier=float(bounds[1]),
             method=method,
@@ -285,6 +304,8 @@ def fit_conditional_beta_scale_calibration(
     rank_variance_tolerance: float = 0.015,
     support_quantile: float = 0.99,
     fallback_strength: float = 2.0,
+    ood_uncertainty_strength: float = 0.75,
+    ood_uncertainty_max_multiplier: float = 4.0,
     support_ridge: float = 1e-4,
     min_multiplier: float = 0.1,
     max_multiplier: float = 20.0,
@@ -317,6 +338,10 @@ def fit_conditional_beta_scale_calibration(
         raise ValueError("support_quantile must be between 0.5 and 1")
     if fallback_strength < 0.0 or support_ridge <= 0.0:
         raise ValueError("fallback_strength must be non-negative and support_ridge positive")
+    if ood_uncertainty_strength < 0.0 or ood_uncertainty_max_multiplier < 1.0:
+        raise ValueError(
+            "ood uncertainty strength must be non-negative and max multiplier at least one"
+        )
     if not 0.0 < min_multiplier < max_multiplier:
         raise ValueError("multiplier bounds must be positive and ordered")
 
@@ -471,23 +496,43 @@ def fit_conditional_beta_scale_calibration(
         mean_magnitude_lower=mean_magnitude_lower,
         mean_magnitude_upper=mean_magnitude_upper,
     )
+    support_excess = _support_excess(
+        raw_features,
+        location=location,
+        scale=feature_scale,
+        lower=support_lower,
+        upper=support_upper,
+        precision=support_precision,
+        radius=support_radius,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=mean_magnitude_location,
+        mean_magnitude_scale=mean_magnitude_scale,
+        mean_magnitude_lower=mean_magnitude_lower,
+        mean_magnitude_upper=mean_magnitude_upper,
+    )
     z_value = float(norm.ppf(0.5 + nominal_level / 2.0))
     normalization = _fit_coverage_normalization(
         standardized_error=standardized_error,
         adjustment=adjustment,
         trust=support_trust,
+        support_excess=support_excess,
         global_multiplier=baseline.scale_multiplier,
         mask=mask,
         nominal_level=nominal_level,
         z_value=z_value,
+        ood_uncertainty_strength=ood_uncertainty_strength,
+        ood_uncertainty_max_multiplier=ood_uncertainty_max_multiplier,
         min_multiplier=min_multiplier,
         max_multiplier=max_multiplier,
     )
     multipliers = _blend_with_scalar_fallback(
         adjustment,
         support_trust,
+        support_excess=support_excess,
         normalization=normalization,
         global_multiplier=baseline.scale_multiplier,
+        ood_uncertainty_strength=ood_uncertainty_strength,
+        ood_uncertainty_max_multiplier=ood_uncertainty_max_multiplier,
         min_multiplier=min_multiplier,
         max_multiplier=max_multiplier,
     )
@@ -547,6 +592,8 @@ def fit_conditional_beta_scale_calibration(
         mean_magnitude_scale=mean_magnitude_scale,
         mean_magnitude_lower=mean_magnitude_lower,
         mean_magnitude_upper=mean_magnitude_upper,
+        ood_uncertainty_strength=float(ood_uncertainty_strength),
+        ood_uncertainty_max_multiplier=float(ood_uncertainty_max_multiplier),
         min_multiplier=float(min_multiplier),
         max_multiplier=float(max_multiplier),
     )
@@ -603,13 +650,76 @@ def conditional_beta_scale_multipliers(
         mean_magnitude_lower=calibration.mean_magnitude_lower,
         mean_magnitude_upper=calibration.mean_magnitude_upper,
     )
+    support_excess = _support_excess(
+        raw_features,
+        location=np.asarray(calibration.feature_location),
+        scale=np.asarray(calibration.feature_scale),
+        lower=np.asarray(calibration.support_lower),
+        upper=np.asarray(calibration.support_upper),
+        precision=np.asarray(calibration.support_precision),
+        radius=calibration.support_radius,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+        mean_magnitude_lower=calibration.mean_magnitude_lower,
+        mean_magnitude_upper=calibration.mean_magnitude_upper,
+    )
     return _blend_with_scalar_fallback(
         adjustment,
         trust,
+        support_excess=support_excess,
         normalization=calibration.normalization_multiplier,
         global_multiplier=calibration.global_scale_multiplier,
+        ood_uncertainty_strength=calibration.ood_uncertainty_strength,
+        ood_uncertainty_max_multiplier=calibration.ood_uncertainty_max_multiplier,
         min_multiplier=calibration.min_multiplier,
         max_multiplier=calibration.max_multiplier,
+    )
+
+
+def conditional_beta_ood_uncertainty_inflation(
+    posterior: BetaPosterior,
+    calibration: ConditionalBetaScaleCalibration,
+    *,
+    X: np.ndarray,
+    Y: np.ndarray,
+    distribution: str | None = None,
+    coefficient_names: Sequence[str] | None = None,
+) -> np.ndarray:
+    """Return the bounded OOD uncertainty inflation applied to scale multipliers."""
+    mean, _, design, response = _validated_arrays(posterior, X=X, Y=Y)
+    names = calibration.coefficient_names if coefficient_names is None else coefficient_names
+    calibration.validate_domain(
+        distribution=distribution or calibration.distribution,
+        n_covariates=mean.shape[1],
+        n_species=mean.shape[2],
+        coefficient_names=names,
+    )
+    raw_features = _raw_features(
+        mean=mean,
+        scale=_as_numpy(posterior.scale),
+        X=design,
+        Y=response,
+        distribution=distribution or calibration.distribution,
+    )
+    support_excess = _support_excess(
+        raw_features,
+        location=np.asarray(calibration.feature_location),
+        scale=np.asarray(calibration.feature_scale),
+        lower=np.asarray(calibration.support_lower),
+        upper=np.asarray(calibration.support_upper),
+        precision=np.asarray(calibration.support_precision),
+        radius=calibration.support_radius,
+        mean_magnitude=np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+        mean_magnitude_lower=calibration.mean_magnitude_lower,
+        mean_magnitude_upper=calibration.mean_magnitude_upper,
+    )
+    return _ood_uncertainty_inflation(
+        support_excess,
+        strength=calibration.ood_uncertainty_strength,
+        max_multiplier=calibration.ood_uncertainty_max_multiplier,
     )
 
 
@@ -875,6 +985,38 @@ def _support_trust(
 ) -> np.ndarray:
     if fallback_strength <= 0.0:
         return np.ones(raw_features.shape[:3], dtype=float)
+    total_excess = _support_excess(
+        raw_features,
+        location=location,
+        scale=scale,
+        lower=lower,
+        upper=upper,
+        precision=precision,
+        radius=radius,
+        mean_magnitude=mean_magnitude,
+        mean_magnitude_location=mean_magnitude_location,
+        mean_magnitude_scale=mean_magnitude_scale,
+        mean_magnitude_lower=mean_magnitude_lower,
+        mean_magnitude_upper=mean_magnitude_upper,
+    )
+    return np.exp(-float(fallback_strength) * np.square(total_excess))
+
+
+def _support_excess(
+    raw_features: np.ndarray,
+    *,
+    location: np.ndarray,
+    scale: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    precision: np.ndarray,
+    radius: float,
+    mean_magnitude: np.ndarray,
+    mean_magnitude_location: float,
+    mean_magnitude_scale: float,
+    mean_magnitude_lower: float,
+    mean_magnitude_upper: float,
+) -> np.ndarray:
     standardized = (raw_features - location) / scale
     lower_excess = np.maximum(lower - standardized, 0.0)
     upper_excess = np.maximum(standardized - upper, 0.0)
@@ -900,15 +1042,18 @@ def _support_trust(
     total_excess = np.sqrt(
         np.square(box_excess) + np.square(radial_excess) + np.square(mean_excess)
     )
-    return np.exp(-float(fallback_strength) * np.square(total_excess))
+    return total_excess
 
 
 def _blend_with_scalar_fallback(
     adjustment: np.ndarray,
     trust: np.ndarray,
     *,
+    support_excess: np.ndarray,
     normalization: float,
     global_multiplier: float,
+    ood_uncertainty_strength: float,
+    ood_uncertainty_max_multiplier: float,
     min_multiplier: float,
     max_multiplier: float,
 ) -> np.ndarray:
@@ -921,7 +1066,27 @@ def _blend_with_scalar_fallback(
         trust * np.log(conditional)
         + (1.0 - trust) * np.log(float(global_multiplier))
     )
-    return np.clip(np.exp(log_multiplier), min_multiplier, max_multiplier)
+    multiplier = np.exp(log_multiplier) * _ood_uncertainty_inflation(
+        support_excess,
+        strength=ood_uncertainty_strength,
+        max_multiplier=ood_uncertainty_max_multiplier,
+    )
+    return np.clip(multiplier, min_multiplier, max_multiplier)
+
+
+def _ood_uncertainty_inflation(
+    support_excess: np.ndarray,
+    *,
+    strength: float,
+    max_multiplier: float,
+) -> np.ndarray:
+    if strength <= 0.0 or max_multiplier <= 1.0:
+        return np.ones_like(support_excess, dtype=float)
+    log_inflation = np.minimum(
+        float(strength) * np.square(support_excess),
+        np.log(float(max_multiplier)),
+    )
+    return np.exp(log_inflation)
 
 
 def _fit_coverage_normalization(
@@ -929,10 +1094,13 @@ def _fit_coverage_normalization(
     standardized_error: np.ndarray,
     adjustment: np.ndarray,
     trust: np.ndarray,
+    support_excess: np.ndarray,
     global_multiplier: float,
     mask: np.ndarray,
     nominal_level: float,
     z_value: float,
+    ood_uncertainty_strength: float,
+    ood_uncertainty_max_multiplier: float,
     min_multiplier: float,
     max_multiplier: float,
 ) -> float:
@@ -943,8 +1111,11 @@ def _fit_coverage_normalization(
         multiplier = _blend_with_scalar_fallback(
             adjustment,
             trust,
+            support_excess=support_excess,
             normalization=midpoint,
             global_multiplier=global_multiplier,
+            ood_uncertainty_strength=ood_uncertainty_strength,
+            ood_uncertainty_max_multiplier=ood_uncertainty_max_multiplier,
             min_multiplier=min_multiplier,
             max_multiplier=max_multiplier,
         )

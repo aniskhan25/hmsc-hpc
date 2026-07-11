@@ -27,6 +27,8 @@ def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
         assert "--ood-regimes" in text
     assert "--coefficient-calibration" in benchmark_text
     assert "CONDITIONAL_CALIBRATION_EPOCHS" in benchmark_text
+    assert "CONDITIONAL_CALIBRATION_OOD_UNCERTAINTY_STRENGTH" in benchmark_text
+    assert "CONDITIONAL_CALIBRATION_OOD_UNCERTAINTY_MAX_MULTIPLIER" in benchmark_text
     assert "NEURAL_CHECKPOINT" in benchmark_text
     assert "PROBIT_ANCHOR" in benchmark_text
     assert "--run-mcmc-reference" not in train_text
@@ -161,10 +163,11 @@ def test_conditional_calibration_entrypoint_keeps_predictive_scalar(tmp_path):
     assert record["probit_anchor"] == "irls_laplace"
     assert record["calibration"]["method"] == "conditional_rank_aware_anchor_scale"
     assert record["predictive_calibration"]["method"] == "temperature_scale"
-    assert coefficient_fit.metadata["calibration"]["semantics_version"] == 5
+    assert coefficient_fit.metadata["calibration"]["semantics_version"] == 6
     assert predictive_fit.metadata["calibration"]["semantics_version"] == 2
     assert "rank_aware" in record["calibration"]
     assert "support" in record["calibration"]
+    assert "ood_uncertainty" in record["calibration"]["support"]
     sbc_rows = json.loads(
         (output / "neural_hmsc_sbc_diagnostics.json").read_text(encoding="utf-8")
     )
@@ -173,6 +176,10 @@ def test_conditional_calibration_entrypoint_keeps_predictive_scalar(tmp_path):
     ]
     assert calibrated_rows
     assert all("conditional_support_trust_mean" in row for row in calibrated_rows)
+    assert all(
+        "conditional_ood_uncertainty_inflation_mean" in row
+        for row in calibrated_rows
+    )
     assert all(
         "conditional_mean_magnitude_support_outside_fraction" in row
         for row in calibrated_rows

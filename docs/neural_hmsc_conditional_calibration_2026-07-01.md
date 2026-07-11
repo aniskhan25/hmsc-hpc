@@ -34,14 +34,16 @@ factor becomes `D L`, giving covariance `D Sigma D`.
 
 ## Semantics
 
-Anchored-model conditional calibration metadata uses `semantics_version: 5`
-and method `conditional_rank_aware_anchor_scale`. It stores feature normalization,
-weights, coefficient names, multiplier bounds, rank-objective settings,
-feature-support geometry including posterior-mean magnitude, fitting
-hyperparameters, calibration coverage, and
+Anchored-model conditional calibration metadata initially used
+`semantics_version: 5` and method `conditional_rank_aware_anchor_scale`. The
+OOD-aware update writes `semantics_version: 6` for the same method and adds
+bounded support-excess uncertainty inflation after scalar fallback. The metadata
+stores feature normalization, weights, coefficient names, multiplier bounds,
+rank-objective settings, feature-support geometry including posterior-mean
+magnitude, fitting hyperparameters, calibration coverage, and
 scalar-versus-conditional log scores and rank losses. Version 3
-`conditional_structured_scale` and version 4
-`conditional_rank_aware_scale` metadata remain loadable for reproducibility.
+`conditional_structured_scale`, version 4 `conditional_rank_aware_scale`, and
+legacy version 5 metadata remain loadable for reproducibility.
 
 Coefficient and predictive calibration remain separate:
 

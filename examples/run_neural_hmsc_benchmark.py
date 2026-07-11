@@ -54,6 +54,7 @@ from pyhmsc.neural.conditional_calibration import (
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
     conditional_beta_mean_support_diagnostics,
+    conditional_beta_ood_uncertainty_inflation,
     conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
 )
@@ -146,6 +147,18 @@ def main() -> None:
     parser.add_argument(
         "--conditional-calibration-fallback-strength", type=float, default=2.0
     )
+    parser.add_argument(
+        "--conditional-calibration-ood-uncertainty-strength",
+        type=float,
+        default=0.75,
+        help="support-excess coefficient for bounded OOD posterior-scale inflation",
+    )
+    parser.add_argument(
+        "--conditional-calibration-ood-uncertainty-max-multiplier",
+        type=float,
+        default=4.0,
+        help="maximum extra posterior-scale multiplier from OOD uncertainty inflation",
+    )
     parser.add_argument("--sbc-datasets", type=int, default=32)
     parser.add_argument("--sbc-draws", type=int, default=256)
     parser.add_argument("--sbc-bins", type=int, default=10)
@@ -200,6 +213,14 @@ def main() -> None:
         parser.error("--conditional-calibration-support-quantile must be between 0.5 and 1")
     if args.conditional_calibration_fallback_strength < 0.0:
         parser.error("--conditional-calibration-fallback-strength must be non-negative")
+    if args.conditional_calibration_ood_uncertainty_strength < 0.0:
+        parser.error(
+            "--conditional-calibration-ood-uncertainty-strength must be non-negative"
+        )
+    if args.conditional_calibration_ood_uncertainty_max_multiplier < 1.0:
+        parser.error(
+            "--conditional-calibration-ood-uncertainty-max-multiplier must be at least one"
+        )
     if args.checkpoint and len(args.suite) != 1:
         parser.error("--checkpoint requires exactly one distribution in --suite")
 
@@ -471,6 +492,12 @@ def main() -> None:
                     ),
                     support_quantile=args.conditional_calibration_support_quantile,
                     fallback_strength=args.conditional_calibration_fallback_strength,
+                    ood_uncertainty_strength=(
+                        args.conditional_calibration_ood_uncertainty_strength
+                    ),
+                    ood_uncertainty_max_multiplier=(
+                        args.conditional_calibration_ood_uncertainty_max_multiplier
+                    ),
                 )
                 posterior = apply_conditional_beta_scale_calibration(
                     uncalibrated_posterior,
@@ -706,6 +733,7 @@ def _sbc_rows(
         uncalibrated = engine.predict_beta_posterior(data)
         variants = [("uncalibrated", uncalibrated)]
         conditional_trust = None
+        conditional_ood_inflation = None
         conditional_mean_support = None
         if calibration is not None:
             if isinstance(calibration, ConditionalBetaScaleCalibration):
@@ -721,6 +749,16 @@ def _sbc_rows(
                     Y=data.Y,
                     distribution=distribution,
                     coefficient_names=engine.covariate_names,
+                )
+                conditional_ood_inflation = (
+                    conditional_beta_ood_uncertainty_inflation(
+                        uncalibrated,
+                        calibration,
+                        X=data.X,
+                        Y=data.Y,
+                        distribution=distribution,
+                        coefficient_names=engine.covariate_names,
+                    )
                 )
                 calibrated = apply_conditional_beta_scale_calibration(
                     uncalibrated,
@@ -785,6 +823,20 @@ def _sbc_rows(
                             ),
                         }
                     )
+                    if conditional_ood_inflation is not None:
+                        row.update(
+                            {
+                                "conditional_ood_uncertainty_inflation_mean": float(
+                                    np.mean(conditional_ood_inflation)
+                                ),
+                                "conditional_ood_uncertainty_inflation_max": float(
+                                    np.max(conditional_ood_inflation)
+                                ),
+                                "conditional_ood_uncertainty_inflated_fraction": float(
+                                    np.mean(conditional_ood_inflation > 1.000001)
+                                ),
+                            }
+                        )
                     if conditional_mean_support is not None:
                         row.update(conditional_mean_support)
                 rows.append(row)

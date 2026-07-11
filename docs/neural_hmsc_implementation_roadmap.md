@@ -913,9 +913,19 @@ Status:
   semantics version 5 and adds posterior-mean magnitude to support fallback.
   Implementation details are recorded in
   `docs/neural_hmsc_irls_laplace_anchor_2026-07-09.md`.
-- Next substep: run a paired five-seed LUMI benchmark that retrains anchored and
-  legacy candidates from identical seeded corpora, then compare raw means and
-  version 5 calibration against the frozen scalar/version 4 references.
+- Completed the paired five-seed IRLS/Laplace LUMI retraining comparison against
+  frozen scalar and version 4 references. Version 5 IRLS passed all overall
+  in-domain gates and improved in-domain `Beta` RMSE from roughly `0.59` to
+  `0.325`, but it regressed OOD coefficient coverage and rank-variance under
+  covariate and combined shifts. The result is recorded in
+  `docs/neural_hmsc_irls_v5_comparison_2026-07-10.md`.
+- Version 5 IRLS is not qualified as the default calibration path. Keep the
+  IRLS/Laplace anchor as an experimental candidate, but decouple its sharper
+  posterior means from the OOD uncertainty scale. Next substep: add an
+  OOD-aware variance inflation or stronger support-distance uncertainty term on
+  top of the IRLS anchor, then repeat the paired five-seed in-domain/OOD LUMI
+  comparison against the frozen scalar, version 4, and version 5 IRLS
+  references.
 
 ## Testing Strategy
 

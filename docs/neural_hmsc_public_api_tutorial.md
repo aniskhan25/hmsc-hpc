@@ -139,15 +139,18 @@ and preserves the old applied scale as predictive-only.
 
 Milestone 12 adds `fit_conditional_beta_scale_calibration` and
 `apply_conditional_beta_scale_calibration` for simulation-trained coefficient
-scaling. Anchored-model conditional artifacts use `semantics_version: 5`, store
-its rank-aware objective, feature normalization, structured-head weights, and
-support geometry, and requires `X`, `Y`, and matching coefficient names when
-applied. It uses prevalence, expected design information, raw posterior scale,
+scaling. Current anchored-model conditional artifacts use
+`semantics_version: 6`, store their rank-aware objective, feature normalization,
+structured-head weights, support geometry, and bounded OOD uncertainty
+inflation, and require `X`, `Y`, and matching coefficient names when applied.
+They use prevalence, expected design information, raw posterior scale,
 posterior-mean magnitude, and coefficient identity.
 `conditional_beta_support_trust` exposes the coefficient-level blend weight;
-zero trust applies the frozen scalar fallback.
+zero trust applies the frozen scalar fallback before any configured bounded OOD
+uncertainty inflation.
 Full-covariance posteriors are transformed as `D Sigma D`; posterior means are
-unchanged. Version 3 and 4 conditional metadata remain readable.
+unchanged. Version 3, 4, and legacy version 5 conditional metadata remain
+readable.
 
 The conditional artifact applies only to coefficient uncertainty. Continue to
 use the separately fitted `BetaScaleCalibration` with
