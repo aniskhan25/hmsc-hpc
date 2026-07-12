@@ -45,6 +45,14 @@ scalar-versus-conditional log scores and rank losses. Version 3
 `conditional_structured_scale`, version 4 `conditional_rank_aware_scale`, and
 legacy version 5 metadata remain loadable for reproducibility.
 
+The learned OOD-objective update writes `semantics_version: 7` for the same
+method when held-out OOD calibration batches are supplied. Version 7 replaces
+the fixed support-excess exponential with a learned bounded softplus curve over
+support excess. The curve is fit only from simulated OOD calibration batches,
+penalizes OOD coefficient coverage and rank-moment errors, and includes an
+in-domain gate penalty so in-domain SBC acceptance remains a hard constraint.
+Posterior means remain fixed.
+
 Coefficient and predictive calibration remain separate:
 
 - coefficient artifacts may use the conditional version 5 calibrator
@@ -80,12 +88,29 @@ weights. Support fallback is controlled by
 `--conditional-calibration-support-quantile` and
 `--conditional-calibration-fallback-strength`.
 
+The learned OOD objective is opt-in:
+
+```bash
+python examples/run_neural_hmsc_conditional_calibration.py \
+  --output run/conditional_ood_objective \
+  --suite probit \
+  --conditional-calibration-ood-objective support_excess_rank_coverage \
+  --conditional-calibration-ood-datasets 128 \
+  --conditional-calibration-ood-objective-epochs 200 \
+  --conditional-calibration-ood-uncertainty-max-multiplier 8 \
+  --ood-regimes covariate_shift effect_size_shift combined_shift
+```
+
+The OOD calibration batches are separate from the SBC batches. The same runner
+still writes predictive-only artifacts with scalar version 2 calibration.
+
 ## Validation State
 
 Unit coverage verifies conditional prevalence response, nominal calibration,
 metadata round trips, version 3/4 compatibility, rank-loss improvement, scalar
 fallback outside feature support, posterior-mean shift detection, domain
-rejection, unchanged means, and exact full-covariance transformation. An
+rejection, unchanged means, exact full-covariance transformation, and version 7
+learned OOD-objective metadata/application. An
 end-to-end benchmark smoke test verifies that anchored coefficient artifacts
 carry version 5 metadata while predictive artifacts remain on version 2 and
 SBC rows expose support-trust and mean-magnitude diagnostics.
@@ -97,5 +122,7 @@ That result applies to the version 3 objective. The version 4 comparison is
 recorded in `docs/neural_hmsc_rankaware_v4_comparison_2026-07-09.md`. Version 4
 fixed rare coverage and recovered most OOD degradation, but prevalence
 rank-mean and intercept rank-variance gates still failed. It is not qualified.
-The IRLS/Laplace anchor and version 5 support extension are implemented but not
-yet LUMI-qualified.
+The IRLS/Laplace anchor, version 6 support-excess inflation, and version 7
+learned OOD objective are implemented. Version 7 still needs a five-seed LUMI
+comparison against scalar, version 4, version 5 IRLS, version 6 default, and the
+conservative version 6 sweep candidate.

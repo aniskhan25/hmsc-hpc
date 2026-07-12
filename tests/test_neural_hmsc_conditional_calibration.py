@@ -3,6 +3,7 @@ import pytest
 import tensorflow as tf
 
 from pyhmsc.neural.conditional_calibration import (
+    ConditionalBetaOODCalibrationBatch,
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
     conditional_beta_mean_support_diagnostics,
@@ -102,6 +103,57 @@ def test_conditional_calibration_preserves_mean_and_round_trips_metadata(
     assert restored.to_metadata()["semantics_version"] == 6
     assert restored.ood_uncertainty_strength > 0.0
     assert restored.ood_uncertainty_max_multiplier > 1.0
+
+
+def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case):
+    posterior, truth, X, Y, _ = conditional_case
+    shifted = BetaPosterior(
+        mean=posterior.mean + 20.0,
+        scale=posterior.scale,
+    )
+
+    calibration = fit_conditional_beta_scale_calibration(
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        epochs=20,
+        learning_rate=0.03,
+        ood_uncertainty_max_multiplier=8.0,
+        ood_calibration_batches=[
+            ConditionalBetaOODCalibrationBatch(
+                posterior=shifted,
+                beta_true=truth,
+                X=X,
+                Y=Y,
+                label="synthetic_shift",
+            )
+        ],
+        ood_objective="support_excess_rank_coverage",
+        ood_objective_epochs=20,
+    )
+    metadata = calibration.to_metadata()
+    restored = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    inflation = conditional_beta_ood_uncertainty_inflation(
+        shifted,
+        restored,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert metadata["semantics_version"] == 7
+    assert metadata["ood_objective"]["name"] == "support_excess_rank_coverage"
+    assert metadata["ood_objective"]["domains"] == ["synthetic_shift"]
+    assert metadata["support"]["ood_uncertainty"]["transform"] == (
+        "support_excess_learned_softplus"
+    )
+    assert restored.ood_inflation_parameters is not None
+    assert np.max(inflation) <= calibration.ood_uncertainty_max_multiplier
+    assert np.mean(inflation) > 1.0
 
 
 def test_conditional_calibration_falls_back_to_scalar_outside_support(

@@ -947,6 +947,15 @@ Status:
   implement an explicit OOD calibration objective that learns regime-aware
   uncertainty inflation from held-out OOD simulations while keeping the
   in-domain coefficient SBC gates as hard acceptance constraints.
+- Implemented the opt-in version 7 learned OOD calibration objective. It fits a
+  bounded softplus support-excess inflation curve from held-out OOD simulation
+  batches, records OOD objective metadata, and keeps posterior means fixed. The
+  benchmark runner can now generate OOD calibration batches with
+  `--conditional-calibration-ood-objective support_excess_rank_coverage` and
+  `--conditional-calibration-ood-datasets`. Next substep: run a production-like
+  local sanity check if feasible, then submit the five-seed LUMI comparison
+  against scalar, version 4, version 5 IRLS, version 6 default, and the
+  conservative version 6 strength-1.5/cap-8 candidate.
 
 ## Testing Strategy
 

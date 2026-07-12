@@ -51,6 +51,7 @@ from pyhmsc.neural.calibration import (
     fit_beta_scale_calibration,
 )
 from pyhmsc.neural.conditional_calibration import (
+    ConditionalBetaOODCalibrationBatch,
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
     conditional_beta_mean_support_diagnostics,
@@ -159,6 +160,33 @@ def main() -> None:
         default=4.0,
         help="maximum extra posterior-scale multiplier from OOD uncertainty inflation",
     )
+    parser.add_argument(
+        "--conditional-calibration-ood-objective",
+        choices=["none", "support_excess_rank_coverage"],
+        default="none",
+        help="fit a learned OOD uncertainty curve from held-out OOD simulations",
+    )
+    parser.add_argument(
+        "--conditional-calibration-ood-datasets",
+        type=int,
+        default=0,
+        help="held-out OOD datasets per regime used by the learned OOD objective",
+    )
+    parser.add_argument(
+        "--conditional-calibration-ood-objective-weight",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--conditional-calibration-ood-in-domain-gate-weight",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--conditional-calibration-ood-objective-epochs",
+        type=int,
+        default=200,
+    )
     parser.add_argument("--sbc-datasets", type=int, default=32)
     parser.add_argument("--sbc-draws", type=int, default=256)
     parser.add_argument("--sbc-bins", type=int, default=10)
@@ -220,6 +248,22 @@ def main() -> None:
     if args.conditional_calibration_ood_uncertainty_max_multiplier < 1.0:
         parser.error(
             "--conditional-calibration-ood-uncertainty-max-multiplier must be at least one"
+        )
+    if args.conditional_calibration_ood_datasets < 0:
+        parser.error("--conditional-calibration-ood-datasets must be non-negative")
+    if args.conditional_calibration_ood_objective != "none":
+        if args.conditional_calibration_ood_datasets <= 0:
+            parser.error(
+                "--conditional-calibration-ood-objective requires "
+                "--conditional-calibration-ood-datasets"
+            )
+        if args.conditional_calibration_ood_objective_epochs <= 0:
+            parser.error("--conditional-calibration-ood-objective-epochs must be positive")
+    if args.conditional_calibration_ood_objective_weight < 0.0:
+        parser.error("--conditional-calibration-ood-objective-weight must be non-negative")
+    if args.conditional_calibration_ood_in_domain_gate_weight < 0.0:
+        parser.error(
+            "--conditional-calibration-ood-in-domain-gate-weight must be non-negative"
         )
     if args.checkpoint and len(args.suite) != 1:
         parser.error("--checkpoint requires exactly one distribution in --suite")
@@ -470,6 +514,36 @@ def main() -> None:
                 predictive_seed=args.model_seed + suite_idx + 50,
             )
             if args.coefficient_calibration == "conditional":
+                ood_calibration_batches = None
+                if args.conditional_calibration_ood_objective != "none":
+                    ood_calibration_batches = []
+                    for regime_idx, regime in enumerate(args.ood_regimes):
+                        ood_calibration = [
+                            simulate_fixed_effect_ood_dataset(
+                                n_sites=args.n_sites,
+                                n_species=args.n_species,
+                                distribution=distribution,
+                                regime=regime,
+                                seed=distribution_seed(
+                                    args.seed,
+                                    distribution,
+                                    delta=1500 + 10_000 * (regime_idx + 1) + idx,
+                                ),
+                            )
+                            for idx in range(
+                                args.conditional_calibration_ood_datasets
+                            )
+                        ]
+                        ood_data = fixed_shape_training_data(ood_calibration)
+                        ood_calibration_batches.append(
+                            ConditionalBetaOODCalibrationBatch(
+                                posterior=engine.predict_beta_posterior(ood_data),
+                                beta_true=ood_data.Beta,
+                                X=ood_data.X,
+                                Y=ood_data.Y,
+                                label=regime,
+                            )
+                        )
                 calibration_result = fit_conditional_beta_scale_calibration(
                     calibration_posterior,
                     calibration_data.Beta,
@@ -497,6 +571,17 @@ def main() -> None:
                     ),
                     ood_uncertainty_max_multiplier=(
                         args.conditional_calibration_ood_uncertainty_max_multiplier
+                    ),
+                    ood_calibration_batches=ood_calibration_batches,
+                    ood_objective=args.conditional_calibration_ood_objective,
+                    ood_objective_weight=(
+                        args.conditional_calibration_ood_objective_weight
+                    ),
+                    ood_in_domain_gate_weight=(
+                        args.conditional_calibration_ood_in_domain_gate_weight
+                    ),
+                    ood_objective_epochs=(
+                        args.conditional_calibration_ood_objective_epochs
                     ),
                 )
                 posterior = apply_conditional_beta_scale_calibration(

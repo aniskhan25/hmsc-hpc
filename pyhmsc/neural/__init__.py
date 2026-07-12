@@ -46,6 +46,7 @@ __all__ = [
     "TraitGammaPosteriorModel",
     "VariableShapeBetaPosteriorModel",
     "BetaScaleCalibration",
+    "ConditionalBetaOODCalibrationBatch",
     "ConditionalBetaScaleCalibration",
     "apply_conditional_beta_scale_calibration",
     "apply_beta_predictive_calibration",
@@ -108,6 +109,7 @@ def __getattr__(name: str) -> object:
         return probit_irls_laplace_anchor
     if name in {
         "ConditionalBetaScaleCalibration",
+        "ConditionalBetaOODCalibrationBatch",
         "apply_conditional_beta_scale_calibration",
         "conditional_beta_scale_multipliers",
         "conditional_beta_mean_support_diagnostics",
@@ -116,6 +118,7 @@ def __getattr__(name: str) -> object:
         "fit_conditional_beta_scale_calibration",
     }:
         from pyhmsc.neural.conditional_calibration import (
+            ConditionalBetaOODCalibrationBatch,
             ConditionalBetaScaleCalibration,
             apply_conditional_beta_scale_calibration,
             conditional_beta_scale_multipliers,
@@ -127,6 +130,7 @@ def __getattr__(name: str) -> object:
 
         return {
             "ConditionalBetaScaleCalibration": ConditionalBetaScaleCalibration,
+            "ConditionalBetaOODCalibrationBatch": ConditionalBetaOODCalibrationBatch,
             "apply_conditional_beta_scale_calibration": apply_conditional_beta_scale_calibration,
             "conditional_beta_scale_multipliers": conditional_beta_scale_multipliers,
             "conditional_beta_mean_support_diagnostics": conditional_beta_mean_support_diagnostics,
