@@ -926,6 +926,27 @@ Status:
   top of the IRLS anchor, then repeat the paired five-seed in-domain/OOD LUMI
   comparison against the frozen scalar, version 4, and version 5 IRLS
   references.
+- Implemented version 6 OOD-aware support-excess uncertainty inflation and
+  completed the paired five-seed LUMI comparison. Version 6 preserved all
+  in-domain gates and improved version 5 IRLS OOD coverage and rank-variance
+  errors, but every OOD regime still failed the absolute 95% coverage gate. The
+  result is recorded in `docs/neural_hmsc_oodv6_comparison_2026-07-12.md`.
+- Version 6 OOD is not qualified as the default calibration path. Next substep:
+  run a small LUMI tuning sweep over OOD uncertainty strength and maximum
+  multiplier, then compare against scalar, version 4, version 5 IRLS, and the
+  current version 6 default.
+- Completed the version 6 OOD tuning sweep with strength/cap settings
+  `1.0/8.0`, `1.5/8.0`, and `1.5/12.0`. The jobs retrained because the
+  frozen-checkpoint environment variables did not propagate through Slurm, so
+  the result is interpreted as a retrained tuning sweep rather than a pure
+  frozen-checkpoint comparison. All three settings preserved in-domain gates
+  and improved OOD coverage versus version 6 default, but every OOD regime
+  still failed the absolute 95% coverage gate. The result is recorded in
+  `docs/neural_hmsc_oodv6_sweep_comparison_2026-07-12.md`.
+- Fixed support-excess multiplier tuning is now exhausted. Next substep:
+  implement an explicit OOD calibration objective that learns regime-aware
+  uncertainty inflation from held-out OOD simulations while keeping the
+  in-domain coefficient SBC gates as hard acceptance constraints.
 
 ## Testing Strategy
 
