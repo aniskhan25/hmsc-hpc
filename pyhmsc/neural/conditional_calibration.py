@@ -20,7 +20,11 @@ _CONDITIONAL_METHODS = {
     "conditional_rank_aware_scale",
     "conditional_rank_aware_anchor_scale",
 }
-_OOD_OBJECTIVES = {"none", "support_excess_rank_coverage"}
+_OOD_OBJECTIVES = {
+    "none",
+    "support_excess_rank_coverage",
+    "support_effect_gated_rank_coverage",
+}
 
 
 @dataclass(frozen=True)
@@ -146,6 +150,8 @@ class ConditionalBetaScaleCalibration:
             semantics_version = 6
         if self.ood_inflation_parameters is not None:
             semantics_version = 7
+            if len(self.ood_inflation_parameters) >= 7:
+                semantics_version = 8
         ood_uncertainty = {
             "transform": "support_excess_exp",
             "strength": float(self.ood_uncertainty_strength),
@@ -153,7 +159,41 @@ class ConditionalBetaScaleCalibration:
         }
         if self.ood_inflation_parameters is not None:
             curve: dict[str, float]
-            if len(self.ood_inflation_parameters) >= 5:
+            if len(self.ood_inflation_parameters) >= 7:
+                if len(self.ood_inflation_parameters) >= 8:
+                    (
+                        offset,
+                        support_linear,
+                        support_quadratic,
+                        effect_linear,
+                        effect_quadratic,
+                        effect_gate_intercept,
+                        effect_gate_support_linear,
+                        effect_gate_effect_linear,
+                    ) = self.ood_inflation_parameters[:8]
+                else:
+                    (
+                        offset,
+                        support_linear,
+                        support_quadratic,
+                        effect_linear,
+                        effect_quadratic,
+                        effect_gate_intercept,
+                        effect_gate_support_linear,
+                    ) = self.ood_inflation_parameters[:7]
+                    effect_gate_effect_linear = 0.0
+                transform = "support_effect_gated_learned_softplus"
+                curve = {
+                    "offset": float(offset),
+                    "support_linear": float(support_linear),
+                    "support_quadratic": float(support_quadratic),
+                    "effect_linear": float(effect_linear),
+                    "effect_quadratic": float(effect_quadratic),
+                    "effect_gate_intercept": float(effect_gate_intercept),
+                    "effect_gate_support_linear": float(effect_gate_support_linear),
+                    "effect_gate_effect_linear": float(effect_gate_effect_linear),
+                }
+            elif len(self.ood_inflation_parameters) >= 5:
                 (
                     offset,
                     support_linear,
@@ -301,7 +341,22 @@ class ConditionalBetaScaleCalibration:
         ood_curve = ood_uncertainty.get("curve")
         ood_inflation_parameters = None
         if isinstance(ood_curve, dict):
-            if "effect_linear" in ood_curve or "effect_quadratic" in ood_curve:
+            if (
+                "effect_gate_intercept" in ood_curve
+                or "effect_gate_support_linear" in ood_curve
+                or "effect_gate_effect_linear" in ood_curve
+            ):
+                ood_inflation_parameters = (
+                    float(ood_curve["offset"]),
+                    float(ood_curve["support_linear"]),
+                    float(ood_curve["support_quadratic"]),
+                    float(ood_curve["effect_linear"]),
+                    float(ood_curve["effect_quadratic"]),
+                    float(ood_curve["effect_gate_intercept"]),
+                    float(ood_curve["effect_gate_support_linear"]),
+                    float(ood_curve.get("effect_gate_effect_linear", 0.0)),
+                )
+            elif "effect_linear" in ood_curve or "effect_quadratic" in ood_curve:
                 ood_inflation_parameters = (
                     float(ood_curve["offset"]),
                     float(ood_curve["support_linear"]),
@@ -696,6 +751,7 @@ def fit_conditional_beta_scale_calibration(
             in_domain_gate_weight=ood_in_domain_gate_weight,
             epochs=ood_objective_epochs or max(50, epochs // 2),
             learning_rate=learning_rate,
+            gate_effect_branch=ood_objective == "support_effect_gated_rank_coverage",
             prevalence_edges=(low_prevalence, high_prevalence),
             rank_mean_tolerance=rank_mean_tolerance,
             rank_variance_tolerance=rank_variance_tolerance,
@@ -1443,6 +1499,7 @@ def _fit_ood_inflation_parameters(
     in_domain_gate_weight: float,
     epochs: int,
     learning_rate: float,
+    gate_effect_branch: bool,
     prevalence_edges: tuple[float, float],
     rank_mean_tolerance: float,
     rank_variance_tolerance: float,
@@ -1569,6 +1626,13 @@ def _fit_ood_inflation_parameters(
     raw_support_quadratic = tf.Variable(_softplus_inverse(0.75), dtype=tf.float64)
     raw_effect_linear = tf.Variable(_softplus_inverse(1e-3), dtype=tf.float64)
     raw_effect_quadratic = tf.Variable(_softplus_inverse(0.1), dtype=tf.float64)
+    effect_gate_intercept = tf.Variable(-4.0, dtype=tf.float64)
+    raw_effect_gate_support_linear = tf.Variable(
+        _softplus_inverse(2.0), dtype=tf.float64
+    )
+    raw_effect_gate_effect_linear = tf.Variable(
+        _softplus_inverse(4.0), dtype=tf.float64
+    )
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     expected_rank_variance = tf.constant(1.0 / 12.0, dtype=tf.float64)
     target_coverage = tf.constant(float(nominal_level), dtype=tf.float64)
@@ -1603,12 +1667,16 @@ def _fit_ood_inflation_parameters(
         ],
     }
 
-    def total_multiplier(arrays: dict[str, Any]) -> tf.Tensor:
+    def log_inflation_for(arrays: dict[str, Any]) -> tf.Tensor:
         support_linear = tf.nn.softplus(raw_support_linear)
         support_quadratic = tf.nn.softplus(raw_support_quadratic)
         effect_linear = tf.nn.softplus(raw_effect_linear)
         effect_quadratic = tf.nn.softplus(raw_effect_quadratic)
-        log_inflation = _tf_learned_ood_log_inflation(
+        effect_gate_support_linear = tf.nn.softplus(
+            raw_effect_gate_support_linear
+        )
+        effect_gate_effect_linear = tf.nn.softplus(raw_effect_gate_effect_linear)
+        return _tf_learned_ood_log_inflation(
             arrays["support_excess"],
             effect_signal=arrays["effect_signal"],
             offset=offset,
@@ -1616,8 +1684,20 @@ def _fit_ood_inflation_parameters(
             support_quadratic=support_quadratic,
             effect_linear=effect_linear,
             effect_quadratic=effect_quadratic,
+            effect_gate_intercept=(
+                effect_gate_intercept if gate_effect_branch else None
+            ),
+            effect_gate_support_linear=(
+                effect_gate_support_linear if gate_effect_branch else None
+            ),
+            effect_gate_effect_linear=(
+                effect_gate_effect_linear if gate_effect_branch else None
+            ),
             max_multiplier=max_ood_multiplier,
         )
+
+    def total_multiplier(arrays: dict[str, Any]) -> tf.Tensor:
+        log_inflation = log_inflation_for(arrays)
         return tf.clip_by_value(
             arrays["base_multiplier"] * tf.exp(log_inflation),
             float(min_multiplier),
@@ -1691,6 +1771,19 @@ def _fit_ood_inflation_parameters(
             gate_loss = tf.reduce_mean(tf.stack(in_rank_losses)) + tf.square(
                 tf.nn.relu((0.90 - in_coverage) / 0.05)
             )
+            if gate_effect_branch:
+                in_extra_log_inflation = log_inflation_for(in_domain)
+                gate_loss = gate_loss + 0.05 * tf.reduce_mean(
+                    tf.square(
+                        tf.nn.relu(
+                            (
+                                in_extra_log_inflation
+                                - tf.math.log(tf.constant(1.05, dtype=tf.float64))
+                            )
+                            / tf.math.log(tf.constant(1.25, dtype=tf.float64))
+                        )
+                    )
+                )
             loss = (
                 float(objective_weight) * ood_loss
                 + float(in_domain_gate_weight) * gate_loss
@@ -1702,6 +1795,14 @@ def _fit_ood_inflation_parameters(
             raw_effect_linear,
             raw_effect_quadratic,
         ]
+        if gate_effect_branch:
+            variables.extend(
+                [
+                    effect_gate_intercept,
+                    raw_effect_gate_support_linear,
+                    raw_effect_gate_effect_linear,
+                ]
+            )
         gradients = tape.gradient(loss, variables)
         optimizer.apply_gradients(
             zip(gradients, variables)
@@ -1710,13 +1811,22 @@ def _fit_ood_inflation_parameters(
         last_rank_loss = ood_rank_loss
         last_gate_loss = gate_loss
 
-    learned = (
+    learned_values = [
         float(offset.numpy()),
         float(tf.nn.softplus(raw_support_linear).numpy()),
         float(tf.nn.softplus(raw_support_quadratic).numpy()),
         float(tf.nn.softplus(raw_effect_linear).numpy()),
         float(tf.nn.softplus(raw_effect_quadratic).numpy()),
-    )
+    ]
+    if gate_effect_branch:
+        learned_values.extend(
+            [
+                float(effect_gate_intercept.numpy()),
+                float(tf.nn.softplus(raw_effect_gate_support_linear).numpy()),
+                float(tf.nn.softplus(raw_effect_gate_effect_linear).numpy()),
+            ]
+        )
+    learned = tuple(learned_values)
     return (
         learned,
         float(last_ood_loss.numpy()),
@@ -1741,26 +1851,65 @@ def _learned_ood_log_inflation_numpy(
     parameters: tuple[float, ...],
     max_multiplier: float,
 ) -> np.ndarray:
-    if len(parameters) >= 5:
+    if len(parameters) >= 7:
+        if len(parameters) >= 8:
+            (
+                offset,
+                support_linear,
+                support_quadratic,
+                effect_linear,
+                effect_quadratic,
+                effect_gate_intercept,
+                effect_gate_support_linear,
+                effect_gate_effect_linear,
+            ) = parameters[:8]
+        else:
+            (
+                offset,
+                support_linear,
+                support_quadratic,
+                effect_linear,
+                effect_quadratic,
+                effect_gate_intercept,
+                effect_gate_support_linear,
+            ) = parameters[:7]
+            effect_gate_effect_linear = 0.0
+        effect_gate = _sigmoid_numpy(
+            float(effect_gate_intercept)
+            + float(effect_gate_support_linear) * support_excess
+            + float(effect_gate_effect_linear) * effect_signal
+        )
+    elif len(parameters) >= 5:
         offset, support_linear, support_quadratic, effect_linear, effect_quadratic = (
             parameters[:5]
         )
+        effect_gate = 1.0
     elif len(parameters) == 3:
         offset, support_linear, support_quadratic = parameters
         effect_linear = 0.0
         effect_quadratic = 0.0
+        effect_gate = 1.0
     else:
-        raise ValueError("learned OOD inflation curve requires three or five parameters")
+        raise ValueError(
+            "learned OOD inflation curve requires three, five, or seven parameters"
+        )
     raw = (
         float(offset)
         + float(support_linear) * support_excess
         + float(support_quadratic) * np.square(support_excess)
-        + float(effect_linear) * effect_signal
-        + float(effect_quadratic) * np.square(effect_signal)
+        + effect_gate
+        * (
+            float(effect_linear) * effect_signal
+            + float(effect_quadratic) * np.square(effect_signal)
+        )
     )
     baseline = np.logaddexp(0.0, float(offset))
     log_inflation = np.logaddexp(0.0, raw) - baseline
     return np.clip(log_inflation, 0.0, np.log(float(max_multiplier)))
+
+
+def _sigmoid_numpy(value: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-np.clip(value, -60.0, 60.0)))
 
 
 def _tf_learned_ood_log_inflation(
@@ -1772,14 +1921,29 @@ def _tf_learned_ood_log_inflation(
     support_quadratic: tf.Tensor,
     effect_linear: tf.Tensor,
     effect_quadratic: tf.Tensor,
+    effect_gate_intercept: tf.Tensor | None = None,
+    effect_gate_support_linear: tf.Tensor | None = None,
+    effect_gate_effect_linear: tf.Tensor | None = None,
     max_multiplier: float,
 ) -> tf.Tensor:
+    if (
+        effect_gate_intercept is None
+        or effect_gate_support_linear is None
+        or effect_gate_effect_linear is None
+    ):
+        effect_gate = tf.constant(1.0, dtype=tf.float64)
+    else:
+        effect_gate = tf.sigmoid(
+            effect_gate_intercept
+            + effect_gate_support_linear * support_excess
+            + effect_gate_effect_linear * effect_signal
+        )
     raw = (
         offset
         + support_linear * support_excess
         + support_quadratic * tf.square(support_excess)
-        + effect_linear * effect_signal
-        + effect_quadratic * tf.square(effect_signal)
+        + effect_gate
+        * (effect_linear * effect_signal + effect_quadratic * tf.square(effect_signal))
     )
     baseline = tf.nn.softplus(offset)
     log_inflation = tf.nn.softplus(raw) - baseline

@@ -159,6 +159,63 @@ def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case)
     assert np.mean(inflation) > 1.0
 
 
+def test_conditional_calibration_can_fit_gated_effect_ood_objective(
+    conditional_case,
+):
+    posterior, truth, X, Y, _ = conditional_case
+    shifted = BetaPosterior(
+        mean=posterior.mean + 20.0,
+        scale=posterior.scale,
+    )
+
+    calibration = fit_conditional_beta_scale_calibration(
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        epochs=20,
+        learning_rate=0.03,
+        ood_uncertainty_max_multiplier=8.0,
+        ood_calibration_batches=[
+            ConditionalBetaOODCalibrationBatch(
+                posterior=shifted,
+                beta_true=truth,
+                X=X,
+                Y=Y,
+                label="synthetic_shift",
+            )
+        ],
+        ood_objective="support_effect_gated_rank_coverage",
+        ood_objective_epochs=20,
+    )
+    metadata = calibration.to_metadata()
+    restored = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    inflation = conditional_beta_ood_uncertainty_inflation(
+        shifted,
+        restored,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert metadata["semantics_version"] == 8
+    assert metadata["ood_objective"]["name"] == "support_effect_gated_rank_coverage"
+    assert metadata["support"]["ood_uncertainty"]["transform"] == (
+        "support_effect_gated_learned_softplus"
+    )
+    curve = metadata["support"]["ood_uncertainty"]["curve"]
+    assert "effect_gate_intercept" in curve
+    assert "effect_gate_support_linear" in curve
+    assert "effect_gate_effect_linear" in curve
+    assert restored.ood_inflation_parameters is not None
+    assert len(restored.ood_inflation_parameters) == 8
+    assert np.max(inflation) <= calibration.ood_uncertainty_max_multiplier
+    assert np.mean(inflation) > 1.0
+
+
 def test_conditional_calibration_loads_legacy_version_seven_curve(
     conditional_case,
 ):

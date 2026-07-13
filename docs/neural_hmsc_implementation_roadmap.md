@@ -1006,6 +1006,21 @@ Status:
   substep: make the effect-size branch OOD-context-aware, for example by gating
   effect-size inflation by support trust, prevalence/design strata, or an
   explicit in-domain penalty on the effect-size branch.
+- Implemented an opt-in version 8 OOD objective,
+  `support_effect_gated_rank_coverage`. Version 8 writes
+  `support_effect_gated_learned_softplus` metadata, gates the learned
+  effect-size branch by support excess and effect-signal magnitude, and adds a
+  direct in-domain extra-inflation penalty while keeping legacy version 7
+  metadata loadable. Focused conditional-calibration and LUMI workflow tests
+  pass. A production-shape local sanity run at `40` sites and `75` species is
+  recorded in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The version 8 candidate is not ready for five-seed LUMI submission. Overall
+  in-domain SBC passes locally, but stratified diagnostics still fail the local
+  precondition: rare-prevalence rank mean remains high, high-design-information
+  coverage is only `0.9108`, and effect-size OOD coverage remains below the
+  previous ungated effect-aware version 7 local result. Next substep: add
+  explicit stratified in-domain gates to the OOD objective, especially
+  design-information groups, before rerunning local sanity and submitting LUMI.
 
 ## Testing Strategy
 

@@ -163,7 +163,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--conditional-calibration-ood-objective",
-        choices=["none", "support_excess_rank_coverage"],
+        choices=[
+            "none",
+            "support_excess_rank_coverage",
+            "support_effect_gated_rank_coverage",
+        ],
         default="none",
         help="fit a learned OOD uncertainty curve from held-out OOD simulations",
     )

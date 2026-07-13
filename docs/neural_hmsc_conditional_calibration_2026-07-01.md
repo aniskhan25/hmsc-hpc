@@ -57,6 +57,14 @@ only from simulated OOD calibration batches, penalizes OOD coefficient coverage
 and rank-moment errors, and includes an in-domain gate penalty so in-domain SBC
 acceptance remains a hard constraint. Posterior means remain fixed.
 
+The gated effect-size update writes `semantics_version: 8` when the opt-in
+`support_effect_gated_rank_coverage` objective is used. Version 8 serializes
+`support_effect_gated_learned_softplus`, keeps the support-excess branch, and
+multiplies the effect-size branch by a learned OOD-context gate over support
+excess and effect-signal magnitude. Version 8 also adds a direct in-domain
+extra-inflation penalty during OOD-objective fitting. Legacy support-only and
+ungated effect-aware version 7 metadata remain loadable.
+
 Coefficient and predictive calibration remain separate:
 
 - coefficient artifacts may use the conditional version 5 calibrator
@@ -115,7 +123,7 @@ metadata round trips, version 3/4 compatibility, rank-loss improvement, scalar
 fallback outside feature support, posterior-mean shift detection, domain
 rejection, unchanged means, exact full-covariance transformation, and version 7
 learned OOD-objective metadata/application, including legacy support-only v7
-metadata. An
+metadata, plus version 8 gated effect-size metadata/application. An
 end-to-end benchmark smoke test verifies that anchored coefficient artifacts
 carry version 5 metadata while predictive artifacts remain on version 2 and
 SBC rows expose support-trust, mean-magnitude, and effect-size signal
