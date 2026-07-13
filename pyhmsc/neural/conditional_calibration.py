@@ -607,6 +607,15 @@ def fit_conditional_beta_scale_calibration(
     rank_groups = _prevalence_group_masks(
         selected_prevalence, prevalence_edges=prevalence_edges
     )
+    coefficient_index = np.broadcast_to(
+        np.arange(mean.shape[1])[None, :, None], mean.shape
+    )
+    in_domain_gate_groups = _in_domain_gate_group_masks(
+        prevalence=selected_prevalence,
+        log_design_information=selected_raw[:, 1],
+        coefficient_index=coefficient_index[mask],
+        prevalence_edges=prevalence_edges,
+    )
     weights = tf.Variable(
         np.zeros(selected_design.shape[1], dtype=np.float64), dtype=tf.float64
     )
@@ -740,7 +749,11 @@ def fit_conditional_beta_scale_calibration(
             in_domain_trust=support_trust[mask],
             in_domain_support_excess=support_excess[mask],
             in_domain_effect_signal=effect_signal[mask],
-            in_domain_rank_groups=rank_groups,
+            in_domain_rank_groups=(
+                in_domain_gate_groups
+                if ood_objective == "support_effect_gated_rank_coverage"
+                else rank_groups
+            ),
             distribution=distribution,
             n_covariates=mean.shape[1],
             n_species=mean.shape[2],
@@ -1211,6 +1224,52 @@ def _prevalence_group_masks(
         prevalence > high,
     ]
     return [mask for mask in candidates if np.count_nonzero(mask) >= 2]
+
+
+def _in_domain_gate_group_masks(
+    *,
+    prevalence: np.ndarray,
+    log_design_information: np.ndarray,
+    coefficient_index: np.ndarray,
+    prevalence_edges: tuple[float, float],
+) -> list[np.ndarray]:
+    """Return stratified groups used by the learned OOD in-domain gate."""
+    prevalence = np.asarray(prevalence, dtype=float).reshape(-1)
+    design_information = np.asarray(log_design_information, dtype=float).reshape(-1)
+    coefficient_index = np.asarray(coefficient_index, dtype=int).reshape(-1)
+    if not (
+        prevalence.shape == design_information.shape == coefficient_index.shape
+    ):
+        raise ValueError("in-domain gate group inputs must have matching shape")
+    low, high = prevalence_edges
+    candidates = [
+        np.ones(prevalence.shape, dtype=bool),
+        prevalence <= low,
+        (prevalence > low) & (prevalence <= high),
+        prevalence > high,
+    ]
+    if design_information.size:
+        design_low, design_high = np.quantile(design_information, (1.0 / 3.0, 2.0 / 3.0))
+        candidates.extend(
+            [
+                design_information <= design_low,
+                (design_information > design_low) & (design_information <= design_high),
+                design_information > design_high,
+            ]
+        )
+    for index in np.unique(coefficient_index):
+        candidates.append(coefficient_index == index)
+    unique_groups: list[np.ndarray] = []
+    seen: set[bytes] = set()
+    for candidate in candidates:
+        if np.count_nonzero(candidate) < 2:
+            continue
+        key = np.packbits(candidate).tobytes()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_groups.append(candidate)
+    return unique_groups
 
 
 def _expected_design_information(
@@ -1746,8 +1805,19 @@ def _fit_ood_inflation_parameters(
             in_rank_losses = []
             for group in in_domain["rank_groups"]:
                 selected = tf.boolean_mask(in_rank_probability, group)
+                selected_signed_error = tf.boolean_mask(
+                    in_domain["signed_error"], group
+                )
+                selected_multiplier = tf.boolean_mask(in_multiplier, group)
                 rank_mean = tf.reduce_mean(selected)
                 rank_variance = tf.reduce_mean(tf.square(selected - rank_mean))
+                group_coverage = tf.reduce_mean(
+                    tf.cast(
+                        tf.abs(selected_signed_error)
+                        <= float(z_value) * selected_multiplier,
+                        tf.float64,
+                    )
+                )
                 in_rank_losses.append(
                     tf.square(
                         tf.nn.relu(
@@ -1761,6 +1831,7 @@ def _fit_ood_inflation_parameters(
                             - 1.0
                         )
                     )
+                    + tf.square(tf.nn.relu((0.925 - group_coverage) / 0.05))
                 )
             in_coverage = tf.reduce_mean(
                 tf.cast(
@@ -1768,8 +1839,13 @@ def _fit_ood_inflation_parameters(
                     tf.float64,
                 )
             )
-            gate_loss = tf.reduce_mean(tf.stack(in_rank_losses)) + tf.square(
+            in_group_losses = tf.stack(in_rank_losses)
+            gate_loss = (
+                tf.reduce_mean(in_group_losses)
+                + tf.reduce_max(in_group_losses)
+                + tf.square(
                 tf.nn.relu((0.90 - in_coverage) / 0.05)
+            )
             )
             if gate_effect_branch:
                 in_extra_log_inflation = log_inflation_for(in_domain)

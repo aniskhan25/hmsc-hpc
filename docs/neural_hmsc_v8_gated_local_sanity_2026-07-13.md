@@ -124,3 +124,64 @@ especially design-information groups, instead of relying on prevalence-only
 rank groups and overall coverage. The next candidate should preserve the v7
 effect-size OOD gain while requiring local high-design-information and
 rare-prevalence diagnostics to hold before submission.
+
+## Stratified Gate Follow-Up
+
+The follow-up implementation added explicit in-domain OOD-objective gate groups
+for:
+
+- prevalence strata,
+- design-information tertiles,
+- coefficient identity.
+
+It also added per-stratum coverage penalties with a stricter `0.925` local
+coverage floor and used both mean and worst-stratum gate losses so rare or
+high-information strata are not diluted by easier groups.
+
+Focused validation:
+
+```text
+pytest tests/test_neural_hmsc_conditional_calibration.py -q
+13 passed
+
+pytest tests/test_neural_hmsc_lumi_workflow.py -q
+4 passed
+```
+
+Fresh local sanity command used the same shape and objective settings, writing
+artifacts to:
+
+```text
+/private/tmp/neural_hmsc_v8_stratified_strict_gate_local_sanity
+```
+
+Overall rows:
+
+| Domain | Coverage 95 | Beta RMSE | Inflation mean | Effect signal mean |
+| --- | ---: | ---: | ---: | ---: |
+| In-domain | 0.9299 | 0.2906 | 1.1371 | 0.3948 |
+| OOD covariate | 0.9011 | 0.4157 | 3.6361 | 0.3334 |
+| OOD effect-size | 0.8326 | 0.6389 | 1.5872 | 0.7906 |
+| OOD combined | 0.7792 | 0.8870 | 3.4007 | 0.5507 |
+
+In-domain weak strata after the stratified gate:
+
+| Stratum | Coverage 95 | Rank mean error | Rank variance error |
+| --- | ---: | ---: | ---: |
+| Prevalence: rare | 0.9565 | 0.0431 | 0.0174 |
+| Design information: intermediate | 0.9200 | 0.0068 | 0.0049 |
+| Design information: high | 0.9138 | 0.0002 | 0.0073 |
+
+The stricter stratified gate reduced in-domain inflation from `1.1730` to
+`1.1371` and slightly improved high-design-information coverage from `0.9108`
+to `0.9138`, but it still did not satisfy the local precondition. It also
+lowered effect-size OOD coverage from `0.8410` to `0.8326`, further from the
+ungated effect-aware version 7 result.
+
+Do not submit this stratified-gate v8 candidate to LUMI.
+
+The next candidate needs more than a stronger penalty on the same scalar
+inflation curve. The likely next direction is to separate effect-size OOD
+inflation from in-domain coefficient uncertainty by adding stratum-conditioned
+gate parameters or a constrained two-branch curve with hard caps for
+high-design-information in-domain coefficients.

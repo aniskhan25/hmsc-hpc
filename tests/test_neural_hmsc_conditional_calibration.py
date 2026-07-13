@@ -11,6 +11,7 @@ from pyhmsc.neural.conditional_calibration import (
     conditional_beta_scale_multipliers,
     conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
+    _in_domain_gate_group_masks,
 )
 from pyhmsc.neural.posterior_heads import BetaPosterior
 
@@ -62,6 +63,24 @@ def test_conditional_calibration_learns_prevalence_dependent_scale(conditional_c
     assert calibration.conditional_rank_loss < calibration.scalar_rank_loss
     assert species_multipliers[0] > species_multipliers[-1]
     assert np.ptp(multipliers) > 0.5
+
+
+def test_in_domain_gate_groups_include_design_and_coefficient_strata():
+    prevalence = np.asarray([0.05, 0.2, 0.6, 0.05, 0.2, 0.6, 0.05, 0.2, 0.6])
+    design_information = np.asarray([-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
+    coefficient_index = np.asarray([0, 1, 2, 1, 2, 0, 2, 0, 1])
+
+    groups = _in_domain_gate_group_masks(
+        prevalence=prevalence,
+        log_design_information=design_information,
+        coefficient_index=coefficient_index,
+        prevalence_edges=(0.1, 0.3),
+    )
+
+    assert len(groups) >= 10
+    assert any(np.array_equal(group, coefficient_index == 0) for group in groups)
+    assert any(np.array_equal(group, coefficient_index == 1) for group in groups)
+    assert any(np.array_equal(group, coefficient_index == 2) for group in groups)
 
 
 def test_conditional_calibration_preserves_mean_and_round_trips_metadata(

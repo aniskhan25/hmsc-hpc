@@ -1021,6 +1021,19 @@ Status:
   previous ungated effect-aware version 7 local result. Next substep: add
   explicit stratified in-domain gates to the OOD objective, especially
   design-information groups, before rerunning local sanity and submitting LUMI.
+- Implemented the stratified in-domain OOD gate follow-up. The learned OOD
+  objective now gates in-domain behavior over prevalence strata,
+  design-information tertiles, and coefficient identity, with per-stratum
+  coverage penalties and a worst-stratum gate term. Focused tests pass, and the
+  follow-up local sanity is recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The stratified-gate v8 candidate still is not ready for LUMI. It reduced
+  in-domain inflation from `1.1730` to `1.1371` and nudged high-design coverage
+  from `0.9108` to `0.9138`, but rare-prevalence rank mean remains high and
+  effect-size OOD coverage dropped from `0.8410` to `0.8326`. Next substep:
+  split the scalar learned inflation into stratum-conditioned or constrained
+  branches so high-design-information in-domain coefficients can be capped
+  without suppressing true effect-size OOD inflation.
 
 ## Testing Strategy
 

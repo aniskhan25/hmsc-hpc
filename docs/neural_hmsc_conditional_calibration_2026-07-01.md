@@ -62,8 +62,11 @@ The gated effect-size update writes `semantics_version: 8` when the opt-in
 `support_effect_gated_learned_softplus`, keeps the support-excess branch, and
 multiplies the effect-size branch by a learned OOD-context gate over support
 excess and effect-signal magnitude. Version 8 also adds a direct in-domain
-extra-inflation penalty during OOD-objective fitting. Legacy support-only and
-ungated effect-aware version 7 metadata remain loadable.
+extra-inflation penalty during OOD-objective fitting. The stratified-gate
+revision expands the in-domain OOD gate from prevalence-only rank groups to
+prevalence, design-information, and coefficient groups, and includes
+per-stratum coverage penalties. Legacy support-only and ungated effect-aware
+version 7 metadata remain loadable.
 
 Coefficient and predictive calibration remain separate:
 
