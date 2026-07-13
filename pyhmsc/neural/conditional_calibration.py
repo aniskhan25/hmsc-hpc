@@ -84,7 +84,7 @@ class ConditionalBetaScaleCalibration:
     ood_objective: str = "none"
     ood_objective_weight: float = 0.0
     ood_in_domain_gate_weight: float = 0.0
-    ood_inflation_parameters: tuple[float, float, float] | None = None
+    ood_inflation_parameters: tuple[float, ...] | None = None
     ood_objective_domains: tuple[str, ...] = ()
     ood_objective_n_observations: int = 0
     ood_objective_loss: float = 0.0
@@ -152,15 +152,35 @@ class ConditionalBetaScaleCalibration:
             "max_multiplier": float(self.ood_uncertainty_max_multiplier),
         }
         if self.ood_inflation_parameters is not None:
-            offset, linear, quadratic = self.ood_inflation_parameters
+            curve: dict[str, float]
+            if len(self.ood_inflation_parameters) >= 5:
+                (
+                    offset,
+                    support_linear,
+                    support_quadratic,
+                    effect_linear,
+                    effect_quadratic,
+                ) = self.ood_inflation_parameters[:5]
+                transform = "support_effect_learned_softplus"
+                curve = {
+                    "offset": float(offset),
+                    "support_linear": float(support_linear),
+                    "support_quadratic": float(support_quadratic),
+                    "effect_linear": float(effect_linear),
+                    "effect_quadratic": float(effect_quadratic),
+                }
+            else:
+                offset, support_linear, support_quadratic = self.ood_inflation_parameters
+                transform = "support_excess_learned_softplus"
+                curve = {
+                    "offset": float(offset),
+                    "linear": float(support_linear),
+                    "quadratic": float(support_quadratic),
+                }
             ood_uncertainty.update(
                 {
-                    "transform": "support_excess_learned_softplus",
-                    "curve": {
-                        "offset": float(offset),
-                        "linear": float(linear),
-                        "quadratic": float(quadratic),
-                    },
+                    "transform": transform,
+                    "curve": curve,
                 }
             )
         return {
@@ -281,11 +301,20 @@ class ConditionalBetaScaleCalibration:
         ood_curve = ood_uncertainty.get("curve")
         ood_inflation_parameters = None
         if isinstance(ood_curve, dict):
-            ood_inflation_parameters = (
-                float(ood_curve["offset"]),
-                float(ood_curve["linear"]),
-                float(ood_curve["quadratic"]),
-            )
+            if "effect_linear" in ood_curve or "effect_quadratic" in ood_curve:
+                ood_inflation_parameters = (
+                    float(ood_curve["offset"]),
+                    float(ood_curve["support_linear"]),
+                    float(ood_curve["support_quadratic"]),
+                    float(ood_curve["effect_linear"]),
+                    float(ood_curve["effect_quadratic"]),
+                )
+            else:
+                ood_inflation_parameters = (
+                    float(ood_curve["offset"]),
+                    float(ood_curve["linear"]),
+                    float(ood_curve["quadratic"]),
+                )
         return cls(
             global_scale_multiplier=float(metadata["global_scale_multiplier"]),
             normalization_multiplier=float(metadata["scale_multiplier"]),
@@ -596,12 +625,18 @@ def fit_conditional_beta_scale_calibration(
         mean_magnitude_lower=mean_magnitude_lower,
         mean_magnitude_upper=mean_magnitude_upper,
     )
+    effect_signal = _effect_size_signal(
+        np.log1p(np.abs(mean)),
+        mean_magnitude_location=mean_magnitude_location,
+        mean_magnitude_scale=mean_magnitude_scale,
+    )
     z_value = float(norm.ppf(0.5 + nominal_level / 2.0))
     normalization = _fit_coverage_normalization(
         standardized_error=standardized_error,
         adjustment=adjustment,
         trust=support_trust,
         support_excess=support_excess,
+        effect_signal=effect_signal,
         global_multiplier=baseline.scale_multiplier,
         mask=mask,
         nominal_level=nominal_level,
@@ -649,6 +684,7 @@ def fit_conditional_beta_scale_calibration(
             in_domain_adjustment=adjustment[mask],
             in_domain_trust=support_trust[mask],
             in_domain_support_excess=support_excess[mask],
+            in_domain_effect_signal=effect_signal[mask],
             in_domain_rank_groups=rank_groups,
             distribution=distribution,
             n_covariates=mean.shape[1],
@@ -671,6 +707,7 @@ def fit_conditional_beta_scale_calibration(
             adjustment=adjustment,
             trust=support_trust,
             support_excess=support_excess,
+            effect_signal=effect_signal,
             global_multiplier=baseline.scale_multiplier,
             mask=mask,
             nominal_level=nominal_level,
@@ -685,6 +722,7 @@ def fit_conditional_beta_scale_calibration(
         adjustment,
         support_trust,
         support_excess=support_excess,
+        effect_signal=effect_signal,
         normalization=normalization,
         global_multiplier=baseline.scale_multiplier,
         ood_uncertainty_strength=ood_uncertainty_strength,
@@ -832,10 +870,16 @@ def conditional_beta_scale_multipliers(
         mean_magnitude_lower=calibration.mean_magnitude_lower,
         mean_magnitude_upper=calibration.mean_magnitude_upper,
     )
+    effect_signal = _effect_size_signal(
+        np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+    )
     return _blend_with_scalar_fallback(
         adjustment,
         trust,
         support_excess=support_excess,
+        effect_signal=effect_signal,
         normalization=calibration.normalization_multiplier,
         global_multiplier=calibration.global_scale_multiplier,
         ood_uncertainty_strength=calibration.ood_uncertainty_strength,
@@ -885,8 +929,14 @@ def conditional_beta_ood_uncertainty_inflation(
         mean_magnitude_lower=calibration.mean_magnitude_lower,
         mean_magnitude_upper=calibration.mean_magnitude_upper,
     )
+    effect_signal = _effect_size_signal(
+        np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+    )
     return _ood_uncertainty_inflation(
         support_excess,
+        effect_signal=effect_signal,
         strength=calibration.ood_uncertainty_strength,
         max_multiplier=calibration.ood_uncertainty_max_multiplier,
         learned_parameters=calibration.ood_inflation_parameters,
@@ -963,6 +1013,27 @@ def conditional_beta_mean_support_diagnostics(
             np.max(np.abs(standardized))
         ),
     }
+
+
+def conditional_beta_effect_size_signal(
+    posterior: BetaPosterior,
+    calibration: ConditionalBetaScaleCalibration,
+) -> np.ndarray:
+    """Return the coefficient-level positive posterior-mean magnitude signal."""
+    mean = _as_numpy(posterior.mean)
+    if mean.ndim != 3:
+        raise ValueError(
+            "posterior mean must have batch x covariate x species shape"
+        )
+    calibration.validate_domain(
+        n_covariates=mean.shape[1],
+        n_species=mean.shape[2],
+    )
+    return _effect_size_signal(
+        np.log1p(np.abs(mean)),
+        mean_magnitude_location=calibration.mean_magnitude_location,
+        mean_magnitude_scale=calibration.mean_magnitude_scale,
+    )
 
 
 def apply_conditional_beta_scale_calibration(
@@ -1215,18 +1286,32 @@ def _support_excess(
     return total_excess
 
 
+def _effect_size_signal(
+    mean_magnitude: np.ndarray,
+    *,
+    mean_magnitude_location: float,
+    mean_magnitude_scale: float,
+) -> np.ndarray:
+    """Return positive standardized posterior-mean magnitude."""
+    standardized = (
+        mean_magnitude - float(mean_magnitude_location)
+    ) / float(mean_magnitude_scale)
+    return np.maximum(standardized, 0.0)
+
+
 def _blend_with_scalar_fallback(
     adjustment: np.ndarray,
     trust: np.ndarray,
     *,
     support_excess: np.ndarray,
+    effect_signal: np.ndarray | None = None,
     normalization: float,
     global_multiplier: float,
     ood_uncertainty_strength: float,
     ood_uncertainty_max_multiplier: float,
     min_multiplier: float,
     max_multiplier: float,
-    ood_inflation_parameters: tuple[float, float, float] | None = None,
+    ood_inflation_parameters: tuple[float, ...] | None = None,
 ) -> np.ndarray:
     conditional = np.clip(
         float(normalization) * adjustment,
@@ -1239,6 +1324,7 @@ def _blend_with_scalar_fallback(
     )
     multiplier = np.exp(log_multiplier) * _ood_uncertainty_inflation(
         support_excess,
+        effect_signal=effect_signal,
         strength=ood_uncertainty_strength,
         max_multiplier=ood_uncertainty_max_multiplier,
         learned_parameters=ood_inflation_parameters,
@@ -1249,19 +1335,24 @@ def _blend_with_scalar_fallback(
 def _ood_uncertainty_inflation(
     support_excess: np.ndarray,
     *,
+    effect_signal: np.ndarray | None = None,
     strength: float,
     max_multiplier: float,
-    learned_parameters: tuple[float, float, float] | None = None,
+    learned_parameters: tuple[float, ...] | None = None,
 ) -> np.ndarray:
     if max_multiplier <= 1.0:
         return np.ones_like(support_excess, dtype=float)
     if learned_parameters is not None:
-        offset, linear, quadratic = (float(value) for value in learned_parameters)
+        parameters = tuple(float(value) for value in learned_parameters)
+        effect = (
+            np.zeros_like(support_excess, dtype=float)
+            if effect_signal is None
+            else np.asarray(effect_signal, dtype=float)
+        )
         log_inflation = _learned_ood_log_inflation_numpy(
             support_excess,
-            offset=offset,
-            linear=linear,
-            quadratic=quadratic,
+            effect_signal=effect,
+            parameters=parameters,
             max_multiplier=max_multiplier,
         )
         return np.exp(log_inflation)
@@ -1280,6 +1371,7 @@ def _fit_coverage_normalization(
     adjustment: np.ndarray,
     trust: np.ndarray,
     support_excess: np.ndarray,
+    effect_signal: np.ndarray | None = None,
     global_multiplier: float,
     mask: np.ndarray,
     nominal_level: float,
@@ -1288,7 +1380,7 @@ def _fit_coverage_normalization(
     ood_uncertainty_max_multiplier: float,
     min_multiplier: float,
     max_multiplier: float,
-    ood_inflation_parameters: tuple[float, float, float] | None = None,
+    ood_inflation_parameters: tuple[float, ...] | None = None,
 ) -> float:
     lower = float(min_multiplier)
     upper = float(max_multiplier)
@@ -1298,6 +1390,7 @@ def _fit_coverage_normalization(
             adjustment,
             trust,
             support_excess=support_excess,
+            effect_signal=effect_signal,
             normalization=midpoint,
             global_multiplier=global_multiplier,
             ood_uncertainty_strength=ood_uncertainty_strength,
@@ -1338,6 +1431,7 @@ def _fit_ood_inflation_parameters(
     in_domain_adjustment: np.ndarray,
     in_domain_trust: np.ndarray,
     in_domain_support_excess: np.ndarray,
+    in_domain_effect_signal: np.ndarray,
     in_domain_rank_groups: list[np.ndarray],
     distribution: str,
     n_covariates: int,
@@ -1354,7 +1448,7 @@ def _fit_ood_inflation_parameters(
     rank_variance_tolerance: float,
     nominal_level: float,
     z_value: float,
-) -> tuple[tuple[float, float, float], float, float, float, int, tuple[str, ...]]:
+) -> tuple[tuple[float, ...], float, float, float, int, tuple[str, ...]]:
     """Fit a learned support-excess inflation curve from held-out OOD batches."""
     if max_ood_multiplier <= 1.0:
         raise ValueError("learned OOD inflation requires max multiplier greater than one")
@@ -1420,10 +1514,16 @@ def _fit_ood_inflation_parameters(
             mean_magnitude_lower=mean_magnitude_lower,
             mean_magnitude_upper=mean_magnitude_upper,
         )
+        effect_signal = _effect_size_signal(
+            np.log1p(np.abs(mean)),
+            mean_magnitude_location=mean_magnitude_location,
+            mean_magnitude_scale=mean_magnitude_scale,
+        )
         base_multiplier = _blend_with_scalar_fallback(
             adjustment,
             trust,
             support_excess=support_excess,
+            effect_signal=effect_signal,
             normalization=normalization,
             global_multiplier=global_multiplier,
             ood_uncertainty_strength=0.0,
@@ -1443,6 +1543,7 @@ def _fit_ood_inflation_parameters(
                 "signed_error": signed_error.reshape(-1),
                 "base_multiplier": base_multiplier.reshape(-1),
                 "support_excess": support_excess.reshape(-1),
+                "effect_signal": effect_signal.reshape(-1),
                 "rank_groups": rank_groups,
                 "weight": float(batch.weight),
             }
@@ -1454,6 +1555,7 @@ def _fit_ood_inflation_parameters(
         in_domain_adjustment,
         in_domain_trust,
         support_excess=in_domain_support_excess,
+        effect_signal=in_domain_effect_signal,
         normalization=normalization,
         global_multiplier=global_multiplier,
         ood_uncertainty_strength=0.0,
@@ -1463,8 +1565,10 @@ def _fit_ood_inflation_parameters(
     )
 
     offset = tf.Variable(-4.0, dtype=tf.float64)
-    raw_linear = tf.Variable(_softplus_inverse(1e-3), dtype=tf.float64)
-    raw_quadratic = tf.Variable(_softplus_inverse(0.75), dtype=tf.float64)
+    raw_support_linear = tf.Variable(_softplus_inverse(1e-3), dtype=tf.float64)
+    raw_support_quadratic = tf.Variable(_softplus_inverse(0.75), dtype=tf.float64)
+    raw_effect_linear = tf.Variable(_softplus_inverse(1e-3), dtype=tf.float64)
+    raw_effect_quadratic = tf.Variable(_softplus_inverse(0.1), dtype=tf.float64)
     optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     expected_rank_variance = tf.constant(1.0 / 12.0, dtype=tf.float64)
     target_coverage = tf.constant(float(nominal_level), dtype=tf.float64)
@@ -1480,6 +1584,9 @@ def _fit_ood_inflation_parameters(
                 "support_excess": tf.constant(
                     arrays["support_excess"], dtype=tf.float64
                 ),
+                "effect_signal": tf.constant(
+                    arrays["effect_signal"], dtype=tf.float64
+                ),
                 "rank_groups": [
                     tf.constant(group, dtype=tf.bool) for group in arrays["rank_groups"]
                 ],
@@ -1490,19 +1597,25 @@ def _fit_ood_inflation_parameters(
         "signed_error": tf.constant(in_domain_signed_error, dtype=tf.float64),
         "base_multiplier": tf.constant(in_domain_base_multiplier, dtype=tf.float64),
         "support_excess": tf.constant(in_domain_support_excess, dtype=tf.float64),
+        "effect_signal": tf.constant(in_domain_effect_signal, dtype=tf.float64),
         "rank_groups": [
             tf.constant(group, dtype=tf.bool) for group in in_domain_rank_groups
         ],
     }
 
     def total_multiplier(arrays: dict[str, Any]) -> tf.Tensor:
-        linear = tf.nn.softplus(raw_linear)
-        quadratic = tf.nn.softplus(raw_quadratic)
+        support_linear = tf.nn.softplus(raw_support_linear)
+        support_quadratic = tf.nn.softplus(raw_support_quadratic)
+        effect_linear = tf.nn.softplus(raw_effect_linear)
+        effect_quadratic = tf.nn.softplus(raw_effect_quadratic)
         log_inflation = _tf_learned_ood_log_inflation(
             arrays["support_excess"],
+            effect_signal=arrays["effect_signal"],
             offset=offset,
-            linear=linear,
-            quadratic=quadratic,
+            support_linear=support_linear,
+            support_quadratic=support_quadratic,
+            effect_linear=effect_linear,
+            effect_quadratic=effect_quadratic,
             max_multiplier=max_ood_multiplier,
         )
         return tf.clip_by_value(
@@ -1582,9 +1695,16 @@ def _fit_ood_inflation_parameters(
                 float(objective_weight) * ood_loss
                 + float(in_domain_gate_weight) * gate_loss
             )
-        gradients = tape.gradient(loss, [offset, raw_linear, raw_quadratic])
+        variables = [
+            offset,
+            raw_support_linear,
+            raw_support_quadratic,
+            raw_effect_linear,
+            raw_effect_quadratic,
+        ]
+        gradients = tape.gradient(loss, variables)
         optimizer.apply_gradients(
-            zip(gradients, [offset, raw_linear, raw_quadratic])
+            zip(gradients, variables)
         )
         last_ood_loss = ood_loss
         last_rank_loss = ood_rank_loss
@@ -1592,8 +1712,10 @@ def _fit_ood_inflation_parameters(
 
     learned = (
         float(offset.numpy()),
-        float(tf.nn.softplus(raw_linear).numpy()),
-        float(tf.nn.softplus(raw_quadratic).numpy()),
+        float(tf.nn.softplus(raw_support_linear).numpy()),
+        float(tf.nn.softplus(raw_support_quadratic).numpy()),
+        float(tf.nn.softplus(raw_effect_linear).numpy()),
+        float(tf.nn.softplus(raw_effect_quadratic).numpy()),
     )
     return (
         learned,
@@ -1615,15 +1737,26 @@ def _softplus_inverse(value: float) -> float:
 def _learned_ood_log_inflation_numpy(
     support_excess: np.ndarray,
     *,
-    offset: float,
-    linear: float,
-    quadratic: float,
+    effect_signal: np.ndarray,
+    parameters: tuple[float, ...],
     max_multiplier: float,
 ) -> np.ndarray:
+    if len(parameters) >= 5:
+        offset, support_linear, support_quadratic, effect_linear, effect_quadratic = (
+            parameters[:5]
+        )
+    elif len(parameters) == 3:
+        offset, support_linear, support_quadratic = parameters
+        effect_linear = 0.0
+        effect_quadratic = 0.0
+    else:
+        raise ValueError("learned OOD inflation curve requires three or five parameters")
     raw = (
         float(offset)
-        + float(linear) * support_excess
-        + float(quadratic) * np.square(support_excess)
+        + float(support_linear) * support_excess
+        + float(support_quadratic) * np.square(support_excess)
+        + float(effect_linear) * effect_signal
+        + float(effect_quadratic) * np.square(effect_signal)
     )
     baseline = np.logaddexp(0.0, float(offset))
     log_inflation = np.logaddexp(0.0, raw) - baseline
@@ -1633,12 +1766,21 @@ def _learned_ood_log_inflation_numpy(
 def _tf_learned_ood_log_inflation(
     support_excess: tf.Tensor,
     *,
+    effect_signal: tf.Tensor,
     offset: tf.Tensor,
-    linear: tf.Tensor,
-    quadratic: tf.Tensor,
+    support_linear: tf.Tensor,
+    support_quadratic: tf.Tensor,
+    effect_linear: tf.Tensor,
+    effect_quadratic: tf.Tensor,
     max_multiplier: float,
 ) -> tf.Tensor:
-    raw = offset + linear * support_excess + quadratic * tf.square(support_excess)
+    raw = (
+        offset
+        + support_linear * support_excess
+        + support_quadratic * tf.square(support_excess)
+        + effect_linear * effect_signal
+        + effect_quadratic * tf.square(effect_signal)
+    )
     baseline = tf.nn.softplus(offset)
     log_inflation = tf.nn.softplus(raw) - baseline
     return tf.clip_by_value(log_inflation, 0.0, np.log(float(max_multiplier)))

@@ -978,6 +978,12 @@ Status:
   add regime-specific OOD calibration features or an effect-size-shift detector,
   because effect-size shift retains high support trust and remains
   under-inflated.
+- Implemented an effect-size-aware revision of the version 7 OOD objective. The
+  learned OOD inflation curve now uses both support excess and positive
+  standardized posterior-mean magnitude, while legacy support-only version 7
+  metadata remains loadable. SBC rows now expose effect-size signal summaries.
+  Next substep: rerun the production-shape local sanity check and then the
+  five-seed LUMI comparison if in-domain gates remain intact.
 
 ## Testing Strategy
 

@@ -149,10 +149,47 @@ def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case)
     assert metadata["ood_objective"]["name"] == "support_excess_rank_coverage"
     assert metadata["ood_objective"]["domains"] == ["synthetic_shift"]
     assert metadata["support"]["ood_uncertainty"]["transform"] == (
+        "support_effect_learned_softplus"
+    )
+    assert "support_linear" in metadata["support"]["ood_uncertainty"]["curve"]
+    assert "effect_linear" in metadata["support"]["ood_uncertainty"]["curve"]
+    assert restored.ood_inflation_parameters is not None
+    assert len(restored.ood_inflation_parameters) == 5
+    assert np.max(inflation) <= calibration.ood_uncertainty_max_multiplier
+    assert np.mean(inflation) > 1.0
+
+
+def test_conditional_calibration_loads_legacy_version_seven_curve(
+    conditional_case,
+):
+    posterior, _, X, Y, calibration = conditional_case
+    metadata = calibration.to_metadata()
+    metadata["semantics_version"] = 7
+    metadata["support"]["ood_uncertainty"]["transform"] = (
         "support_excess_learned_softplus"
     )
-    assert restored.ood_inflation_parameters is not None
-    assert np.max(inflation) <= calibration.ood_uncertainty_max_multiplier
+    metadata["support"]["ood_uncertainty"]["curve"] = {
+        "offset": -3.0,
+        "linear": 0.1,
+        "quadratic": 0.5,
+    }
+
+    restored = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    shifted = BetaPosterior(mean=posterior.mean + 50.0, scale=posterior.scale)
+    inflation = conditional_beta_ood_uncertainty_inflation(
+        shifted,
+        restored,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert restored.ood_inflation_parameters == pytest.approx((-3.0, 0.1, 0.5))
+    assert restored.to_metadata()["support"]["ood_uncertainty"]["transform"] == (
+        "support_excess_learned_softplus"
+    )
+    assert np.max(inflation) <= restored.ood_uncertainty_max_multiplier
     assert np.mean(inflation) > 1.0
 
 

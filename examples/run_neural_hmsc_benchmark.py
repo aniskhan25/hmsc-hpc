@@ -54,6 +54,7 @@ from pyhmsc.neural.conditional_calibration import (
     ConditionalBetaOODCalibrationBatch,
     ConditionalBetaScaleCalibration,
     apply_conditional_beta_scale_calibration,
+    conditional_beta_effect_size_signal,
     conditional_beta_mean_support_diagnostics,
     conditional_beta_ood_uncertainty_inflation,
     conditional_beta_support_trust,
@@ -819,6 +820,7 @@ def _sbc_rows(
         variants = [("uncalibrated", uncalibrated)]
         conditional_trust = None
         conditional_ood_inflation = None
+        conditional_effect_signal = None
         conditional_mean_support = None
         if calibration is not None:
             if isinstance(calibration, ConditionalBetaScaleCalibration):
@@ -834,6 +836,10 @@ def _sbc_rows(
                     Y=data.Y,
                     distribution=distribution,
                     coefficient_names=engine.covariate_names,
+                )
+                conditional_effect_signal = conditional_beta_effect_size_signal(
+                    uncalibrated,
+                    calibration,
                 )
                 conditional_ood_inflation = (
                     conditional_beta_ood_uncertainty_inflation(
@@ -924,6 +930,20 @@ def _sbc_rows(
                         )
                     if conditional_mean_support is not None:
                         row.update(conditional_mean_support)
+                    if conditional_effect_signal is not None:
+                        row.update(
+                            {
+                                "conditional_effect_size_signal_mean": float(
+                                    np.mean(conditional_effect_signal)
+                                ),
+                                "conditional_effect_size_signal_max": float(
+                                    np.max(conditional_effect_signal)
+                                ),
+                                "conditional_effect_size_signal_positive_fraction": float(
+                                    np.mean(conditional_effect_signal > 0.0)
+                                ),
+                            }
+                        )
                 rows.append(row)
 
     in_distribution_rmse = {

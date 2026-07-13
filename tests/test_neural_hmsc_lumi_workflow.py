@@ -187,3 +187,7 @@ def test_conditional_calibration_entrypoint_keeps_predictive_scalar(tmp_path):
         "conditional_mean_magnitude_support_outside_fraction" in row
         for row in calibrated_rows
     )
+    assert all(
+        "conditional_effect_size_signal_mean" in row
+        for row in calibrated_rows
+    )

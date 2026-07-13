@@ -47,11 +47,15 @@ legacy version 5 metadata remain loadable for reproducibility.
 
 The learned OOD-objective update writes `semantics_version: 7` for the same
 method when held-out OOD calibration batches are supplied. Version 7 replaces
-the fixed support-excess exponential with a learned bounded softplus curve over
-support excess. The curve is fit only from simulated OOD calibration batches,
-penalizes OOD coefficient coverage and rank-moment errors, and includes an
-in-domain gate penalty so in-domain SBC acceptance remains a hard constraint.
-Posterior means remain fixed.
+the fixed support-excess exponential with a learned bounded softplus curve. The
+first version used support excess alone. The effect-size-aware revision keeps
+legacy support-only v7 metadata loadable and fits a five-parameter curve over
+both support excess and positive standardized posterior-mean magnitude. The
+additional effect-size signal is intended to trigger under coefficient
+magnitude shifts where covariate/support trust remains high. The curve is fit
+only from simulated OOD calibration batches, penalizes OOD coefficient coverage
+and rank-moment errors, and includes an in-domain gate penalty so in-domain SBC
+acceptance remains a hard constraint. Posterior means remain fixed.
 
 Coefficient and predictive calibration remain separate:
 
@@ -110,10 +114,12 @@ Unit coverage verifies conditional prevalence response, nominal calibration,
 metadata round trips, version 3/4 compatibility, rank-loss improvement, scalar
 fallback outside feature support, posterior-mean shift detection, domain
 rejection, unchanged means, exact full-covariance transformation, and version 7
-learned OOD-objective metadata/application. An
+learned OOD-objective metadata/application, including legacy support-only v7
+metadata. An
 end-to-end benchmark smoke test verifies that anchored coefficient artifacts
 carry version 5 metadata while predictive artifacts remain on version 2 and
-SBC rows expose support-trust and mean-magnitude diagnostics.
+SBC rows expose support-trust, mean-magnitude, and effect-size signal
+diagnostics.
 
 The frozen five-seed in-domain/OOD comparison is recorded in
 `docs/neural_hmsc_conditional_comparison_2026-07-02.md`. The implementation
