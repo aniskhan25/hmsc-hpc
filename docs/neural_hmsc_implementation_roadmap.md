@@ -982,8 +982,30 @@ Status:
   learned OOD inflation curve now uses both support excess and positive
   standardized posterior-mean magnitude, while legacy support-only version 7
   metadata remains loadable. SBC rows now expose effect-size signal summaries.
-  Next substep: rerun the production-shape local sanity check and then the
-  five-seed LUMI comparison if in-domain gates remain intact.
+- Completed the effect-size-aware version 7 production-shape local sanity run.
+  The overall in-domain acceptance gate passed, the calibration record used
+  `support_effect_learned_softplus`, and the effect-size signal separated
+  effect-size shift from covariate shift. The result is recorded in
+  `docs/neural_hmsc_v7_effect_size_local_sanity_2026-07-13.md`.
+- Initially submitted the five-seed effect-size-aware version 7 LUMI comparison
+  on `standard-g`, matching the support-only version 7 comparison, but those
+  jobs remained pending due to priority. The pending jobs were canceled and the
+  run was moved to `dev-g`, which is better suited to the roughly 12 to 13
+  minute workflow. Jobs `19835554`, `19835555`, `19835716`, `19835717`, and
+  `19835779` completed for seeds `20260626` through `20260630`.
+- Completed and aggregated the five-seed effect-size-aware version 7 LUMI
+  comparison. The effect-size signal substantially improved the intended
+  effect-size-shift regime, raising coefficient coverage from `0.7715` to
+  `0.8481` versus support-only version 7 and reducing rank-variance error from
+  `0.0366` to `0.0146`. Combined-shift coverage also improved from `0.6278` to
+  `0.6439`. The candidate still fails the OOD coverage requirement and weakens
+  the high-design-information in-domain stratum, which passed coverage in only
+  `3/5` seeds. The result is recorded in
+  `docs/neural_hmsc_v7_effect_size_lumi_comparison_2026-07-13.md`.
+- Effect-aware version 7 is not qualified as the default calibration path. Next
+  substep: make the effect-size branch OOD-context-aware, for example by gating
+  effect-size inflation by support trust, prevalence/design strata, or an
+  explicit in-domain penalty on the effect-size branch.
 
 ## Testing Strategy
 
