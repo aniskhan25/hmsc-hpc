@@ -956,6 +956,28 @@ Status:
   local sanity check if feasible, then submit the five-seed LUMI comparison
   against scalar, version 4, version 5 IRLS, version 6 default, and the
   conservative version 6 strength-1.5/cap-8 candidate.
+- Completed a production-shape local sanity run at `40` sites and `75` species
+  with all three OOD regimes. Version 7 metadata, predictive/coefficient
+  calibration separation, artifact writing, and SBC row generation worked, and
+  overall in-domain SBC passed. The rare-prevalence in-domain rank-mean gate
+  failed locally, so the next substep is to strengthen the rare-prevalence
+  in-domain gate in the OOD objective or increase the in-domain gate weight
+  before spending a full five-seed LUMI comparison. The result is recorded in
+  `docs/neural_hmsc_v7_local_sanity_2026-07-12.md`.
+- Submitted the requested five-seed version 7 LUMI comparison on `standard-g`
+  despite the local rare-prevalence warning. Job IDs are `19831708`,
+  `19831709`, `19831710`, `19831711`, and `19831712`.
+- Completed and aggregated the five-seed version 7 LUMI comparison. Version 7
+  preserved all overall and stratified in-domain gates, including rare
+  prevalence, and improved OOD coverage/rank-variance over both version 6
+  default and the version 6 strength-1.5/cap-8 sweep candidate. It still failed
+  the absolute OOD coverage gate in every OOD regime, so it is not qualified as
+  the default calibration path. The result is recorded in
+  `docs/neural_hmsc_v7_lumi_comparison_2026-07-12.md`.
+- Support-excess-only OOD calibration is now likely exhausted. Next substep:
+  add regime-specific OOD calibration features or an effect-size-shift detector,
+  because effect-size shift retains high support trust and remains
+  under-inflated.
 
 ## Testing Strategy
 

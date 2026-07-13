@@ -29,6 +29,9 @@ def test_lumi_neural_hmsc_sbatch_scripts_are_complete_and_valid():
     assert "CONDITIONAL_CALIBRATION_EPOCHS" in benchmark_text
     assert "CONDITIONAL_CALIBRATION_OOD_UNCERTAINTY_STRENGTH" in benchmark_text
     assert "CONDITIONAL_CALIBRATION_OOD_UNCERTAINTY_MAX_MULTIPLIER" in benchmark_text
+    assert "CONDITIONAL_CALIBRATION_OOD_OBJECTIVE" in benchmark_text
+    assert "--conditional-calibration-ood-objective" in benchmark_text
+    assert "--conditional-calibration-ood-datasets" in benchmark_text
     assert "NEURAL_CHECKPOINT" in benchmark_text
     assert "PROBIT_ANCHOR" in benchmark_text
     assert "--run-mcmc-reference" not in train_text
