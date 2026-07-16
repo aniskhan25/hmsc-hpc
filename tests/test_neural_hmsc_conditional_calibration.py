@@ -264,6 +264,54 @@ def test_conditional_calibration_rare_validation_scale_inflates_undercoverage():
     assert float(np.mean(inflated)) > float(np.mean(baseline))
 
 
+def test_rare_validation_scale_small_pool_falls_back_to_identity():
+    rng = np.random.default_rng(243)
+    batch, sites, covariates, species = 1, 6, 2, 2
+    X = np.ones((batch, sites, covariates), dtype=np.float32)
+    X[:, :, 1] = rng.normal(size=(batch, sites))
+    Y = rng.binomial(1, 0.2, size=(batch, sites, species)).astype(np.float32)
+    mean = np.zeros((batch, covariates, species), dtype=np.float32)
+    scale = np.full(mean.shape, 0.25, dtype=np.float32)
+    truth = np.zeros_like(mean)
+    posterior = BetaPosterior(mean=tf.constant(mean), scale=tf.constant(scale))
+    rare_validation_batch = ConditionalBetaOODCalibrationBatch(
+        posterior=posterior,
+        beta_true=truth,
+        X=X,
+        Y=Y,
+        label="rare_validation:small_sample",
+    )
+
+    calibration = fit_conditional_beta_scale_calibration(
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        epochs=2,
+        learning_rate=0.03,
+        rare_validation_batches=[rare_validation_batch],
+    )
+    metadata = calibration.to_metadata()["rare_validation_scale"]
+    multipliers = conditional_beta_scale_multipliers(
+        posterior,
+        calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert metadata["selected_shrinkage"] == 0.0
+    assert metadata["activation"]["threshold"] == 0.0
+    assert metadata["activation"]["width"] == 1.0
+    assert metadata["activation"]["community_occupancy_threshold"] == 0.0
+    assert metadata["activation"]["community_occupancy_width"] == 1.0
+    assert metadata["diagnostics"]["reason"] == "insufficient_validation_observations"
+    assert np.all(np.isfinite(multipliers))
+
+
 def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case):
     posterior, truth, X, Y, _ = conditional_case
     shifted = BetaPosterior(

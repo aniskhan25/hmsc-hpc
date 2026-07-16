@@ -4035,6 +4035,10 @@ def _fit_rare_validation_scale_correction(
             (0.0, 0.0, 0.0),
             {
                 "selected_shrinkage": 0.0,
+                "support_threshold": 0.0,
+                "support_width": 1.0,
+                "community_threshold": 0.0,
+                "community_width": 1.0,
                 "diagnostics": {
                     "reason": "insufficient_validation_observations",
                     "n_observations": int(np.count_nonzero(mask)),
