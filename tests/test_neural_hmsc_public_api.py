@@ -112,7 +112,9 @@ def test_public_neural_hmsc_api_rejects_unsupported_compiled_structures(tmp_path
         formula="~ x1 + x2",
     )
 
-    with pytest.raises(NeuralHmscCompatibilityError, match="unsupported compiled features"):
+    with pytest.raises(
+        NeuralHmscCompatibilityError, match="unsupported compiled features"
+    ):
         engine.infer(compiled.init_json, draws=3)
 
 
@@ -120,7 +122,9 @@ def test_public_neural_hmsc_checkpoint_manifest_is_versioned(tmp_path):
     engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
 
     checkpoint = engine.save(tmp_path / "checkpoint")
-    manifest = json.loads((checkpoint / "neural_checkpoint.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (checkpoint / "neural_checkpoint.json").read_text(encoding="utf-8")
+    )
 
     assert manifest["checkpoint_version"] == NEURAL_CHECKPOINT_VERSION
     assert manifest["training_corpus_version"] == "0.1"
@@ -183,7 +187,9 @@ def test_public_neural_hmsc_round_trips_probit_anchor_configuration(tmp_path):
         ("poisson", "full_covariance_normal"),
     ],
 )
-def test_public_neural_hmsc_auto_family_is_distribution_aware(distribution, expected_family):
+def test_public_neural_hmsc_auto_family_is_distribution_aware(
+    distribution, expected_family
+):
     engine = NeuralHmscInference.for_fixed_effects(
         n_sites=4,
         n_species=1,
@@ -210,7 +216,9 @@ def test_public_neural_hmsc_load_rejects_unknown_checkpoint_version(tmp_path):
     manifest["checkpoint_version"] = "99.0"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(NeuralHmscCompatibilityError, match="unsupported Neural-HMSC checkpoint version"):
+    with pytest.raises(
+        NeuralHmscCompatibilityError, match="unsupported Neural-HMSC checkpoint version"
+    ):
         NeuralHmscInference.load(checkpoint)
 
 
@@ -225,3 +233,171 @@ def test_public_neural_hmsc_rejects_negative_mse_weight():
 
     with pytest.raises(ValueError, match="mse_weight must be non-negative"):
         engine.fit([dataset], epochs=1, batch_size=1, mse_weight=-1.0)
+
+
+def test_public_neural_hmsc_rank_mean_penalty_records_history():
+    datasets = [
+        simulate_fixed_effect_dataset(
+            n_sites=12,
+            n_species=8,
+            distribution="probit",
+            seed=1500 + idx,
+        )
+        for idx in range(4)
+    ]
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=12,
+        n_species=8,
+        distribution="probit",
+    )
+
+    history = engine.fit(
+        datasets,
+        epochs=2,
+        batch_size=1,
+        rank_mean_penalty_weight=0.01,
+        rank_mean_penalty_holdout_fraction=0.25,
+        rank_mean_penalty_start_fraction=0.5,
+        rank_mean_penalty_design_guard_weight=0.05,
+        rank_mean_penalty_design_guard_floor=0.9,
+        rank_mean_penalty_signed_mean_weight=0.5,
+        rank_mean_penalty_design_mean_guard_weight=0.25,
+        rank_mean_penalty_design_mean_guard_tolerance=0.03,
+    )
+
+    assert history.rank_mean_penalty is not None
+    assert len(history.rank_mean_penalty) == 2
+    assert history.rank_mean_penalty[0] >= 0.0
+    assert history.rank_mean_penalty[1] >= 0.0
+
+
+def test_public_neural_hmsc_crossfit_rank_penalty_records_history():
+    datasets = [
+        simulate_fixed_effect_dataset(
+            n_sites=12,
+            n_species=8,
+            distribution="probit",
+            seed=1550 + idx,
+        )
+        for idx in range(8)
+    ]
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=12,
+        n_species=8,
+        distribution="probit",
+    )
+
+    history = engine.fit(
+        datasets,
+        epochs=1,
+        batch_size=1,
+        rank_mean_penalty_weight=0.01,
+        rank_mean_penalty_holdout_fraction=0.5,
+        rank_mean_penalty_holdout_folds=2,
+        rank_mean_penalty_crossfit_min_agreement=0.5,
+        rank_mean_penalty_signed_mean_weight=0.1,
+        rank_mean_penalty_design_mean_guard_weight=0.25,
+    )
+
+    assert history.rank_mean_penalty is not None
+    assert len(history.rank_mean_penalty) == 1
+    assert history.rank_mean_penalty[0] >= 0.0
+
+
+def test_public_neural_hmsc_rejects_negative_rank_mean_penalty():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1600,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(
+        ValueError, match="rank_mean_penalty_weight must be non-negative"
+    ):
+        engine.fit([dataset], epochs=1, batch_size=1, rank_mean_penalty_weight=-1.0)
+
+
+def test_public_neural_hmsc_rejects_invalid_rank_mean_penalty_schedule():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1601,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(
+        ValueError, match=r"rank_mean_penalty_start_fraction must be in \[0, 1\)"
+    ):
+        engine.fit(
+            [dataset],
+            epochs=1,
+            batch_size=1,
+            rank_mean_penalty_weight=0.01,
+            rank_mean_penalty_start_fraction=1.0,
+        )
+
+
+def test_public_neural_hmsc_rejects_negative_rank_design_guard():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1602,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(
+        ValueError, match="rank_mean_penalty_design_guard_weight must be non-negative"
+    ):
+        engine.fit(
+            [dataset],
+            epochs=1,
+            batch_size=1,
+            rank_mean_penalty_weight=0.01,
+            rank_mean_penalty_design_guard_weight=-0.1,
+        )
+
+
+def test_public_neural_hmsc_rejects_negative_signed_mean_penalty():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1603,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(
+        ValueError, match="rank_mean_penalty_signed_mean_weight must be non-negative"
+    ):
+        engine.fit(
+            [dataset],
+            epochs=1,
+            batch_size=1,
+            rank_mean_penalty_weight=0.01,
+            rank_mean_penalty_signed_mean_weight=-0.1,
+        )
+
+
+def test_public_neural_hmsc_rejects_invalid_rank_holdout_folds():
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=4,
+        n_species=1,
+        distribution="normal",
+        seed=1604,
+    )
+    engine = NeuralHmscInference.for_fixed_effects(n_sites=4, n_species=1)
+
+    with pytest.raises(
+        ValueError, match="rank_mean_penalty_holdout_folds must be at least one"
+    ):
+        engine.fit(
+            [dataset],
+            epochs=1,
+            batch_size=1,
+            rank_mean_penalty_weight=0.01,
+            rank_mean_penalty_holdout_folds=0,
+        )

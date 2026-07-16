@@ -49,18 +49,75 @@ def test_simulate_fixed_effect_ood_dataset_records_named_shift():
     assert dataset.X.to_numpy().mean() > 1.5
 
 
-def test_generate_fixed_effect_corpus_writes_compiled_artifacts(tmp_path):
-    config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
-    config["simulation"]["corpus_sizes"]["tiny"] = {"train": 2, "validation": 1, "test": 1}
+def test_simulate_fixed_effect_ood_low_overlap_candidate_context():
+    effect_default = simulate_fixed_effect_ood_dataset(
+        n_sites=400,
+        n_species=4,
+        distribution="probit",
+        regime="effect_size_shift",
+        seed=123,
+    )
+    effect_low_overlap = simulate_fixed_effect_ood_dataset(
+        n_sites=400,
+        n_species=4,
+        distribution="probit",
+        regime="effect_size_shift",
+        seed=123,
+        candidate_context="low_overlap",
+    )
+    combined_default = simulate_fixed_effect_ood_dataset(
+        n_sites=400,
+        n_species=4,
+        distribution="probit",
+        regime="combined_shift",
+        seed=456,
+    )
+    combined_low_overlap = simulate_fixed_effect_ood_dataset(
+        n_sites=400,
+        n_species=4,
+        distribution="probit",
+        regime="combined_shift",
+        seed=456,
+        candidate_context="low_overlap",
+    )
 
-    manifest = generate_fixed_effect_corpus(config, tmp_path / "corpus", profile="tiny", chains=1)
+    assert effect_low_overlap.metadata["ood_candidate_context"] == "low_overlap"
+    assert combined_low_overlap.metadata["ood_candidate_context"] == "low_overlap"
+    assert effect_default.metadata["ood_candidate_context"] == "default"
+    assert effect_low_overlap.metadata["ood_regime"] == "effect_size_shift"
+    assert combined_low_overlap.metadata["ood_regime"] == "combined_shift"
+    assert np.mean(np.abs(effect_low_overlap.X.to_numpy())) > np.mean(
+        np.abs(effect_default.X.to_numpy())
+    )
+    assert (
+        combined_low_overlap.Y.to_numpy().mean() > combined_default.Y.to_numpy().mean()
+    )
+
+
+def test_generate_fixed_effect_corpus_writes_compiled_artifacts(tmp_path):
+    config = load_benchmark_config(
+        "examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml"
+    )
+    config["simulation"]["corpus_sizes"]["tiny"] = {
+        "train": 2,
+        "validation": 1,
+        "test": 1,
+    }
+
+    manifest = generate_fixed_effect_corpus(
+        config, tmp_path / "corpus", profile="tiny", chains=1
+    )
 
     assert manifest["benchmark"] == "neural_hmsc_fixed_gaussian"
     assert manifest["splits"]["train"]["count"] == 2
-    metadata = json.loads((tmp_path / "corpus" / "corpus_metadata.json").read_text(encoding="utf-8"))
+    metadata = json.loads(
+        (tmp_path / "corpus" / "corpus_metadata.json").read_text(encoding="utf-8")
+    )
     assert metadata["profile"] == "tiny"
 
-    dataset_dir = tmp_path / "corpus" / manifest["splits"]["train"]["datasets"][0]["path"]
+    dataset_dir = (
+        tmp_path / "corpus" / manifest["splits"]["train"]["datasets"][0]["path"]
+    )
     assert (dataset_dir / "data" / "Y.csv").exists()
     assert (dataset_dir / "data" / "X.csv").exists()
     assert (dataset_dir / "data" / "truth_beta.csv").exists()
@@ -70,7 +127,9 @@ def test_generate_fixed_effect_corpus_writes_compiled_artifacts(tmp_path):
     assert model.distr == "normal"
     assert loaded_config["formula"]["X"] == "~ x1 + x2"
 
-    compiled_metadata, arrays = read_compiled_model(dataset_dir / "compiled" / "init.json")
+    compiled_metadata, arrays = read_compiled_model(
+        dataset_dir / "compiled" / "init.json"
+    )
     truth_beta = pd.read_csv(dataset_dir / "data" / "truth_beta.csv", index_col=0)
     assert compiled_metadata["capabilities"]["fixed_effects"] is True
     assert compiled_metadata["capabilities"]["random_levels"] is False
@@ -80,14 +139,18 @@ def test_generate_fixed_effect_corpus_writes_compiled_artifacts(tmp_path):
 
 
 def test_generate_fixed_effect_corpus_rejects_nonempty_dataset_dir(tmp_path):
-    config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
+    config = load_benchmark_config(
+        "examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml"
+    )
     config["simulation"]["corpus_sizes"]["tiny"] = {"train": 1}
     occupied = tmp_path / "corpus" / "train" / "dataset_000000"
     occupied.mkdir(parents=True)
     (occupied / "placeholder.txt").write_text("existing", encoding="utf-8")
 
     try:
-        generate_fixed_effect_corpus(config, tmp_path / "corpus", profile="tiny", chains=1)
+        generate_fixed_effect_corpus(
+            config, tmp_path / "corpus", profile="tiny", chains=1
+        )
     except FileExistsError as exc:
         assert "dataset_000000" in str(exc)
     else:
@@ -95,13 +158,21 @@ def test_generate_fixed_effect_corpus_rejects_nonempty_dataset_dir(tmp_path):
 
 
 def test_generate_fixed_effect_corpus_is_reproducible(tmp_path):
-    left_config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
-    right_config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
+    left_config = load_benchmark_config(
+        "examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml"
+    )
+    right_config = load_benchmark_config(
+        "examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml"
+    )
     left_config["simulation"]["corpus_sizes"]["tiny"] = {"train": 1}
     right_config["simulation"]["corpus_sizes"]["tiny"] = {"train": 1}
 
-    left = generate_fixed_effect_corpus(left_config, tmp_path / "left", profile="tiny", chains=1)
-    right = generate_fixed_effect_corpus(right_config, tmp_path / "right", profile="tiny", chains=1)
+    left = generate_fixed_effect_corpus(
+        left_config, tmp_path / "left", profile="tiny", chains=1
+    )
+    right = generate_fixed_effect_corpus(
+        right_config, tmp_path / "right", profile="tiny", chains=1
+    )
 
     left_dir = tmp_path / "left" / left["splits"]["train"]["datasets"][0]["path"]
     right_dir = tmp_path / "right" / right["splits"]["train"]["datasets"][0]["path"]
@@ -116,19 +187,25 @@ def test_generate_fixed_effect_corpus_is_reproducible(tmp_path):
 
 
 def test_generate_fixed_effect_corpus_writes_ood_artifacts(tmp_path):
-    config = load_benchmark_config("examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml")
+    config = load_benchmark_config(
+        "examples/projects/neural_hmsc_fixed_gaussian/benchmark.yaml"
+    )
     config["simulation"]["corpus_sizes"]["tiny"] = {"train": 1}
     config["simulation"]["ood"] = {
         "regimes": ["covariate_shift"],
         "corpus_sizes": {"tiny": 2},
     }
 
-    manifest = generate_fixed_effect_corpus(config, tmp_path / "corpus", profile="tiny", chains=1)
+    manifest = generate_fixed_effect_corpus(
+        config, tmp_path / "corpus", profile="tiny", chains=1
+    )
 
     assert manifest["ood"]["covariate_shift"]["count"] == 2
     record = manifest["ood"]["covariate_shift"]["datasets"][0]
     metadata = json.loads(
-        (tmp_path / "corpus" / record["path"] / "dataset_metadata.json").read_text(encoding="utf-8")
+        (tmp_path / "corpus" / record["path"] / "dataset_metadata.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert metadata["simulation_domain"] == "ood"
     assert metadata["ood_regime"] == "covariate_shift"
@@ -147,8 +224,12 @@ def test_benchmark_configs_generate_tiny_corpora(tmp_path):
             chains=1,
         )
 
-        dataset_dir = tmp_path / name / manifest["splits"]["train"]["datasets"][0]["path"]
-        compiled_metadata, arrays = read_compiled_model(dataset_dir / "compiled" / "init.json")
+        dataset_dir = (
+            tmp_path / name / manifest["splits"]["train"]["datasets"][0]["path"]
+        )
+        compiled_metadata, arrays = read_compiled_model(
+            dataset_dir / "compiled" / "init.json"
+        )
         assert compiled_metadata["distribution"] in {"normal", "probit", "poisson"}
         assert arrays["Y"].shape[1] in {2, 4, 8}
 

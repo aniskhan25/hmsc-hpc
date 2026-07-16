@@ -9,8 +9,16 @@ from typing import Sequence
 import numpy as np
 import tensorflow as tf
 
-from pyhmsc.neural.posterior_heads import beta_negative_log_probability, gamma_negative_log_probability
-from pyhmsc.neural.simulator import FixedEffectDataset, IidLatentEffectDataset, SpatialLatentEffectDataset, TraitEffectDataset
+from pyhmsc.neural.posterior_heads import (
+    beta_negative_log_probability,
+    gamma_negative_log_probability,
+)
+from pyhmsc.neural.simulator import (
+    FixedEffectDataset,
+    IidLatentEffectDataset,
+    SpatialLatentEffectDataset,
+    TraitEffectDataset,
+)
 from pyhmsc.serialization import read_compiled_model
 
 
@@ -74,9 +82,12 @@ class FixedShapeTrainingHistory:
     loss: list[float]
     beta_rmse: list[float]
     scale_mean: list[float]
+    rank_mean_penalty: list[float] | None = None
 
 
-def fixed_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> FixedShapeTrainingData:
+def fixed_shape_training_data(
+    datasets: Sequence[FixedEffectDataset],
+) -> FixedShapeTrainingData:
     """Convert same-shape fixed-effect datasets to model-ready arrays."""
     if not datasets:
         raise ValueError("datasets must not be empty")
@@ -87,12 +98,18 @@ def fixed_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> FixedSh
     expected_covariates = None
     for dataset in datasets:
         covariates = [str(name) for name in dataset.truth_beta.index]
-        if not covariates or covariates[0] != "Intercept" or "Intercept" in covariates[1:]:
+        if (
+            not covariates
+            or covariates[0] != "Intercept"
+            or "Intercept" in covariates[1:]
+        ):
             raise ValueError("truth_beta must contain one leading Intercept row")
         if expected_covariates is None:
             expected_covariates = covariates
         elif covariates != expected_covariates:
-            raise ValueError("all datasets must use the same fixed-effect covariate names")
+            raise ValueError(
+                "all datasets must use the same fixed-effect covariate names"
+            )
         predictors = covariates[1:]
         missing = [name for name in predictors if name not in dataset.X.columns]
         if missing:
@@ -118,7 +135,9 @@ def fixed_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> FixedSh
     )
 
 
-def variable_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> VariableShapeTrainingData:
+def variable_shape_training_data(
+    datasets: Sequence[FixedEffectDataset],
+) -> VariableShapeTrainingData:
     """Convert fixed-effect datasets to padded variable-shape arrays.
 
     Covariates remain fixed to ``Intercept, x1, x2`` for Milestone 3. Sites and
@@ -146,7 +165,9 @@ def variable_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> Vari
             ]
         )
         Y[idx, :n_sites, :n_species] = dataset.Y.to_numpy(dtype=np.float32)
-        Beta[idx, :, :n_species] = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
+        Beta[idx, :, :n_species] = dataset.truth_beta.loc[
+            ["Intercept", "x1", "x2"]
+        ].to_numpy(dtype=np.float32)
         site_mask[idx, :n_sites] = True
         species_mask[idx, :n_species] = True
 
@@ -159,7 +180,9 @@ def variable_shape_training_data(datasets: Sequence[FixedEffectDataset]) -> Vari
     )
 
 
-def trait_effect_training_data(datasets: Sequence[TraitEffectDataset]) -> TraitEffectTrainingData:
+def trait_effect_training_data(
+    datasets: Sequence[TraitEffectDataset],
+) -> TraitEffectTrainingData:
     """Convert same-shape trait-effect datasets to model-ready arrays."""
     if not datasets:
         raise ValueError("datasets must not be empty")
@@ -178,13 +201,19 @@ def trait_effect_training_data(datasets: Sequence[TraitEffectDataset]) -> TraitE
         )
         Y = dataset.Y.to_numpy(dtype=np.float32)
         T = dataset.trait_design[["Intercept", "body"]].to_numpy(dtype=np.float32)
-        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
-        gamma = dataset.truth_gamma.loc[["Intercept", "x1", "x2"], ["Intercept", "body"]].to_numpy(dtype=np.float32)
+        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(
+            dtype=np.float32
+        )
+        gamma = dataset.truth_gamma.loc[
+            ["Intercept", "x1", "x2"], ["Intercept", "body"]
+        ].to_numpy(dtype=np.float32)
         shape = (design.shape, Y.shape, T.shape, beta.shape, gamma.shape)
         if expected_shape is None:
             expected_shape = shape
         elif shape != expected_shape:
-            raise ValueError("all trait-effect datasets must have the same fixed shapes")
+            raise ValueError(
+                "all trait-effect datasets must have the same fixed shapes"
+            )
         X_arrays.append(design)
         Y_arrays.append(Y)
         T_arrays.append(T)
@@ -199,7 +228,9 @@ def trait_effect_training_data(datasets: Sequence[TraitEffectDataset]) -> TraitE
     )
 
 
-def iid_latent_training_data(datasets: Sequence[IidLatentEffectDataset]) -> IidLatentTrainingData:
+def iid_latent_training_data(
+    datasets: Sequence[IidLatentEffectDataset],
+) -> IidLatentTrainingData:
     """Convert same-shape iid latent datasets to model-ready arrays."""
     if not datasets:
         raise ValueError("datasets must not be empty")
@@ -221,11 +252,21 @@ def iid_latent_training_data(datasets: Sequence[IidLatentEffectDataset]) -> IidL
         )
         Y = dataset.Y.to_numpy(dtype=np.float32)
         codes = np.asarray(dataset.group_codes, dtype=np.int32)
-        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(dtype=np.float32)
+        beta = dataset.truth_beta.loc[["Intercept", "x1", "x2"]].to_numpy(
+            dtype=np.float32
+        )
         eta = dataset.truth_eta.to_numpy(dtype=np.float32)
         loadings = dataset.truth_lambda.to_numpy(dtype=np.float32)
         random_effect = dataset.truth_random_effect.to_numpy(dtype=np.float32)
-        shape = (design.shape, Y.shape, codes.shape, beta.shape, eta.shape, loadings.shape, random_effect.shape)
+        shape = (
+            design.shape,
+            Y.shape,
+            codes.shape,
+            beta.shape,
+            eta.shape,
+            loadings.shape,
+            random_effect.shape,
+        )
         if expected_shape is None:
             expected_shape = shape
         elif shape != expected_shape:
@@ -250,7 +291,9 @@ def iid_latent_training_data(datasets: Sequence[IidLatentEffectDataset]) -> IidL
     )
 
 
-def spatial_latent_training_data(datasets: Sequence[SpatialLatentEffectDataset]) -> SpatialLatentTrainingData:
+def spatial_latent_training_data(
+    datasets: Sequence[SpatialLatentEffectDataset],
+) -> SpatialLatentTrainingData:
     """Convert same-shape full-spatial latent datasets to model-ready arrays."""
     base = iid_latent_training_data(datasets)
     coords_arrays = []
@@ -265,9 +308,13 @@ def spatial_latent_training_data(datasets: Sequence[SpatialLatentEffectDataset])
         if expected is None:
             expected = shape
         elif shape != expected:
-            raise ValueError("all spatial latent datasets must have the same coordinate and split shapes")
+            raise ValueError(
+                "all spatial latent datasets must have the same coordinate and split shapes"
+            )
         if not train_mask.any() or not test_mask.any():
-            raise ValueError("spatial latent datasets require non-empty train and test masks")
+            raise ValueError(
+                "spatial latent datasets require non-empty train and test masks"
+            )
         coords_arrays.append(coords)
         train_masks.append(train_mask)
         test_masks.append(test_mask)
@@ -308,14 +355,18 @@ def compiled_trait_effect_training_data(
     gamma = np.asarray(gamma_true, dtype=np.float32)
     expected_gamma = (X.shape[1], T.shape[1])
     if gamma.shape != expected_gamma:
-        raise ValueError(f"gamma_true shape {gamma.shape} does not match compiled Gamma shape {expected_gamma}")
+        raise ValueError(
+            f"gamma_true shape {gamma.shape} does not match compiled Gamma shape {expected_gamma}"
+        )
     if beta_true is None:
         beta = gamma @ T.T
     else:
         beta = np.asarray(beta_true, dtype=np.float32)
     expected_beta = (X.shape[1], Y.shape[1])
     if beta.shape != expected_beta:
-        raise ValueError(f"beta_true shape {beta.shape} does not match compiled Beta shape {expected_beta}")
+        raise ValueError(
+            f"beta_true shape {beta.shape} does not match compiled Beta shape {expected_beta}"
+        )
     if metadata.get("dimensions", {}).get("n_traits") != T.shape[1]:
         raise ValueError("compiled metadata n_traits does not match T array")
     return TraitEffectTrainingData(

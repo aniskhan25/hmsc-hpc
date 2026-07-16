@@ -11,7 +11,9 @@ from pyhmsc.neural.conditional_calibration import (
     conditional_beta_scale_multipliers,
     conditional_beta_support_trust,
     fit_conditional_beta_scale_calibration,
+    fit_external_context_monotone_calibration,
     _in_domain_gate_group_masks,
+    _learned_ood_log_inflation_numpy,
 )
 from pyhmsc.neural.posterior_heads import BetaPosterior
 
@@ -24,9 +26,7 @@ def conditional_case():
     X[:, :, 1] = rng.normal(size=(batch, sites))
     Y = np.zeros((batch, sites, species), dtype=np.float32)
     for species_index, prevalence in enumerate((0.05, 0.2, 0.6, 0.8)):
-        Y[:, :, species_index] = rng.binomial(
-            1, prevalence, size=(batch, sites)
-        )
+        Y[:, :, species_index] = rng.binomial(1, prevalence, size=(batch, sites))
     mean = np.zeros((batch, covariates, species), dtype=np.float32)
     scale = np.full(mean.shape, 0.2, dtype=np.float32)
     error_scale = np.asarray((4.0, 3.0, 1.0, 1.0), dtype=np.float32)
@@ -87,9 +87,7 @@ def test_conditional_calibration_preserves_mean_and_round_trips_metadata(
     conditional_case,
 ):
     posterior, _, X, Y, calibration = conditional_case
-    restored = ConditionalBetaScaleCalibration.from_metadata(
-        calibration.to_metadata()
-    )
+    restored = ConditionalBetaScaleCalibration.from_metadata(calibration.to_metadata())
 
     calibrated = apply_conditional_beta_scale_calibration(
         posterior,
@@ -122,6 +120,148 @@ def test_conditional_calibration_preserves_mean_and_round_trips_metadata(
     assert restored.to_metadata()["semantics_version"] == 6
     assert restored.ood_uncertainty_strength > 0.0
     assert restored.ood_uncertainty_max_multiplier > 1.0
+
+
+def test_conditional_calibration_rare_balanced_head_adjusts_rare_mean():
+    rng = np.random.default_rng(141)
+    batch, sites, covariates, species = 24, 20, 2, 3
+    X = np.ones((batch, sites, covariates), dtype=np.float32)
+    X[:, :, 1] = rng.normal(size=(batch, sites))
+    Y = np.zeros((batch, sites, species), dtype=np.float32)
+    for species_index, prevalence in enumerate((0.05, 0.25, 0.7)):
+        Y[:, :, species_index] = rng.binomial(1, prevalence, size=(batch, sites))
+    mean = np.zeros((batch, covariates, species), dtype=np.float32)
+    scale = np.full(mean.shape, 0.2, dtype=np.float32)
+    truth = np.zeros_like(mean)
+    truth[:, :, 0] = 0.15
+    posterior = BetaPosterior(mean=tf.constant(mean), scale=tf.constant(scale))
+    rare_batch = ConditionalBetaOODCalibrationBatch(
+        posterior=posterior,
+        beta_true=truth,
+        X=X,
+        Y=Y,
+        label="rare_balanced",
+    )
+
+    calibration = fit_conditional_beta_scale_calibration(
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        epochs=20,
+        learning_rate=0.03,
+        rare_calibration_batches=[rare_batch],
+        rare_validation_batches=[rare_batch],
+    )
+    metadata = calibration.to_metadata()["mean_bias_correction"]
+
+    assert metadata["rare_balanced_n_observations"] > 0
+    assert metadata["rare_balanced_selected_shrinkage"] > 0.0
+    assert np.any(np.asarray(metadata["values"])[0] > 0.0)
+    diagnostics = metadata["rare_balanced_diagnostics"]
+    assert diagnostics["rare_pool"]["n_observations"] > 0
+    assert diagnostics["validation"]["n_rare_observations"] > 0
+    assert len(diagnostics["shrinkage_grid"]) >= 2
+    assert len(diagnostics["candidate_offsets"]) == 3
+    assert diagnostics["rare_pool"]["rare_observations_by_design_stratum"]
+    assert diagnostics["rare_pool_by_cell"]
+    assert diagnostics["validation"]["independent"]["n_rare_observations"] > 0
+
+    calibrated = apply_conditional_beta_scale_calibration(
+        posterior,
+        calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert float(tf.reduce_mean(calibrated.mean[:, :, 0]).numpy()) > 0.0
+
+    restored = ConditionalBetaScaleCalibration.from_metadata(calibration.to_metadata())
+    restored_diagnostics = restored.to_metadata()["mean_bias_correction"][
+        "rare_balanced_diagnostics"
+    ]
+    assert restored_diagnostics["rare_pool"]["n_observations"] > 0
+
+
+def test_conditional_calibration_rare_validation_scale_inflates_undercoverage():
+    rng = np.random.default_rng(242)
+    batch, sites, covariates, species = 24, 18, 2, 3
+    X = np.ones((batch, sites, covariates), dtype=np.float32)
+    X[:, :, 1] = rng.normal(size=(batch, sites))
+    Y = np.zeros((batch, sites, species), dtype=np.float32)
+    for species_index, prevalence in enumerate((0.05, 0.25, 0.7)):
+        Y[:, :, species_index] = rng.binomial(1, prevalence, size=(batch, sites))
+    mean = np.zeros((batch, covariates, species), dtype=np.float32)
+    scale = np.full(mean.shape, 0.25, dtype=np.float32)
+    truth = np.zeros_like(mean)
+    posterior = BetaPosterior(mean=tf.constant(mean), scale=tf.constant(scale))
+
+    validation_scale = np.full(mean.shape, 0.08, dtype=np.float32)
+    validation_truth = np.full(mean.shape, 0.04, dtype=np.float32)
+    validation_posterior = BetaPosterior(
+        mean=tf.constant(mean),
+        scale=tf.constant(validation_scale),
+    )
+    rare_validation_batch = ConditionalBetaOODCalibrationBatch(
+        posterior=validation_posterior,
+        beta_true=validation_truth,
+        X=X,
+        Y=Y,
+        label="rare_validation:low_detection",
+    )
+
+    calibration = fit_conditional_beta_scale_calibration(
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        epochs=20,
+        learning_rate=0.03,
+        rare_validation_batches=[rare_validation_batch],
+    )
+    metadata = calibration.to_metadata()["rare_validation_scale"]
+
+    assert metadata["selected_shrinkage"] > 0.0
+    assert max(metadata["multipliers"]) > 1.0
+    assert (
+        metadata["diagnostics"]["best_metrics"]["overall_coverage"]
+        >= metadata["diagnostics"]["coverage_floor"]
+    )
+
+    base_calibration = ConditionalBetaScaleCalibration.from_metadata(
+        {
+            **calibration.to_metadata(),
+            "rare_validation_scale": {
+                **metadata,
+                "selected_shrinkage": 0.0,
+                "log_offsets": [0.0, 0.0, 0.0],
+            },
+        }
+    )
+    inflated = conditional_beta_scale_multipliers(
+        validation_posterior,
+        calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+    baseline = conditional_beta_scale_multipliers(
+        validation_posterior,
+        base_calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert float(np.mean(inflated)) > float(np.mean(baseline))
 
 
 def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case):
@@ -178,6 +318,70 @@ def test_conditional_calibration_can_fit_learned_ood_objective(conditional_case)
     assert np.mean(inflation) > 1.0
 
 
+def test_external_context_monotone_calibration_selects_guarded_offsets(
+    conditional_case,
+):
+    posterior, truth, X, Y, base_calibration = conditional_case
+    shifted = BetaPosterior(
+        mean=posterior.mean + 20.0,
+        scale=posterior.scale,
+    )
+
+    calibration = fit_external_context_monotone_calibration(
+        base_calibration,
+        posterior,
+        truth,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+        ood_validation_batches=[
+            ConditionalBetaOODCalibrationBatch(
+                posterior=shifted,
+                beta_true=truth,
+                X=X,
+                Y=Y,
+                label="combined_shift",
+            )
+        ],
+        max_external_multiplier=10.0,
+        min_mean_ood_gain=0.001,
+        min_combined_shift_gain=0.001,
+    )
+    metadata = calibration.to_metadata()
+    restored = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    baseline = conditional_beta_scale_multipliers(
+        shifted,
+        base_calibration,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+    inflated = conditional_beta_scale_multipliers(
+        shifted,
+        restored,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert metadata["semantics_version"] == 9
+    assert restored.method == "external_context_monotone_scale"
+    assert restored.external_monotone_selected_shrinkage > 0.0
+    assert metadata["external_context_monotone"]["kind"] == (
+        "heldout_context_stratified_monotone_scale"
+    )
+    assert metadata["external_context_monotone"]["diagnostics"]["selected"] == (
+        "external_monotone"
+    )
+    assert list(restored.external_monotone_log_offsets) == sorted(
+        restored.external_monotone_log_offsets
+    )
+    assert float(np.mean(inflated)) > float(np.mean(baseline))
+
+
 def test_conditional_calibration_can_fit_gated_effect_ood_objective(
     conditional_case,
 ):
@@ -203,8 +407,15 @@ def test_conditional_calibration_can_fit_gated_effect_ood_objective(
                 beta_true=truth,
                 X=X,
                 Y=Y,
-                label="synthetic_shift",
-            )
+                label="effect_size_shift",
+            ),
+            ConditionalBetaOODCalibrationBatch(
+                posterior=shifted,
+                beta_true=truth,
+                X=X,
+                Y=Y,
+                label="combined_shift",
+            ),
         ],
         ood_objective="support_effect_gated_rank_coverage",
         ood_objective_epochs=20,
@@ -229,10 +440,249 @@ def test_conditional_calibration_can_fit_gated_effect_ood_objective(
     assert "effect_gate_intercept" in curve
     assert "effect_gate_support_linear" in curve
     assert "effect_gate_effect_linear" in curve
+    assert "effect_high_design_suppression" in curve
+    assert len(curve["effect_prevalence_gate_offsets"]) == 3
+    assert len(curve["effect_design_gate_offsets"]) == 3
+    assert len(curve["effect_coefficient_gate_offsets"]) == posterior.mean.shape[1]
+    assert curve["effect_shift_head"]["kind"] == (
+        "constrained_context_gated_effect_quantile_scale"
+    )
+    assert curve["effect_shift_head"]["pure_log_cap"] > 0.0
+    assert curve["effect_shift_head"]["combined_log_cap"] > 0.0
+    assert curve["effect_shift_head"]["parameter_count"] == 14
+    assert len(curve["effect_shift_head"]["effect_bin_centers"]) == 3
+    assert len(curve["effect_shift_head"]["pure_effect_bin_log_amplitudes"]) == 3
+    assert len(curve["effect_shift_head"]["combined_effect_bin_log_amplitudes"]) == 3
+    base_strata = metadata["base_scale_strata"]
+    assert len(base_strata["prevalence_offsets"]) == 3
+    assert len(base_strata["design_offsets"]) == 3
+    assert len(base_strata["coefficient_offsets"]) == posterior.mean.shape[1]
+    assert len(metadata["mean_bias_correction"]["values"]) == 3
+    assert len(metadata["rank_centering"]["values"]) == 3
+    assert len(metadata["rank_centering"]["values"][0]) == posterior.mean.shape[1]
+    diagnostics = metadata["ood_objective"]["final_multiplier_diagnostics"]
+    assert diagnostics["kind"] == "post_scale_final_multiplier_ood_diagnostics"
+    assert diagnostics["domains"][0]["label"] == "effect_size_shift"
+    assert "effect_gate_activation" in diagnostics["domains"][0]
+    assert "learned_ood_inflation" in diagnostics["domains"][0]
+    assert "rare_post_scale_multiplier" in diagnostics["domains"][0]
+    assert "combined_shift_scale_multiplier" in diagnostics["domains"][0]
+    assert "final_multiplier" in diagnostics["domains"][0]
+    assert diagnostics["domains"][0]["effect_size_quantile_coverage"]
+    assert "in_domain_gate" in diagnostics["domains"][0]
+    assert "learned_combined_shift_context" in diagnostics["domains"][0]
+    combined_training = metadata["ood_objective"]["combined_shift_training_objective"]
+    assert combined_training["kind"] == "final_multiplier_aware_combined_shift_coverage"
+    assert combined_training["coverage_weight"] > 0.0
+    assert combined_training["schedule"]["kind"] == "coverage_warmup_then_overlap_ramp"
+    selection = diagnostics["effect_shift_head_selection"]
+    assert selection["kind"] == "post_fit_independent_effect_shift_head_selection"
+    assert selection["selected"]["pure_shrinkage"] >= 0.0
+    assert selection["selected"]["combined_shrinkage"] >= 0.0
+    assert "pure_effect_accepted" in selection["selected"]
+    assert "combined_shift_accepted" in selection["selected"]
+    assert "effect_size_shift" in selection["baseline"]["domain_coverages"]
+    assert "combined_shift" in selection["baseline"]["domain_coverages"]
+    assert {candidate["branch"] for candidate in selection["candidates"]} == {
+        "pure_effect",
+        "combined_shift",
+    }
+    expert_selection = diagnostics["domain_expert_selection"]
+    assert expert_selection["kind"] == "heldout_domain_expert_ood_selection"
+    assert expert_selection["expert_overlap_penalty"]["kind"] == (
+        "domain_localized_overlap_penalty"
+    )
+    assert expert_selection["expert_overlap_penalty"]["weight"] > 0.0
+    assert expert_selection["expert_overlap_penalty"]["target_coverage_weight"] > 0.0
+    assert expert_selection["expert_overlap_penalty"]["effect_quantile_weight"] > 0.0
+    assert len(expert_selection["expert_overlap_penalty_grid"]) >= 2
+    assert any(
+        profile["kind"] == "two_stage_target_then_projection"
+        and profile["fit_mode"] == "target_then_projection"
+        and 0.0625 in profile["projection_cap_grid"]
+        and 0.25 in profile["projection_cap_grid"]
+        and profile["margin_weight"] > 0.0
+        for profile in expert_selection["expert_overlap_penalty_grid"]
+    )
+    assert any(
+        profile["name"] == "combined_target_w14_tol102_projection"
+        and profile["target_domains"] == ("combined_shift",)
+        and 0.0625 in profile["projection_cap_grid"]
+        and profile["target_coverage_weight"] > 10.0
+        for profile in expert_selection["expert_overlap_penalty_grid"]
+    )
+    assert 0.0 in expert_selection["shrinkage_grid"]
+    assert 0.03125 in expert_selection["shrinkage_grid"]
+    assert 1.0 in expert_selection["shrinkage_grid"]
+    assert expert_selection["selected"]["expert"] in {
+        "baseline",
+        "pure_effect",
+        "combined_shift",
+    }
+    assert set(expert_selection["split_modes"]) == {"pure_effect", "combined_shift"}
+    assert {candidate["expert"] for candidate in expert_selection["candidates"]} == {
+        "pure_effect",
+        "combined_shift",
+    }
+    assert all(
+        "selected_shrinkage" in candidate
+        and "selected_projection_cap" in candidate
+        and "selected_gate_compatible" in candidate
+        and candidate["selection_rule"]
+        and "shrinkage_grid" in candidate
+        and candidate["shrinkage_grid"]
+        and all(
+            "projection_cap" in grid and "gate_compatible" in grid
+            for grid in candidate["shrinkage_grid"]
+        )
+        and "overlap_penalty" in candidate
+        for candidate in expert_selection["candidates"]
+    )
+    assert "effect_size_shift" in expert_selection["baseline"]["domain_coverages"]
+    assert "combined_shift" in expert_selection["baseline"]["domain_coverages"]
+    combined_scale = metadata["ood_objective"]["combined_shift_scale"]
+    assert combined_scale["kind"] == "domain_specific_combined_shift_log_multiplier"
+    assert combined_scale["log_amplitude"] >= 0.0
+    assert len(combined_scale["effect_bin_edges"]) == 2
+    assert len(combined_scale["effect_bin_log_amplitudes"]) == 3
+    assert combined_scale["context_gate"]["kind"].endswith("_classifier")
+    assert combined_scale["context_gate"]["strength"] >= 0.0
+    assert combined_scale["activation"]["support_center"] >= 0.0
+    assert combined_scale["activation"]["low_design_center"] > 0.0
+    assert combined_scale["activation"]["low_community_center"] > 0.0
+    combined_selection = diagnostics["combined_shift_scale_selection"]
+    assert combined_selection["kind"] == "context_gated_combined_shift_scale_selection"
+    assert len(combined_selection["selected"]["effect_bin_edges"]) == 2
+    assert len(combined_selection["selected"]["effect_bin_log_amplitudes"]) == 3
+    assert "context_gate_strength" in combined_selection["selected"]
+    assert "in_domain_context_gate" in combined_selection["selected"]
+    assert "max_in_domain_context_gate_mean" in combined_selection["thresholds"]
+    assert "combined_shift_coverage_floor" in combined_selection["thresholds"]
+    assert "combined_shift" in combined_selection["baseline"]["domain_coverages"]
+    restored_diagnostics = restored.to_metadata()["ood_objective"][
+        "final_multiplier_diagnostics"
+    ]
+    assert restored_diagnostics["domains"][0]["label"] == "effect_size_shift"
+    assert (
+        restored_diagnostics["effect_shift_head_selection"]["kind"]
+        == "post_fit_independent_effect_shift_head_selection"
+    )
+    assert (
+        restored.to_metadata()["ood_objective"]["combined_shift_scale"]["kind"]
+        == "domain_specific_combined_shift_log_multiplier"
+    )
     assert restored.ood_inflation_parameters is not None
-    assert len(restored.ood_inflation_parameters) == 8
+    assert len(restored.ood_inflation_parameters) == (15 + posterior.mean.shape[1] + 14)
     assert np.max(inflation) <= calibration.ood_uncertainty_max_multiplier
     assert np.mean(inflation) > 1.0
+
+
+def test_combined_shift_scale_metadata_inflates_applicable_context(
+    conditional_case,
+):
+    posterior, _, X, Y, calibration = conditional_case
+    metadata = calibration.to_metadata()
+    base = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    metadata["ood_objective"]["combined_shift_scale"]["log_amplitude"] = float(
+        np.log(2.0)
+    )
+    inflated = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    shifted = BetaPosterior(mean=posterior.mean + 25.0, scale=posterior.scale)
+
+    baseline_multiplier = conditional_beta_scale_multipliers(
+        shifted,
+        base,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+    inflated_multiplier = conditional_beta_scale_multipliers(
+        shifted,
+        inflated,
+        X=X,
+        Y=Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1"),
+    )
+
+    assert float(np.mean(inflated_multiplier)) > float(np.mean(baseline_multiplier))
+    assert np.max(inflated_multiplier) <= inflated.max_multiplier
+
+
+def test_gated_effect_ood_curve_suppresses_high_design_close_support():
+    support_excess = np.asarray([0.0, 0.0, 3.0], dtype=float)
+    effect_signal = np.asarray([2.0, 2.0, 2.0], dtype=float)
+    low_design = np.zeros_like(support_excess)
+    high_design = np.asarray([3.0, 3.0, 3.0], dtype=float)
+    parameters = (
+        -4.0,
+        0.01,
+        0.1,
+        0.4,
+        0.2,
+        -1.0,
+        2.0,
+        3.0,
+        4.0,
+    )
+
+    low_design_inflation = _learned_ood_log_inflation_numpy(
+        support_excess,
+        effect_signal=effect_signal,
+        design_signal=low_design,
+        parameters=parameters,
+        max_multiplier=8.0,
+    )
+    high_design_inflation = _learned_ood_log_inflation_numpy(
+        support_excess,
+        effect_signal=effect_signal,
+        design_signal=high_design,
+        parameters=parameters,
+        max_multiplier=8.0,
+    )
+
+    assert high_design_inflation[0] < low_design_inflation[0]
+    assert high_design_inflation[1] < low_design_inflation[1]
+    assert high_design_inflation[2] > high_design_inflation[0]
+
+
+def test_gated_effect_ood_curve_uses_stratum_offsets():
+    support_excess = np.zeros(3, dtype=float)
+    effect_signal = np.full(3, 2.0, dtype=float)
+    design_signal = np.zeros(3, dtype=float)
+    parameters = (
+        -4.0,
+        0.01,
+        0.1,
+        0.4,
+        0.2,
+        -1.0,
+        2.0,
+        3.0,
+        0.0,
+        -2.0,
+        0.0,
+        2.0,
+        -1.0,
+        0.0,
+        1.0,
+        -0.5,
+        0.5,
+    )
+
+    inflation = _learned_ood_log_inflation_numpy(
+        support_excess,
+        effect_signal=effect_signal,
+        design_signal=design_signal,
+        prevalence_stratum=np.asarray([0, 1, 2], dtype=np.int32),
+        design_stratum=np.asarray([0, 1, 2], dtype=np.int32),
+        coefficient_stratum=np.asarray([0, 0, 1], dtype=np.int32),
+        parameters=parameters,
+        max_multiplier=8.0,
+    )
+
+    assert inflation[0] < inflation[1] < inflation[2]
 
 
 def test_conditional_calibration_loads_legacy_version_seven_curve(
@@ -241,9 +691,9 @@ def test_conditional_calibration_loads_legacy_version_seven_curve(
     posterior, _, X, Y, calibration = conditional_case
     metadata = calibration.to_metadata()
     metadata["semantics_version"] = 7
-    metadata["support"]["ood_uncertainty"]["transform"] = (
-        "support_excess_learned_softplus"
-    )
+    metadata["support"]["ood_uncertainty"][
+        "transform"
+    ] = "support_excess_learned_softplus"
     metadata["support"]["ood_uncertainty"]["curve"] = {
         "offset": -3.0,
         "linear": 0.1,
@@ -434,12 +884,8 @@ def test_conditional_calibration_applies_d_sigma_d_to_full_covariance(
     posterior, _, X, Y, calibration = conditional_case
     batch, _, species = posterior.mean.shape
     base_tril = np.asarray([[0.3, 0.0], [0.1, 0.2]], dtype=np.float32)
-    scale_tril = np.broadcast_to(
-        base_tril, (batch, species, 2, 2)
-    ).copy()
-    marginal = np.transpose(
-        np.sqrt(np.sum(np.square(scale_tril), axis=-1)), (0, 2, 1)
-    )
+    scale_tril = np.broadcast_to(base_tril, (batch, species, 2, 2)).copy()
+    marginal = np.transpose(np.sqrt(np.sum(np.square(scale_tril), axis=-1)), (0, 2, 1))
     full_posterior = BetaPosterior(
         mean=posterior.mean,
         scale=tf.constant(marginal),

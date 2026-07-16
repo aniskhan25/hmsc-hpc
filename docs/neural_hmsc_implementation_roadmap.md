@@ -1034,6 +1034,1470 @@ Status:
   split the scalar learned inflation into stratum-conditioned or constrained
   branches so high-design-information in-domain coefficients can be capped
   without suppressing true effect-size OOD inflation.
+- Implemented the constrained v8 branch. The gated curve now carries a
+  backward-compatible ninth parameter, `effect_high_design_suppression`, and
+  the objective adds a high-design/support-close cap on in-domain extra
+  inflation. Focused conditional-calibration and LUMI workflow tests pass, and
+  the production-shape local sanity result is appended to
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The constrained v8 branch still is not ready for LUMI. It learned nonzero
+  high-design suppression (`0.3327`), but local high-design coverage remained
+  `0.9138`, intermediate-design coverage remained `0.9200`, rare-prevalence
+  rank mean error remained `0.0432`, and effect-size OOD coverage remained
+  `0.8326`. Next substep: replace the single globally learned curve plus
+  constraints with a genuinely stratum-conditioned v8 objective, such as
+  prevalence/design/coefficient-specific gate intercepts or caps, then rerun
+  the same local sanity gate before any five-seed LUMI comparison.
+- Implemented the stratum-conditioned v8 objective. Version 8 metadata now
+  serializes prevalence, design-information, and coefficient gate offsets in
+  addition to the high-design suppression term, and the OOD objective includes
+  per-stratum in-domain extra-inflation caps. Focused tests pass, and the
+  production-shape local sanity result is appended to
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The stratum-conditioned v8 branch still is not ready for LUMI. The learned
+  offsets were active but small: prevalence offsets `[0.0002, 0.0185, 0.0135]`,
+  design offsets `[0.0271, 0.0146, -0.0048]`, and coefficient offsets
+  `[0.0170, 0.0093, 0.0083]`. Local high-design coverage remained `0.9138`,
+  intermediate-design coverage remained `0.9200`, rare-prevalence rank mean
+  error remained `0.0430`, and effect-size OOD coverage fell to `0.8308`. Next
+  substep: address the residual in-domain failures outside the OOD inflation
+  gate, either with rare-prevalence signed-bias correction before scale
+  calibration or stratum-specific base scale/normalization terms.
+- Implemented and locally tested both residual in-domain follow-ups. The
+  prevalence-by-coefficient signed-bias correction is serialized and applicable
+  but automatic fitting is disabled because local transfer failed: rare
+  rank-mean error worsened from `0.0430` to `0.0666`, and high-design coverage
+  fell to `0.9079`. The stratum-specific base scale offset candidate is active
+  in the v8 path and learned prevalence, design-information, and coefficient
+  log-scale offsets outside the OOD gate. It improved high-design coverage to
+  `0.9229` and lowered in-domain inflation to `1.1166`, but intermediate-design
+  coverage fell to `0.9133`, rare-prevalence rank mean error remained `0.0412`,
+  and effect-size OOD coverage fell to `0.8285`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The residual in-domain follow-up is not ready for LUMI. Next substep: target
+  rare-prevalence rank mean with a transfer-robust objective, such as a
+  rank-mean-aware neural posterior mean penalty during training or a
+  calibration-time monotone rank-centering transform validated on held-out SBC,
+  rather than additional scale-only or OOD-inflation terms.
+- Implemented the calibration-time monotone rank-centering candidate with an
+  internal held-out calibration split. The selector chose shrinkage `0.75`, but
+  local SBC transfer failed: rare-prevalence rank mean error worsened from
+  `0.0412` under the base-strata candidate to `0.0554`, and
+  intermediate-design coverage remained below gate at `0.9113`. Automatic
+  rank-centering fitting is disabled; metadata/application machinery remains
+  available with zero default offsets. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The rank-centering follow-up is not ready for LUMI. Next substep: move the
+  rare-prevalence rank objective into neural training itself by adding a
+  rank-mean-aware posterior-mean penalty evaluated on held-out simulation
+  batches, then rerun the same local gate before any LUMI comparison.
+- Implemented the opt-in training-time rare-prevalence rank-mean penalty. The
+  public training API and benchmark runner now accept a holdout rank penalty
+  weight and holdout fraction, and benchmark records include the rank-penalty
+  history. Two local sanity runs were completed with weights `0.05` and `0.02`.
+  The better run reduced rare-prevalence rank mean error from `0.0412` to
+  `0.0316`, but intermediate-design coverage remained low at `0.9146` and
+  effect-size OOD coverage remained weak at `0.8285`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The training-rank-penalty follow-up is not ready for LUMI. Next substep:
+  tune or redesign the training penalty locally, likely with a
+  prevalence-weighted rank objective plus a design-coverage guard, or a
+  two-stage schedule that activates the penalty only after posterior scale has
+  stabilized.
+- Implemented and tuned the redesigned training-rank penalty locally. The
+  public training API and benchmark runner now expose delayed activation via
+  `rank_mean_penalty_start_fraction` and an optional design-information
+  coverage guard via `rank_mean_penalty_design_guard_weight` and
+  `rank_mean_penalty_design_guard_floor`. Five local probit sanity variants
+  were run. The best rare-rank variant used a small design guard from epoch 0
+  and reduced rare-prevalence rank mean error to `0.0302`, but it still missed
+  the `0.025` rank gate and left intermediate-design coverage at `0.9163`.
+  The longer two-stage variant improved intermediate-design coverage to
+  `0.9217`, but rare-prevalence rank error regressed to `0.0428` and
+  high-design coverage fell to `0.9175`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- The redesigned training-rank-penalty candidates are not ready for LUMI. Next
+  substep: stop tuning scale-only or coverage-guard terms and redesign the
+  posterior-mean part of training, likely with a signed rare-prevalence
+  posterior-mean correction or auxiliary loss that targets rank direction
+  directly while constraining intermediate/high design-information strata.
+- Implemented the signed posterior-mean training objective. The public
+  training API and benchmark runner now expose
+  `rank_mean_penalty_signed_mean_weight`,
+  `rank_mean_penalty_design_mean_guard_weight`, and
+  `rank_mean_penalty_design_mean_guard_tolerance`. The objective uses held-out
+  rare-prevalence rank imbalance to drive a signed normalized mean-bias penalty
+  and constrains medium/high expected design-information strata. Focused tests
+  pass, and six local probit sanity variants were run.
+- The signed posterior-mean candidates are not ready for LUMI. The weak
+  pseudo-shift form was nearly neutral. The stronger signed-bias form improved
+  some coverage metrics, but rare-prevalence rank mean transferred in the wrong
+  direction on independent SBC data: the previous best rare rank mean was
+  `0.4698`, while signed-bias weights `0.1`, `0.25`, and `0.5` yielded
+  `0.4587`, `0.4572`, and `0.4554`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: address holdout-transfer failure in the training rank
+  objective. Use cross-fit or multi-holdout rank training so signed rare-rank
+  corrections are applied only when the direction is stable across rotating
+  simulation folds and medium/high design-information gates remain satisfied.
+- Implemented crossfit/multi-holdout rank training. The public training API
+  and benchmark runner now expose `rank_mean_penalty_holdout_folds` and
+  `rank_mean_penalty_crossfit_min_agreement`. Multi-fold runs evaluate the
+  base rank/design penalty on each holdout fold, enable signed posterior-mean
+  correction only when rare-prevalence rank directions are stable across
+  folds, and suppress signed correction when medium/high design-information
+  rank gates fail. Focused tests pass.
+- The crossfit rank-training candidates are not ready for LUMI. Large-holdout
+  variants degraded base training and high-design coverage. Smaller-holdout
+  variants were less damaging, but the best rare-rank error was `0.0311`,
+  still worse than the previous `0.0302` local candidate and above the `0.025`
+  rank gate; intermediate design coverage remained below the local guard
+  target. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: move away from signed posterior-mean correction for rare
+  species. Use larger, explicitly balanced rare-prevalence simulation batches
+  or a separate rare-species calibration head trained across many simulation
+  batches, instead of noisy per-run holdout rank signs.
+- Implemented a guarded rare-balanced calibration head. The simulator now
+  supports an `intercept_mean` override for rare-prevalence calibration
+  simulations, and the benchmark runner exposes `rare_calibration_datasets`
+  and `rare_calibration_intercept_mean`. Conditional calibration can fit a
+  rare-only prevalence-by-coefficient residual mean head from the extra
+  calibration pool and serializes rare-head diagnostics in
+  `mean_bias_correction`.
+- The rare-balanced head is not ready for LUMI. Local runs with intercept means
+  `-1.0`, `-1.75`, and `-2.5` produced large rare pools, but the validation
+  gate selected zero shrinkage in every case. Combined with the previous best
+  training-rank penalty, the head also selected zero shrinkage and left the
+  benchmark unchanged. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: instrument the rare-head fitting path before changing the
+  objective again. Record candidate rare-head offsets, validation-gate metrics,
+  rare-pool prevalence summaries, and rare-pool residual/rank summaries in
+  benchmark metadata, then run a small local diagnostic sweep to identify why
+  rare-balanced residuals disagree with independent SBC rare-rank behavior.
+- Implemented rare-head fitting instrumentation. The calibration metadata now
+  records candidate and selected rare-head offsets, shrinkage-grid validation
+  scores, rare-pool prevalence summaries, per-coefficient rare-pool
+  residual/rank summaries, and validation group sizes under
+  `mean_bias_correction.rare_balanced_diagnostics`.
+- The diagnostic local run explains why the current rare head stays off. The
+  rare-balanced pool produced a strong negative intercept candidate offset
+  (`-0.2235`) and rare-pool intercept rank mean `0.2423`, but applying any
+  shrinkage worsened ordinary validation rare-rank error monotonically from
+  `0.0369` at zero shrinkage to `0.0893` at full shrinkage. Results are
+  recorded in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: change the rare-calibration simulation design rather than
+  relaxing the validation gate. Build a stratified rare-calibration pool that
+  matches the SBC rare-failure context: balanced by rare prevalence,
+  coefficient identity, and design-information tertile, with intercept-shift,
+  low-detection, and small-sample rare regimes recorded separately in
+  diagnostics.
+- Implemented the stratified rare-calibration pool. The simulator now supports
+  detection thinning and effective sample-fraction masking in addition to
+  intercept shifts. The benchmark runner exposes rare-calibration regimes
+  `intercept_shift`, `low_detection`, and `small_sample`, and the rare-head
+  fitter balances candidate offsets by regime, design-information tertile, and
+  coefficient identity before validating shrinkage.
+- The stratified rare pool is not ready for LUMI. It balanced rare observations
+  exactly by design tertile and coefficient, and the ordinary validation gate
+  selected full shrinkage with validation rare-rank error improving from
+  `0.0369` to `0.0277`. Independent SBC rare-rank error nevertheless worsened
+  from `0.0412` to `0.0496`, so the ordinary calibration validation batch is
+  insufficient for rare-head acceptance. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: add an independent rare-head validation gate. Before applying
+  nonzero rare-head offsets, evaluate candidates on a separate SBC-style
+  in-domain validation pool with rare/prevalence/design stratification, and
+  require non-degradation of independent rare-rank error and intermediate/high
+  design coverage.
+- Implemented the independent rare-head validation gate. The benchmark runner
+  now exposes `rare_validation_datasets`, generated independently from
+  `rare_calibration_datasets`, and conditional calibration records independent
+  rare-head gate metrics under
+  `mean_bias_correction.rare_balanced_diagnostics.validation.independent`.
+  Failed independent validation resets selected rare-head shrinkage and applied
+  offsets to zero while preserving rejected candidate offsets in diagnostics.
+- The independent rare-head gate is not ready for LUMI. In the local sanity run
+  the ordinary validation pool again selected the stratified rare candidate
+  offsets and improved ordinary rare-rank error from `0.0369` to `0.0277`.
+  Independent validation improved rare-rank error from `0.0163` to `0.0107`,
+  but absolute independent coverage remained too low: overall `0.7900`,
+  intermediate-design `0.7988`, and high-design `0.7000`. The gate therefore
+  reset rare-head shrinkage to `0.0` and preserved the previous independent
+  SBC result. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: address rare-validation regime coverage before revisiting
+  nonzero rare-head mean offsets. The likely direction is a rare-regime-aware
+  scale or normalization correction evaluated on the independent rare-validation
+  pool, with the independent rare-head mean-offset gate kept strict.
+- Implemented a rare-validation scale correction. When independent
+  rare-validation batches are supplied, conditional calibration can fit a
+  design-stratum log-scale multiplier from that independent pool. The scale
+  correction is separate from the rare-head mean offsets; the independent
+  rare-head mean-offset gate remains strict and still resets failed nonzero
+  rare-head offsets to zero. Metadata is stored under `rare_validation_scale`.
+- The rare-validation scale local sanity run fixed the immediate independent
+  rare-validation coverage failure: overall coverage improved from `0.6857` to
+  `0.9001`, intermediate-design coverage from `0.5240` to `0.9001`, and
+  high-design coverage from `0.4750` to `0.9000`. The selected design
+  multipliers were `1.187`, `2.643`, and `3.320`. Local SBC also improved
+  rare-prevalence rank error from `0.0412` to `0.0345` and effect-size OOD
+  coverage from `0.8285` to `0.9119`.
+- The rare-validation scale candidate is not ready for LUMI. It is too
+  conservative in-domain: overall coverage rose to `0.9921`, high-design
+  coverage to `1.0000`, and rank variance remains compressed. Combined-shift
+  OOD coverage improved but still failed at `0.8767`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: constrain the rare-validation scale correction. Target the
+  failed low-detection/small-sample regimes and high-risk design contexts more
+  selectively, add an in-domain overcoverage/rank-variance guard, and retest
+  locally before any five-seed LUMI comparison.
+- Implemented a constrained rare-validation scale correction. The design-stratum
+  scale now uses a support-excess activation derived from the in-domain
+  calibration support, and candidate shrinkage is rejected if it over-inflates
+  the original in-domain calibration pool or compresses in-domain rank variance.
+- The constrained scale local sanity run selected zero shrinkage. The support
+  gate activated on only `3.3%` of in-domain coefficients and `13.5%` of
+  rare-validation coefficients. It prevented the always-on overcoverage failure,
+  but validation coverage remained too low before the in-domain guard would
+  fail: at full shrinkage validation high-design coverage was only `0.7298`,
+  while in-domain high-design coverage already reached `1.0000` and rank
+  variance compressed to `0.0449`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: replace the support-excess-only activation with a more
+  discriminative low-detection/small-sample regime proxy. Candidate directions
+  are a learned undercoverage classifier from rare-validation features, a
+  prevalence-by-effective-sample-size scale gate, or a two-part correction that
+  separates rare-regime OOD coverage from in-domain design strata.
+- Implemented an observable rare-regime proxy for rare-validation scale
+  activation. The proxy combines support excess, rare/intermediate prevalence
+  by design-information stratum, and low community occupancy estimated from the
+  observed response matrix. It does not use hidden rare-validation regime
+  labels at application time.
+- The community-occupancy proxy local sanity run selected zero shrinkage. Full
+  shrinkage cleared the independent rare-validation floors, with overall
+  coverage `0.9001`, intermediate-design coverage `0.9001`, and high-design
+  coverage `0.9000`. The in-domain guard correctly rejected it because
+  in-domain high-design coverage rose to `1.0000` and overall coverage to
+  `0.9894`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: change the correction shape rather than only the activation.
+  A single positive scale multiplier by design stratum remains too blunt. Use
+  regime-proxy-conditioned slope caps or a two-part correction that separates
+  high-design in-domain coefficients from low-community rare-validation
+  coefficients, while keeping the independent rare-validation and in-domain
+  guards.
+- Implemented a thresholded low-community scale shape. Support-excess and
+  low-community activations are now zero at their in-domain thresholds and grow
+  only outside those thresholds. Low-community stress can activate the
+  design-stratum scale directly, avoiding the previous damping of common
+  high-design coefficients in low-detection/small-sample batches.
+- The thresholded low-community scale local sanity run selected full shrinkage.
+  It passed the independent rare-validation gate: validation overall coverage
+  `0.9001`, intermediate-design coverage `0.9001`, and high-design coverage
+  `0.9000`. It also passed the in-domain guard: overall coverage changed only
+  from `0.9500` to `0.9508`, high-design coverage from `0.9371` to `0.9392`,
+  and rank variance from `0.0815` to `0.0811`.
+- The candidate is still not ready for LUMI because OOD coverage remains below
+  target. Local calibrated effect-size OOD coverage was `0.8324`, and
+  combined-shift OOD coverage was `0.8015`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: evaluate whether the thresholded low-community scale should be
+  combined with the learned OOD objective or whether OOD inflation must be
+  refit after this scale correction. Run a local OOD-focused sanity check first,
+  then decide whether a five-seed LUMI comparison is justified.
+- Ran the OOD-focused local sanity check. Increasing the learned OOD inflation
+  cap from `8` to `16`, doubling OOD calibration batches, and increasing OOD
+  objective epochs did not improve OOD coverage. Covariate-shift coverage
+  changed from `0.9146` to `0.9128`, effect-size coverage from `0.8324` to
+  `0.8253`, and combined-shift coverage from `0.8015` to `0.7953`. Mean
+  inflation increased for covariate and combined shifts, but effect-size mean
+  inflation stayed near `1.5`.
+- Reconstructed OOD diagnostics showed that the thresholded low-community scale
+  is not the pure effect-size fix. Rare-scale activation was `50.3%` under
+  covariate shift and `46.7%` under combined shift, but only `3.8%` under pure
+  effect-size shift. The remaining OOD blocker is the learned OOD effect-size
+  objective, not the rare-validation scale shape or multiplier cap alone.
+  Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: implement a post-scale or final-multiplier-aware OOD objective
+  focused on effect-size coverage. The objective should evaluate the final
+  calibrated multiplier after rare-validation scale is applied, include
+  effect-size and combined-shift coverage floors as acceptance gates, and keep
+  the existing in-domain and rare-validation gates.
+- Implemented the final-multiplier-aware OOD refinement as a second OOD fitting
+  pass after rare-validation scale selection. The pass initializes from the
+  first OOD fit, evaluates the post-scale final multiplier, and adds targeted
+  coverage-floor penalties for effect-size and combined-shift OOD domains.
+  Focused tests pass, including conditional calibration, public API, and LUMI
+  workflow coverage.
+- The final-aware local sanity run is not ready for LUMI. It preserved the
+  in-domain acceptance gate with coverage `0.9301` and rank variance `0.0838`,
+  but effect-size OOD coverage remained `0.8256` and combined-shift OOD
+  coverage remained `0.8036`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: add OOD final-multiplier diagnostics before another objective
+  change. Benchmark metadata should report learned effect-gate activation,
+  learned OOD inflation, rare-validation post-scale multiplier, final
+  multiplier quantiles, coverage by effect-size quantile, and in-domain gate
+  penalty components for each OOD regime. Use those diagnostics to decide
+  whether the next objective should be an effect-shift-specific scale head or a
+  domain-classifier-gated multiplier.
+- Implemented OOD final-multiplier diagnostics in conditional calibration
+  metadata. Each OOD calibration regime now records learned effect-gate
+  activation, learned OOD inflation, rare-validation post-scale multiplier,
+  final multiplier quantiles, coverage by effect-size quantile, and in-domain
+  gate penalty components. A tiny benchmark smoke run confirmed the fields are
+  present in `benchmark_manifest.json`; focused conditional calibration, public
+  API, and LUMI workflow tests pass.
+- Next substep: run the production-like local sanity workflow again and inspect
+  the new diagnostics from the failed effect-size and combined-shift regimes.
+  Use the observed effect-gate activation, final multiplier quantiles, and
+  effect-quantile coverage to choose the next objective shape, likely an
+  effect-shift-specific scale head or domain-classifier-gated multiplier.
+- Ran the production-like diagnostics-enabled local sanity workflow. Held-out
+  SBC coverage remained failed for effect-size shift (`0.8256`) and combined
+  shift (`0.8036`) while the in-domain gate still passed. The OOD calibration
+  diagnostics showed that effect-size shift has median final multiplier only
+  `0.8035` and low middle-effect coverage (`0.7844` in the q3 effect bin),
+  whereas combined shift has much larger inflation but still fails high-effect
+  coverage (`0.7711` in the q4 effect bin). In-domain group losses remain tiny,
+  but extra-inflation penalties are already active, so broad in-domain inflation
+  is constrained. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: implement an experimental effect-shift-specific scale head or
+  domain-classifier-gated multiplier. The objective should target
+  effect-quantile coverage directly, with separate pure effect-size and combined
+  shift constraints, while preserving the in-domain and rare-validation gates.
+- Implemented an experimental context-gated effect-shift scale head in the
+  version 8 OOD objective. The head adds separate pure-effect and combined-shift
+  positive log-scale components and trains them with differentiable
+  effect-quantile coverage losses. Existing in-domain and rare-validation gates
+  remain active. Focused conditional calibration, public API, and LUMI workflow
+  tests pass; a tiny benchmark smoke run confirmed the head serializes in
+  `benchmark_manifest.json`.
+- Next substep: run the production-like local sanity workflow with the
+  experimental effect-shift head enabled. Compare held-out OOD coverage,
+  effect-quantile coverage, final-multiplier diagnostics, and in-domain/rare
+  validation gates against the previous final-aware run before considering any
+  LUMI submission.
+- Ran the production-like local sanity workflow for the experimental
+  effect-shift head. The head improved held-out OOD coverage but did not qualify:
+  effect-size shift improved from `0.8256` to `0.8656`, combined shift improved
+  from `0.8036` to `0.8333`, and covariate shift improved from `0.9143` to
+  `0.9199`. In-domain overall coverage still passed at `0.9311`, and the
+  independent rare-validation scale gate still passed. Diagnostics showed the
+  intended effect-bin improvements, but in-domain extra-inflation penalties rose
+  substantially (`extra_inflation_over_1_05_loss` from `0.8885` to `2.9035`).
+  Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: constrain the effect-shift head rather than increasing its
+  strength. Candidate fixes are a scheduled/two-stage head fit, stronger
+  in-domain extra-inflation normalization, or effect-bin-specific amplitude caps
+  that improve OOD middle/high-effect coverage without increasing in-domain
+  extra-inflation penalties.
+- Implemented a constrained effect-shift head. The pure-effect branch now has a
+  fixed log-amplitude cap plus a high-effect taper, and the combined branch now
+  has its own fixed log-amplitude cap plus a support-excess activation gate.
+  The constrained head metadata is serialized as
+  `constrained_context_gated_effect_quantile_scale`. Focused conditional
+  calibration, public API, and LUMI workflow tests pass; a tiny benchmark smoke
+  run confirmed the constrained head fields in `benchmark_manifest.json`.
+- Next substep: run the production-like local sanity workflow for the
+  constrained effect-shift head. Compare held-out OOD coverage,
+  effect-quantile coverage, final-multiplier diagnostics, and in-domain/rare
+  validation gates against both the unconstrained effect-head run and the
+  previous final-aware run.
+- Ran the production-like local sanity workflow for the constrained effect-shift
+  head. The constraint kept most of the OOD gain but did not qualify:
+  effect-size shift coverage was `0.8621` and combined-shift coverage was
+  `0.8293`, versus `0.8656` and `0.8333` for the unconstrained head. In-domain
+  overall coverage still passed at `0.9306`, and rare-validation still passed,
+  but extra-inflation penalties remained high (`extra_inflation_over_1_05_loss`
+  `2.7131`, max group extra-cap loss `0.6623`). Intermediate/high
+  design-stratum held-out coverage stayed low at `0.9133` and `0.9138`.
+  Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: move away from a globally applied learned effect-shift head.
+  Implement a two-stage post-fit selection or shrinkage step that accepts head
+  offsets only when OOD effect-quantile coverage improves enough and in-domain
+  extra-inflation/gate penalties remain below explicit thresholds.
+- Implemented post-fit effect-head selection. The OOD objective still fits the
+  effect-shift head, but the calibrator now evaluates a shrinkage grid for head
+  amplitudes and accepts nonzero head offsets only when mean/worst-domain OOD
+  coverage gains pass thresholds and in-domain extra-inflation/gate penalties
+  remain below explicit limits. The selection decision and candidate grid are
+  stored under
+  `ood_objective.final_multiplier_diagnostics.effect_shift_head_selection`.
+  Focused conditional calibration, public API, and LUMI workflow tests pass; a
+  tiny benchmark smoke run confirmed the selection metadata in
+  `benchmark_manifest.json`.
+- Next substep: run the production-like local sanity workflow with post-fit
+  head selection enabled. Compare held-out OOD coverage, effect-quantile
+  coverage, selected shrinkage, and in-domain/rare-validation gates against the
+  final-aware, unconstrained-head, and constrained-head runs.
+- Ran the production-like local sanity workflow with post-fit head selection
+  enabled. The selector rejected the head and selected shrinkage `0.0`.
+  Held-out coverage was `0.8481` for effect-size shift and `0.8168` for
+  combined shift, better than the original final-aware run but worse than the
+  unconstrained and constrained heads. In-domain overall SBC still passed at
+  `0.9294`, and rare-validation still passed, but selector diagnostics still
+  showed gate pressure: extra-inflation-over-1.05 loss `1.8772`, max group
+  extra-cap loss `0.5724`, and max group loss `0.1267`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Implemented independent pure-effect and combined-shift post-fit head
+  selection. The OOD objective still fits separate pure-effect and
+  combined-shift effect-head amplitudes, but post-fit selection now evaluates
+  pure-effect shrinkage against the `effect_size_shift` validation domain and
+  combined-shift shrinkage against the `combined_shift` validation domain. Each
+  branch has its own coverage-gain gate and shared in-domain extra-inflation
+  gate. The selected pure/combined shrinkage values, branch acceptance flags,
+  domain coverage gains, in-domain gate deltas, and candidate records are
+  stored under
+  `ood_objective.final_multiplier_diagnostics.effect_shift_head_selection`
+  with kind `post_fit_independent_effect_shift_head_selection`. Focused
+  conditional calibration, public API, and LUMI workflow tests pass; a tiny
+  benchmark smoke run confirmed the independent selector metadata in
+  `/private/tmp/neural_hmsc_independent_heads_smoke`.
+- Ran the production-like local sanity workflow with independent
+  pure-effect/combined-shift head selection enabled. The selector accepted the
+  pure-effect branch with shrinkage `0.5` and rejected the combined-shift branch
+  with shrinkage `0.0`. Held-out coverage was `0.8507` for effect-size shift
+  and `0.8175` for combined shift, slightly above shared post-fit selection
+  (`0.8481` and `0.8168`) but still below the `0.90` OOD floor. In-domain
+  overall SBC still passed at `0.9294`, and rare-validation still passed with
+  selected shrinkage `1.0`, validation coverage `0.9001`, and rare-scale
+  in-domain guard coverage `0.9506`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Implemented a domain-specific combined-shift scale head. The new serialized
+  `ood_objective.combined_shift_scale` block applies a bounded
+  support-excess-by-effect-signal log multiplier after the learned OOD curve
+  and rare-validation scale. It is selected after independent effect-head
+  selection and requires both a held-out `combined_shift` coverage floor of
+  `0.90` and a minimum coverage gain of `0.005`, while preserving the existing
+  in-domain gate deltas. The selected decision is recorded under
+  `ood_objective.final_multiplier_diagnostics.combined_shift_scale_selection`,
+  and final diagnostics now report `combined_shift_scale_multiplier` by OOD
+  domain. Focused conditional-calibration, public API, and LUMI workflow tests
+  pass; a tiny metadata smoke run confirmed the block in
+  `/private/tmp/neural_hmsc_combined_shift_scale_smoke`.
+- Ran the production-like local sanity workflow with the combined-shift scale
+  head enabled. The selector rejected every nonzero candidate and selected
+  `log_amplitude = 0.0`, leaving held-out SBC identical to the independent
+  selector run: effect-size shift coverage `0.8507` and combined-shift coverage
+  `0.8175`. Candidate diagnostics showed that large amplitudes can raise
+  diagnostic combined-shift coverage above `0.90` (`0.9117` at log amplitude
+  `1.4931` and `0.9222` at log amplitude `1.7918`), but only with severe
+  in-domain gate violations. Even the smallest nonzero candidate improved
+  combined coverage by `0.0089` while exceeding the max group-loss delta gate.
+  Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Implemented a more selective combined-shift correction shape. The
+  `combined_shift_scale` multiplier now requires joint support-excess,
+  effect-size, low-design-information, and low-community-occupancy activation
+  instead of applying across the combined regime globally. The serialized
+  activation metadata records `low_design_center`, `low_design_width`,
+  `low_community_center`, and `low_community_width`, and the selection
+  diagnostics use the same activation as application. Focused
+  conditional-calibration, public API, and LUMI workflow tests pass; a tiny
+  metadata smoke run confirmed the selective activation in
+  `/private/tmp/neural_hmsc_selective_combined_shift_scale_smoke`.
+- Ran the production-like local sanity workflow with the selective
+  combined-shift scale enabled. The selector again selected `log_amplitude =
+  0.0`, leaving held-out SBC unchanged from the globally shaped combined-shift
+  scale run: effect-size shift coverage `0.8507` and combined-shift coverage
+  `0.8175`. The selective activation reduced in-domain gate pressure for
+  nonzero candidates, but it also reduced OOD gain: the strongest tested
+  selective candidate reached only `0.8561` diagnostic combined-shift coverage,
+  versus `0.9222` for the global shape. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Implemented an effect-bin-specific combined-shift scale selector. The
+  `combined_shift_scale` block now serializes effect-bin edges, per-bin log
+  amplitudes, and per-bin multipliers, while retaining the selective
+  support/effect/low-design/low-community activation. Selection evaluates
+  scalar, high-effect, mid/high-effect, ranked-effect, and all-bin candidate
+  shapes against the same combined-shift coverage floor and in-domain gate
+  deltas. Focused conditional-calibration, public API, and LUMI workflow tests
+  pass; a tiny metadata smoke run confirmed 60 effect-bin candidates in
+  `/private/tmp/neural_hmsc_effect_bin_combined_shift_scale_smoke`. The smoke
+  selected zero amplitude because no candidate satisfied the strict held-out
+  gate in that tiny setting.
+- Next substep: run the production-like local sanity workflow with the
+  effect-bin-specific combined-shift scale enabled. Compare selected candidate
+  pattern, per-bin amplitudes, held-out combined-shift/effect-size coverage,
+  effect-quantile diagnostics, final multiplier quantiles, in-domain gate
+  deltas, and rare-validation gates against the selective scalar
+  combined-shift scale run before considering LUMI.
+- Ran the production-like local sanity workflow with the effect-bin-specific
+  combined-shift selector enabled and corrected the run to use the same rare
+  calibration and validation settings as the selective scalar baseline
+  (`rare_calibration_datasets = 32`, `rare_validation_datasets = 32`). The
+  selector evaluated 60 candidates but again selected zero amplitude, so
+  held-out 95% coverage was unchanged from the selective scalar run:
+  in-distribution `0.9294`, covariate shift `0.9161`, effect-size shift
+  `0.8507`, and combined shift `0.8175`. The best scalar/all-bin candidate
+  reached diagnostic combined-shift coverage `0.8561`, but violated the
+  in-domain gate with max group-loss delta `0.6311` and extra-inflation delta
+  `1.2254`. More selective effect-bin patterns reduced the gate deltas but
+  dropped combined-shift coverage to `0.8389`-`0.8450`, still below the `0.90`
+  floor. Rare-validation gates matched the selective scalar run, with selected
+  shrinkage `1.0`, overall rare-validation coverage `0.9001`, and rare-scale
+  in-domain guard coverage `0.9506`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: stop tuning effect-bin amplitudes and implement a more
+  domain-discriminative combined-shift activation. The likely implementation is
+  a combined-shift domain/context gate, or a low-community-by-support-excess
+  classifier-style gate, trained on combined-shift validation batches with
+  explicit in-domain overlap penalties and the existing rare-validation guard.
+- Implemented a context-gated combined-shift activation. The
+  `combined_shift_scale` metadata now serializes a
+  support/effect/low-design/low-community classifier-style `context_gate`, with
+  strength/intercept selected by held-out combined-shift validation. The
+  selector evaluates legacy-product, moderate-context, and strict-context gate
+  variants across the existing scalar/effect-bin correction shapes, records
+  `in_domain_context_gate` overlap diagnostics for every candidate, and rejects
+  nonzero candidates whose in-domain context-gate mean or active fraction
+  exceeds explicit thresholds. Legacy metadata remains behaviorally compatible
+  because missing context-gate fields default to strength `0.0`. Focused
+  conditional-calibration, public API, and LUMI workflow tests pass; a tiny
+  metadata smoke run confirmed 180 context-gated candidates in
+  `/private/tmp/neural_hmsc_context_gated_combined_shift_smoke`.
+- Next substep: run the production-like local sanity workflow with the
+  context-gated combined-shift selector enabled, using the same rare
+  calibration/validation settings as the previous selective scalar and
+  effect-bin runs. Compare selected context pattern, context overlap metrics,
+  held-out combined-shift/effect-size coverage, effect-quantile diagnostics,
+  final multiplier quantiles, in-domain gate deltas, and rare-validation gates
+  before considering any LUMI comparison.
+- Ran the production-like local sanity workflow with the context-gated
+  combined-shift selector enabled, using the same rare calibration/validation
+  settings as the previous selective scalar and effect-bin runs. The selector
+  evaluated 180 candidates and selected zero amplitude, leaving held-out 95%
+  coverage unchanged: in-distribution `0.9294`, covariate shift `0.9161`,
+  effect-size shift `0.8507`, and combined shift `0.8175`. The best legacy
+  product candidate reached diagnostic combined-shift coverage `0.8561`, but
+  had full in-domain context overlap and violated the in-domain gate. The
+  moderate context gate reduced in-domain context mean to `0.1896` and active
+  fraction over `0.8` to `0.0061`, but combined-shift coverage fell to
+  `0.8361` and gate deltas still failed. The strict context gate reduced
+  context mean to `0.0900` and active fraction over `0.8` to `0.0033`, but
+  combined-shift coverage fell to `0.8328` and the gain was below the minimum
+  threshold. Rare-validation gates matched prior runs, with selected shrinkage
+  `1.0`, overall rare-validation coverage `0.9001`, and rare-scale in-domain
+  guard coverage `0.9506`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: stop adding post-hoc combined-shift scale gates. Move the
+  combined-shift signal earlier into the learned OOD objective, for example by
+  adding a direct combined-shift coverage term with a learned context classifier
+  and explicit in-domain overlap regularization during OOD-objective fitting,
+  instead of selecting another post-scale multiplier.
+- Implemented the combined-shift objective inside the final-multiplier-aware
+  OOD fitting path. The learned OOD objective now adds direct combined-shift
+  coverage pressure, effect-quantile coverage pressure, and a
+  context-weighted combined-shift coverage term using the existing learned
+  combined branch as a support/effect/low-design/low-community context
+  classifier. The in-domain gate now also penalizes learned combined-context
+  overlap and context-weighted extra inflation, so the combined branch is
+  trained under the same in-domain protection rather than selected afterward as
+  a post-scale multiplier. The serialized `ood_objective` metadata records the
+  `combined_shift_training_objective` block, and final multiplier diagnostics
+  now report `learned_combined_shift_context` by OOD domain. Focused
+  conditional-calibration, public API, and LUMI workflow tests pass; a tiny
+  metadata smoke run confirmed the objective block and diagnostics in
+  `/private/tmp/neural_hmsc_combined_objective_smoke`.
+- Next substep: run the production-like local sanity workflow with the
+  combined-shift-aware OOD objective enabled, using the same rare
+  calibration/validation settings as the prior local sanity runs. Compare
+  held-out combined-shift/effect-size coverage, effect-quantile diagnostics,
+  learned combined-context activation, in-domain gate loss/deltas, and
+  rare-validation gates against the context-gated post-scale run.
+- Ran the production-like local sanity workflow with the combined-shift-aware
+  OOD objective enabled, using the same rare calibration/validation settings as
+  the prior local sanity runs. The run reduced diagnostic in-domain gate
+  penalties but worsened held-out OOD coverage. Compared with the context-gated
+  post-scale run, 95% coverage changed from `0.8507` to `0.8303` for
+  effect-size shift and from `0.8175` to `0.8060` for combined shift.
+  Diagnostic selector coverage also fell from `0.8672` to `0.8511` for
+  effect-size shift and from `0.8289` to `0.8178` for combined shift. The
+  learned combined context activated more on combined shift than pure
+  effect-size shift (`0.1019` versus `0.0751` mean activation), but not enough
+  to recover coverage. In-domain and rare-validation gates remained acceptable,
+  with rare-validation selected shrinkage `1.0`, rare-validation coverage
+  `0.9001`, and rare-scale in-domain guard coverage `0.9508`. Results are
+  recorded in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: rebalance or stage the combined-shift-aware OOD objective
+  instead of adding another gate. The likely implementation is a two-stage or
+  constrained schedule: first fit the combined branch to recover
+  combined-shift/effect-quantile coverage, then apply an in-domain overlap
+  constraint or shrinkage step that preserves the OOD coverage gain.
+- Implemented a staged combined-shift-aware OOD objective. The final-aware OOD
+  refit now uses a `coverage_warmup_then_overlap_ramp` schedule: early epochs
+  boost direct combined-shift, effect-quantile, and context-weighted coverage
+  losses while down-weighting the in-domain gate and disabling the explicit
+  combined-context overlap penalty; later epochs ramp the in-domain gate and
+  overlap penalty back to full strength. The existing post-fit
+  pure-effect/combined-shift shrinkage selector still runs afterward, so any
+  recovered OOD gain must survive the same in-domain gate checks before it is
+  applied. The serialized `combined_shift_training_objective.schedule` block
+  records the warmup fraction, coverage boost, and warmup gate fraction.
+  Focused conditional-calibration, public API, and LUMI workflow tests pass; a
+  tiny metadata smoke run confirmed the staged schedule in
+  `/private/tmp/neural_hmsc_staged_combined_objective_smoke`.
+- Next substep: run the production-like local sanity workflow with the staged
+  combined-shift-aware OOD objective enabled, using the same rare
+  calibration/validation settings as the prior local sanity runs. Compare
+  held-out combined-shift/effect-size coverage, effect-quantile diagnostics,
+  learned combined-context activation, post-fit shrinkage selection, in-domain
+  gate deltas, and rare-validation gates against the unstaged combined-aware
+  objective.
+- Ran the production-like local sanity workflow with the staged
+  combined-shift-aware OOD objective enabled. The staged schedule did not
+  recover OOD coverage. Compared with the context-gated post-scale baseline,
+  95% coverage remained worse for effect-size shift (`0.8290` versus `0.8507`)
+  and combined shift (`0.8056` versus `0.8175`). Compared with the unstaged
+  combined objective, the staged schedule slightly reduced diagnostic
+  in-domain inflation penalties but did not improve selector coverage:
+  effect-size selector coverage stayed `0.8511` and combined-shift selector
+  coverage stayed `0.8178`. Learned combined-context activation remained
+  selective but weak, with mean activation `0.0746` for effect-size shift and
+  `0.1014` for combined shift. Rare-validation gates remained acceptable, with
+  selected shrinkage `1.0`, rare-validation coverage `0.9001`, and rare-scale
+  in-domain guard coverage `0.9508`. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: stop this combined-shift objective family. Add a new
+  representation or data split for combined shift instead, likely a
+  domain-adversarial or mixture-of-experts OOD head with separate pure-effect
+  and combined-shift experts plus a held-out expert-selection gate.
+- Implemented the first representation/data-split replacement for the failed
+  combined-shift objective family. The final-multiplier-aware OOD path now
+  trains separate pure-effect and combined-shift OOD expert candidates on
+  domain-specific calibration splits, evaluates them with explicit held-out
+  expert-selection gates when enough simulation batches are available, and
+  records a `domain_expert_selection` diagnostic block under
+  `ood_objective.final_multiplier_diagnostics`. The selector keeps the
+  existing serialized OOD parameter format stable: if no expert improves its
+  target OOD coverage while respecting in-domain gate deltas, it falls back to
+  the baseline OOD parameters. A tiny smoke run at
+  `/private/tmp/neural_hmsc_domain_expert_smoke` confirmed the metadata block,
+  within-batch split fallback, candidate losses, target coverage gains, and
+  selected baseline fallback. Focused conditional-calibration, public API, and
+  LUMI workflow tests pass.
+- Next substep: run the production-like local sanity workflow with the
+  held-out domain-expert OOD selector enabled, using the same rare
+  calibration/validation settings as the staged combined-objective run. Compare
+  selected expert, split mode, held-out target gains, effect-size and
+  combined-shift coverage, effect-quantile diagnostics, final multiplier
+  quantiles, in-domain gate deltas, and rare-validation gates against the
+  staged combined-objective and context-gated post-scale baselines before any
+  LUMI comparison.
+- Ran the production-like local sanity workflow with the held-out domain-expert
+  OOD selector enabled in
+  `/private/tmp/neural_hmsc_v8_domain_expert_local_sanity_rare32`. The selector
+  correctly rejected both candidates and preserved the baseline parameters:
+  pure-effect target coverage improved by `0.0489` and combined-shift target
+  coverage improved by `0.0578`, but their in-domain gate deltas were far above
+  limits. Final 95% coverage therefore matched the staged combined-objective
+  result and remained below OOD floor: effect-size shift `0.8290` and combined
+  shift `0.8056`. Rare-validation gates remained acceptable. Results are
+  recorded in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: keep the domain-expert split but make expert acceptance
+  constrained or shrinkage-aware. Evaluate a baseline-to-expert shrinkage grid,
+  or add a trust-region/overlap penalty during expert fitting, so useful OOD
+  directions can be partially accepted only when in-domain gate deltas stay
+  within explicit limits. Rerun the same production-like local sanity workflow
+  before any LUMI comparison.
+- Implemented baseline-to-expert shrinkage-aware expert acceptance. Each
+  domain expert now records a shrinkage grid (`0.0`, `0.125`, `0.25`, `0.5`,
+  `0.75`, `1.0`) and selects only a shrinkage point that clears target OOD
+  coverage gain and in-domain gate-delta thresholds. Focused
+  conditional-calibration, public API, and LUMI workflow tests pass.
+- Ran the production-like local sanity workflow with shrinkage-aware domain
+  experts in
+  `/private/tmp/neural_hmsc_v8_domain_expert_shrinkage_local_sanity_rare32`.
+  No shrinkage point qualified. At shrinkage `0.125`, the pure-effect branch
+  was close to the in-domain gate but target gain was only `0.0067`; by
+  shrinkage `0.25`, target gain cleared the minimum but extra-inflation delta
+  rose to `0.6077`, above the `0.25` limit. Final 95% coverage stayed at the
+  staged combined-objective values: effect-size shift `0.8290` and combined
+  shift `0.8056`. Rare-validation gates remained acceptable. Results are
+  recorded in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: keep the domain-expert data split, but move the constraint into
+  expert fitting itself. Add a trust-region or overlap-regularized expert
+  objective that penalizes in-domain final-multiplier drift during expert
+  training, then rerun the same production-like local sanity workflow before
+  any LUMI comparison.
+- Implemented an in-domain log-inflation trust-region penalty inside
+  domain-expert fitting. The trust-region uses the pre-expert OOD log-inflation
+  as the in-domain baseline, tolerance `log(1.08)`, scale `log(1.25)`, and
+  weight `3.0`; the post-fit shrinkage grid still runs afterward. Focused
+  conditional-calibration, public API, and LUMI workflow tests pass.
+- Ran the production-like local sanity workflow with the trust-region
+  domain-expert objective in
+  `/private/tmp/neural_hmsc_v8_domain_expert_trust_region_local_sanity_rare32`.
+  The trust region reduced expert aggressiveness but no shrinkage point
+  qualified. The full pure-effect expert's extra-inflation delta fell from
+  `3.1203` to `0.6216`, but still exceeded the `0.25` limit; shrinkage `0.25`
+  stayed below the extra-inflation limit but target gain was only `0.0056`.
+  Final 95% coverage stayed at effect-size shift `0.8290` and combined shift
+  `0.8056`. Rare-validation gates remained acceptable. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: tune or redesign the constrained expert objective locally
+  before another production-like run. Start with a small trust-region sweep over
+  stronger weights/tighter tolerances, or replace the global trust region with a
+  domain-localized overlap penalty that penalizes in-domain overlap contexts
+  while allowing more effect-specific OOD movement.
+- Implemented a compact trust-region sweep inside domain-expert fitting. The
+  selector now trains each domain expert with three settings:
+  `moderate_w3_tol108`, `strong_w6_tol106`, and `tight_w10_tol104`, and then
+  evaluates the usual post-fit shrinkage grid for each trained candidate.
+  Focused conditional-calibration, public API, and LUMI workflow tests pass.
+- Ran a smaller local tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_trust_sweep_tuning`. The compact
+  run accepted the combined-shift expert at shrinkage `1.0` for all three trust
+  settings; the tightest setting reduced in-domain extra-inflation delta to
+  `0.0931`. This is not a qualification result because the run uses smaller
+  dimensions and fewer rare/OOD/SBC batches, but it verifies that the sweep can
+  produce accepted candidates. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: rerun the production-like rare32 local sanity workflow with the
+  trust-region sweep enabled. If no trust setting qualifies under rare32
+  settings, replace the global trust region with a domain-localized overlap
+  penalty.
+- Ran the production-like rare32 local sanity workflow with the trust-region
+  sweep enabled in
+  `/private/tmp/neural_hmsc_v8_domain_expert_trust_sweep_local_sanity_rare32`.
+  The selector accepted one boundary candidate: pure-effect expert with
+  `tight_w10_tol104` at shrinkage `1.0`, target gain `0.0100`, and
+  extra-inflation delta `0.2377`. Final 95% coverage did not improve:
+  effect-size shift was `0.8282` and combined shift was `0.8056`.
+  Rare-validation gates remained acceptable. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: replace the global trust region with a domain-localized overlap
+  penalty and strengthen the expert-selection gate. Boundary candidates should
+  require a practical held-out target gain, no OOD-domain degradation, and
+  explicit control of in-domain contexts that overlap the target OOD domain
+  before application. Rerun a compact tuning check before another production-like
+  rare32 workflow.
+- Implemented the domain-localized overlap penalty and strengthened expert
+  gate. The selector now requires target gain at least `0.0200`, no non-target
+  OOD coverage degradation, and localized overlap excess loss at most `0.1200`.
+  Expert fitting penalizes in-domain OOD log-inflation drift only in target
+  overlap contexts: high-effect/support-close coefficients for pure-effect
+  experts and support-excess/low-design/low-community coefficients for
+  combined-shift experts. Focused conditional-calibration, public API, and LUMI
+  workflow tests pass.
+- Ran a compact tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_overlap_tuning`. No candidate
+  passed the strengthened gate. The strongest combined-shift candidate had no
+  non-target degradation and localized overlap excess loss `0.0238`, but target
+  gain was only `0.0148`, below the practical-gain floor. Results are recorded
+  in `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: improve the domain-expert objective so it can clear the
+  strengthened gate before another rare32 run. Likely directions are stronger
+  target-domain coverage pressure, effect-quantile-specific expert losses, or a
+  target-domain curriculum, while preserving the localized overlap penalty and
+  no-degradation selection gate.
+- Added expert-only target-domain coverage and effect-quantile coverage
+  pressure while preserving the localized overlap penalty and no-degradation
+  selection gate. Focused conditional-calibration, public API, and LUMI workflow
+  tests pass.
+- Ran the compact tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_target_pressure_tuning`. The
+  stronger scalar pressure did not change selector behavior: no candidate
+  passed the strengthened gate, and the best combined-shift target gain stayed
+  at `0.0148`, below the `0.0200` practical-gain floor. Results are recorded in
+  `docs/neural_hmsc_v8_gated_local_sanity_2026-07-13.md`.
+- Next substep: change the domain-expert representation rather than adding more
+  scalar objective weight. Add effect-bin-specific expert amplitudes or a
+  target-domain-specific slope/cap parameterization that can move weak OOD
+  effect quantiles without broad in-domain inflation. Rerun compact tuning
+  before any rare32 workflow.
+- Implemented effect-bin-specific expert amplitudes in the learned OOD
+  effect-shift head. New fits emit a 14-parameter head: the previous
+  pure-effect and combined-shift context gates plus three localized
+  effect-bin log-amplitudes for each expert. Metadata records the bin centers,
+  bin width, per-expert bin amplitudes, and parameter count. Legacy
+  8-parameter heads remain loadable. Focused conditional-calibration tests and
+  the public API / conditional calibration / LUMI workflow trio pass.
+- Ran the compact tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_bin_head_tuning`. The
+  combined-shift expert passed the strengthened held-out selection gate with
+  selected shrinkage `1.0`, combined-shift target gain `0.0222`, non-target
+  effect-size gain `0.0037`, and localized overlap excess loss `0.0000`. The
+  pure-effect expert still did not pass because its effect-size target gain was
+  only `0.0074`. The compact run remains a selector/representation check, not
+  a production-like qualification.
+- Next substep: run the production-like rare32 local sanity workflow with the
+  effect-bin-specific domain-expert head enabled, using the same rare
+  calibration/validation settings as prior rare32 runs. Compare selected expert
+  branch, bin amplitudes, held-out OOD coverage, effect-quantile coverage,
+  final multiplier quantiles, in-domain gate deltas, and rare-validation gates
+  against the previous target-pressure and localized-overlap compact baselines.
+  Do not submit a LUMI comparison unless the rare32 local gates hold.
+- Ran the production-like rare32 local sanity workflow in
+  `/private/tmp/neural_hmsc_v8_domain_expert_bin_head_local_sanity_rare32`.
+  The compact selector gain did not transfer: the selected expert remained
+  `baseline` with `selected_shrinkage = 0.0` and no candidate passed the
+  strengthened gate. Final coverage was `0.9350` for covariate shift,
+  `0.8517` for effect-size shift, and `0.8183` for combined shift. The best
+  combined-shift candidates improved held-out selector coverage, but failed
+  localized overlap and in-domain extra-inflation controls; the strongest
+  profile had combined-shift gain `0.0400` but localized overlap excess loss
+  `1.2964`. Rare-validation gates remained acceptable with selected shrinkage
+  `1.0`, overall coverage `0.9001`, rare coverage `0.9285`, and rare rank
+  error `0.0194`.
+- Next substep: do not submit a LUMI comparison. Make the effect-bin expert
+  movement more domain-local and gate-compatible before another rare32 run.
+  A plausible implementation is a support/design/community-conditioned
+  bin-amplitude cap or selection step, plus direct penalties on per-bin
+  in-domain extra-inflation and group-loss deltas during expert fitting.
+- Implemented the first context-capped effect-bin expert. The serialized
+  14-parameter head shape is unchanged, but pure-effect bin amplitudes are
+  applied through support-excess or low-design context caps, and combined-shift
+  bin amplitudes are applied through support-excess, low-design, and optional
+  low-community caps. Expert fitting now adds per-effect-bin in-domain
+  penalties for extra log inflation, rank-mean drift, and low coverage in each
+  bin's active context. Focused conditional-calibration tests and the public
+  API / conditional calibration / LUMI workflow trio pass.
+- Ran the compact tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_context_capped_bin_tuning`. The
+  new cap/penalty controlled in-domain leakage but over-constrained target
+  movement. No candidate passed the strengthened selector gate: the best
+  combined-shift target gain fell to `0.0111`, below the `0.0200` floor, while
+  overlap excess loss stayed controlled at `0.0271` to `0.0356` and
+  extra-inflation delta stayed around `0.098`.
+- Next substep: do not run rare32 yet. Tune or redesign the context-cap shape
+  locally before another production-like workflow. Likely directions are softer
+  community/design caps, target-domain-specific cap floors, or a two-stage fit
+  that first learns target-domain bin movement and then projects it through the
+  per-bin in-domain gate.
+- Tested the first cap-shape redesign with fixed target-domain context floors
+  while preserving the same 14-parameter effect-bin head shape. Pure-effect
+  contexts now have a `0.20` floor and combined-shift contexts have a `0.35`
+  floor; per-bin in-domain penalties remain active. Focused
+  conditional-calibration tests and the public API / conditional calibration /
+  LUMI workflow trio still pass.
+- Ran the compact soft-floor tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_soft_floor_bin_tuning`. The
+  soft floors increased learned combined-bin amplitudes but did not improve the
+  selected held-out outcome. No candidate passed the strengthened selector
+  gate. The best combined-shift target gain stayed at `0.0111`, below the
+  `0.0200` practical-gain floor; overlap excess loss remained controlled
+  (`0.0274` to `0.0364`) and extra-inflation delta was about `0.103`. The
+  selected branch remained `baseline` with mean held-out OOD `0.7185` and worst
+  held-out OOD `0.7148`.
+- Next substep: do not run rare32 yet. Implement a two-stage
+  target-then-projection expert fit. First learn target-domain effect-bin
+  movement without the full in-domain bin gate, then project or shrink those
+  learned amplitudes through explicit per-bin in-domain gate constraints before
+  selector acceptance.
+- Implemented the two-stage target-then-projection expert profile inside the
+  existing held-out domain-expert selector. The new profile keeps the serialized
+  14-parameter effect-bin head unchanged. Stage 1 fits the target-domain expert
+  with moderate target/effect-quantile pressure, reduced in-domain gate weight,
+  relaxed overlap tolerance, and no per-bin in-domain penalty. Stage 2 evaluates
+  the learned expert through the existing selector gates using the standard
+  shrinkage grid crossed with branch-specific effect-head projection caps
+  `(0.25, 0.5, 0.75, 1.0)`. Projection caps shrink only the active branch's
+  scalar effect-head amplitude and three effect-bin amplitudes back toward the
+  baseline vector before acceptance.
+- Validation passed:
+  `python -m py_compile pyhmsc/neural/conditional_calibration.py`,
+  `pytest tests/test_neural_hmsc_conditional_calibration.py -q` (`18 passed`),
+  and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`41 passed`). The focused metadata test now asserts that the
+  `two_stage_target_then_projection` selector profile and per-candidate
+  projection-cap diagnostics are present.
+- Next substep: run a compact local tuning check for the two-stage projection
+  profile using the same rare calibration/validation settings as the soft-floor
+  and hard-cap compact runs. Compare target gains, selected projection caps,
+  overlap-control loss, in-domain gate deltas, and held-out OOD coverage against
+  the soft-floor context-capped run before considering rare32.
+- Ran the compact two-stage projection check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_two_stage_projection_tuning`. The
+  new projection profile did not qualify and did not improve selected held-out
+  coverage. The selector again kept `baseline` with mean held-out OOD `0.7185`,
+  worst held-out OOD `0.7148`, effect-size-shift coverage `0.7222`, and
+  combined-shift coverage `0.7148`. The best two-stage pure-effect candidate
+  used shrinkage `0.25` and projection cap `0.75`, but target gain stayed
+  `0.0037`. The best two-stage combined-shift candidate used shrinkage `1.0`
+  and projection cap `0.25`; overlap excess loss fell to `0.0245`, but target
+  gain stayed `0.0111` and max group extra-cap delta was `0.0889`, above the
+  `0.0800` gate.
+- Next substep: do not run rare32. Stop relying on scalar/bin-amplitude
+  projection as the main fix. The compact result suggests projection can reduce
+  in-domain leakage but cannot create enough held-out target-domain coverage
+  movement. Change the target signal or calibration pool before another
+  production-like workflow: either fit the expert on a larger/harder
+  target-domain compact pool, or replace interval-coverage pressure with a
+  margin-aware OOD loss that upweights near-miss OOD coefficients before the
+  existing projection gate is applied.
+- Implemented the margin-aware target-signal variant for the two-stage
+  projection profile. The new `margin_weight` profile field is zero for the
+  legacy localized profiles and positive for `two_stage_target_then_projection`.
+  The loss upweights target-domain coefficients that are outside but near the
+  baseline nominal interval, while keeping projection and held-out selector
+  gates unchanged. Validation passed:
+  `python -m py_compile pyhmsc/neural/conditional_calibration.py`,
+  `pytest tests/test_neural_hmsc_conditional_calibration.py -q` (`18 passed`),
+  and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`41 passed`).
+- Ran the compact margin-aware tuning check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_margin_projection_tuning`. The
+  selector still kept `baseline`, and selected held-out OOD coverage was
+  unchanged from the previous two-stage projection run: mean `0.7185`, worst
+  `0.7148`, effect-size-shift `0.7222`, and combined-shift `0.7148`. The best
+  margin-aware pure-effect candidate had target gain `0.0037`; the best
+  margin-aware combined-shift candidate had target gain `0.0111`, overlap
+  excess loss `0.0246`, extra-inflation delta `0.1015`, and max group
+  extra-cap delta `0.0890`.
+- Next substep: do not run rare32. Change the compact calibration data rather
+  than adding another scalar target-loss term. Build a larger or explicitly
+  harder target-domain OOD calibration pool, enriched for near-boundary misses
+  and separated by pure-effect versus combined-shift regimes, then rerun the
+  same projection selector locally.
+- Implemented a hard target-domain OOD calibration pool in the benchmark
+  runner. New CLI options
+  `--conditional-calibration-ood-hard-target-multiplier` and
+  `--conditional-calibration-ood-hard-target-candidate-multiplier` preserve the
+  old behavior by default. When enabled, `effect_size_shift` and
+  `combined_shift` calibration datasets are drawn from an over-sampled
+  candidate pool, scored by near-boundary coefficient misses under the current
+  posterior, and the hardest subset is retained before fitting the same
+  projection selector. Non-target OOD regimes keep the original sampling path.
+  Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`5 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`42 passed`).
+- Ran the compact hard-pool projection check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_hard_pool_projection_tuning` with
+  `--conditional-calibration-ood-datasets 4`,
+  `--conditional-calibration-ood-hard-target-multiplier 3`, and
+  `--conditional-calibration-ood-hard-target-candidate-multiplier 2`. The
+  selector still kept `baseline`, but held-out target coverage moved materially:
+  mean held-out OOD `0.7568`, worst held-out OOD `0.7420`, effect-size-shift
+  `0.7716`, and combined-shift `0.7420`. The best pure-effect candidate reached
+  target gain `0.0185`, overlap excess loss `0.0003`, extra-inflation delta
+  `0.1600`, and max group extra-cap delta `0.0912`. The best combined-shift
+  candidate reached target gain `0.0160`, overlap excess loss `0.0752`,
+  extra-inflation delta `0.1667`, and max group extra-cap delta `0.0913`.
+- Next substep: do not run rare32 yet. Refine the hard-pool/projection
+  interaction locally. The hard pool is the first recent change that materially
+  increases target-domain gains, but it still misses the `0.0200` practical-gain
+  floor and breaches the max group extra-cap delta gate. Either increase
+  target-pool hardness modestly while adding a stricter projection cap for
+  in-domain extra-cap loss, or split hard target batches into independent
+  train/evaluation batches so accepted gains are not dominated by one
+  within-batch split.
+- Implemented independent hard target-pool batch grouping. When hard target
+  selection is enabled for `effect_size_shift` or `combined_shift`, the
+  selected target-domain datasets are emitted as two calibration batches. This
+  makes the existing domain-expert selector use `alternating_batches` rather
+  than `within_batch_axis0`. Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`6 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`43 passed`).
+- Ran compact split hard-pool checks in
+  `/private/tmp/neural_hmsc_v8_domain_expert_hard_pool_split_projection_tuning`
+  and
+  `/private/tmp/neural_hmsc_v8_domain_expert_hard_pool_split_x4_projection_tuning`.
+  The split fixed the extra-cap gate problem but did not qualify. For split x3,
+  the selector kept `baseline` with mean held-out OOD `0.7630`, worst `0.7469`,
+  effect-size-shift `0.7790`, and combined-shift `0.7469`. Best pure-effect
+  target gain was `0.0111` with max group extra-cap delta `0.0075`; best
+  combined-shift target gain was `0.0173` with max group extra-cap delta
+  `0.0112`. Split x4 did not improve the result: mean held-out OOD fell to
+  `0.7537`, worst to `0.7343`, and best target gains were `0.0130` for both
+  pure-effect and combined-shift.
+- Next substep: do not run rare32. Make hard-pool selection gate-aware rather
+  than simply harder or split differently. Score candidate target-domain
+  datasets by near-boundary misses while penalizing high in-domain-overlap
+  contexts, or build separate hard pools for train and validation with matched
+  near-boundary difficulty so target gain does not collapse under independent
+  evaluation.
+- Implemented gate-aware hard target-pool scoring. The selector still scores
+  target-domain OOD candidates by near-boundary coefficient misses, but now
+  subtracts a regime-specific overlap proxy for `effect_size_shift` and
+  `combined_shift`. Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`7 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`44 passed`).
+- Ran the compact gate-aware hard-pool check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_gate_aware_hard_pool_tuning`. The
+  selector still kept `baseline`, but selected held-out OOD diagnostics improved
+  versus split x3: mean `0.7710`, worst `0.7642`, effect-size-shift `0.7778`,
+  and combined-shift `0.7642`. Best pure-effect target gain was `0.0148` with
+  non-target gain `0.0198`, overlap excess loss `0.0008`, extra-inflation delta
+  `0.1891`, and max group extra-cap delta `0.0205`. Best combined-shift target
+  gain was `0.0173` with non-target gain `0.0136`, overlap excess loss
+  `0.0895`, extra-inflation delta `0.1843`, and max group extra-cap delta
+  `0.0196`.
+- Next substep: do not run rare32. Build matched train/validation hard pools
+  rather than changing a scalar score again. The target selector needs training
+  batches and evaluation batches with similar near-boundary difficulty;
+  otherwise target gain either collapses under independent evaluation or
+  remains below the `0.0200` practical-gain floor despite better gate control.
+- Implemented score-balanced hard target-pool grouping. Target-domain
+  calibration batches are now balanced by the same gate-aware near-boundary
+  score used for candidate selection. Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`8 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`45 passed`).
+- Ran the compact matched hard-pool check in
+  `/private/tmp/neural_hmsc_v8_domain_expert_matched_hard_pool_tuning`. The
+  selector still kept `baseline`, and matched grouping worsened the selected
+  held-out OOD result relative to gate-aware x3: mean `0.7611`, worst `0.7519`,
+  effect-size-shift `0.7704`, and combined-shift `0.7519`. Best pure-effect
+  target gain stayed `0.0148` with max group extra-cap delta `0.0095`; best
+  combined-shift target gain fell to `0.0148` with max group extra-cap delta
+  `0.0100`.
+- Next substep: do not run rare32. Instrument the hard-pool selection path
+  before another heuristic change. Record selected candidate score
+  distributions, train/evaluation score summaries, near-boundary miss
+  summaries, and overlap-proxy summaries by target regime so the
+  training/evaluation mismatch can be diagnosed directly.
+- Implemented hard-pool selection diagnostics in `benchmark_record.json`.
+  Target hard-pool runs now record candidate and selected score distributions,
+  raw near-boundary score summaries before overlap penalty, overlap-proxy
+  summaries, miss-rate and excess-miss summaries, and matched train/evaluation
+  group summaries by target regime. Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`9 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`46 passed`).
+- Ran the compact instrumentation check in
+  `/private/tmp/neural_hmsc_v8_hard_pool_instrumentation_check`. The selector
+  again kept `baseline` with mean held-out OOD `0.7611`, worst OOD-domain
+  coverage `0.7519`, effect-size-shift coverage `0.7704`, and combined-shift
+  coverage `0.7519`. The new diagnostics show effect-size-shift selected score
+  mean `-0.0485`, selected overlap mean `0.2815`, and matched group score delta
+  `0.0605`; combined-shift selected score mean `-0.0293`, selected overlap mean
+  `0.2458`, and matched group score delta `0.1345`.
+- Next substep: do not run rare32. Inspect the new diagnostic arrays in detail
+  and redesign hard-pool construction around two explicit constraints: enough
+  raw near-boundary misses and low target-domain overlap, with separate
+  train/evaluation matching for each target regime.
+- Implemented constrained hard-pool construction. Target-domain selection now
+  separates raw near-boundary difficulty from target-domain overlap, relaxes
+  overlap before relaxing raw difficulty if the eligible pool is too small, and
+  matches train/evaluation hard pools by raw difficulty, overlap, and final
+  score within each target regime. Validation passed:
+  `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`11 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`48 passed`).
+- Ran the compact constrained hard-pool check in
+  `/private/tmp/neural_hmsc_v8_constrained_hard_pool_check`. The selector still
+  kept `baseline`, and held-out OOD worsened relative to the instrumentation
+  baseline: mean `0.7525`, worst `0.7457`, effect-size shift `0.7593`, and
+  combined shift `0.7457`. Matching improved substantially, with score deltas
+  `0.0132` for effect-size shift and `0.0107` for combined shift, but both
+  regimes had to relax the overlap threshold to the `0.95` quantile to keep
+  enough raw near-boundary misses.
+- Next substep: do not run rare32. Change candidate-pool generation, not
+  selection. Generate or oversample target-domain candidates in low-overlap
+  contexts first, then apply the constrained hard-pool selector and rerun the
+  same compact local check.
+- Implemented low-overlap target candidate-pool generation. Target regimes now
+  generate a wider seed window, prefilter the generated pool into a low-overlap
+  candidate pool while preserving a raw near-boundary miss floor, and then apply
+  the constrained selector plus regime-specific train/evaluation matching.
+  Validation passed: `python -m py_compile examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`12 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`49 passed`).
+- Ran the compact low-overlap candidate-pool check in
+  `/private/tmp/neural_hmsc_v8_low_overlap_candidate_pool_check`. The selector
+  still kept `baseline`. Mean held-out OOD improved relative to constrained
+  hard-pool (`0.7562` versus `0.7525`) but remained below the instrumentation
+  baseline (`0.7611`). Combined-shift overlap improved from generated overlap
+  mean `0.2683` to candidate-pool overlap mean `0.2377`; selected combined
+  score mean improved to `-0.0184`. In-domain extra-inflation loss improved to
+  `0.1339`, and max extra-cap loss improved to `0.1060`, but no expert passed
+  the selection gate.
+- Next substep: do not run rare32. Change the simulated target-domain
+  candidate distribution itself, not the seed-window prefilter. Add an explicit
+  low-overlap target candidate regime or context-controlled OOD simulator
+  variant that creates more low-overlap hard misses before applying the
+  constrained selector.
+- Implemented a simulator-level low-overlap target candidate context. Default
+  OOD simulations remain unchanged, but hard target calibration candidate
+  generation now uses `candidate_context="low_overlap"` for `effect_size_shift`
+  and `combined_shift`. The effect-size target candidate context shifts
+  covariate support to reduce pure-effect overlap, and the combined-shift
+  target candidate context raises intercept context to reduce low-community
+  overlap. Validation passed:
+  `python -m py_compile pyhmsc/neural/simulator.py examples/run_neural_hmsc_benchmark.py`,
+  `pytest tests/test_neural_hmsc_simulator.py tests/test_neural_hmsc_lumi_workflow.py -q`
+  (`21 passed`), and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py tests/test_neural_hmsc_simulator.py -q`
+  (`58 passed`).
+- Ran the compact context-controlled candidate check in
+  `/private/tmp/neural_hmsc_v8_context_controlled_low_overlap_check`. The
+  selector still kept `baseline`, but target held-out OOD improved sharply:
+  mean OOD `0.7969`, worst OOD `0.7580`, effect-size shift `0.8358`, and
+  combined shift `0.7580`. Candidate quality improved: effect-size generated
+  overlap mean `0.1308`, pool overlap mean `0.1050`, selected score mean
+  `0.0347`; combined-shift generated overlap mean `0.2311`, pool overlap mean
+  `0.1970`, selected score mean `-0.0012`. The remaining blocker is expert
+  acceptance: best pure-effect target gain was `0.0173` with extra-inflation
+  delta about `0.3090`, and best combined-shift target gain was `0.0136` with
+  extra-inflation delta about `0.2643`.
+- Next substep: do not run rare32. Keep the context-controlled candidate
+  distribution, but redesign expert fitting/acceptance for it. Reduce
+  in-domain extra inflation and improve combined-shift target gain, likely via
+  a smaller expert-amplitude schedule or a combined-shift-specific target loss
+  followed by strict extra-inflation projection before selection.
+- Implemented a finer expert shrinkage schedule, strict branch-specific
+  projection caps, a combined-shift-specific target-loss profile, and
+  gate-compatible projection selection. Candidate records now prefer the best
+  gate-compatible projection row when no row clears the full target-gain floor,
+  instead of reporting the highest-gain high-inflation row. Validation passed:
+  `python -m py_compile pyhmsc/neural/conditional_calibration.py`,
+  `pytest tests/test_neural_hmsc_conditional_calibration.py -q` (`18 passed`),
+  and
+  `pytest tests/test_neural_hmsc_public_api.py tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py tests/test_neural_hmsc_simulator.py -q`
+  (`58 passed`).
+- Ran the compact gate-compatible projection check in
+  `/private/tmp/neural_hmsc_v8_gate_compatible_projection_check`. The selector
+  still kept `baseline` with the same selected held-out OOD diagnostics as the
+  context-controlled candidate run: mean `0.7969`, worst `0.7580`,
+  effect-size shift `0.8358`, and combined shift `0.7580`. The best
+  gate-compatible pure-effect candidate had target gain `0.0136`, extra-
+  inflation delta `0.2369`, and max extra-cap delta `0.0177`; the best
+  gate-compatible combined-shift candidate had target gain `0.0099`, extra-
+  inflation delta `0.1837`, and max extra-cap delta `0.0137`.
+- Next substep: do not run rare32. Move the extra-inflation constraint into
+  expert fitting itself instead of relying on post-fit projection. Fit a
+  combined-shift expert with an in-objective gate-compatible amplitude penalty
+  or target-domain curriculum that can recover combined-shift gain while
+  staying below the extra-inflation gate.
+
+## Roadmap Reset: Competing With The Baseline
+
+The recent v8 work established useful diagnostics, but it is no longer
+productive to continue the same incremental selector/projection loop. The
+central result is that the domain-expert path has not yet produced a deployed
+calibration that beats the frozen baseline under the acceptance gates. In most
+compact checks the selector still chose `baseline`, so the final applied model
+was unchanged even when candidate diagnostics looked better.
+
+The key retrospective results are:
+
+| Step | Best Result | What It Proved | Limitation |
+| --- | --- | --- | --- |
+| hard target-pool selection | target gains reached about `0.0185` pure-effect and `0.0160` combined-shift | near-boundary OOD examples can create useful signal | missed the `0.0200` gain floor and breached extra-cap gates |
+| split/matched hard pools | max group extra-cap deltas fell near `0.01` | train/evaluation splitting can control obvious overfit | target gains collapsed or held-out OOD worsened |
+| gate-aware scoring | mean internal OOD rose to `0.7710`; combined-shift to `0.7642` | overlap-aware target selection is better than raw hardness | still selected baseline |
+| constrained selection | group deltas fell below about `0.014` | pool matching worked technically | overlap constraints had to relax to `0.95`, showing pool scarcity |
+| low-overlap seed prefilter | extra-inflation loss improved to `0.1339` | low-overlap filtering reduced in-domain inflation pressure | did not improve final selected model |
+| context-controlled simulator | effect-size internal coverage reached `0.8358` | candidate distribution quality improved materially | changed the evaluation/calibration pool, so it was not an apples-to-apples baseline comparison |
+| gate-compatible projection | extra-inflation deltas became gate-compatible | projection can control risk | target gains dropped to `0.0136` pure-effect and `0.0099` combined-shift |
+
+The main shortcomings are:
+
+- The selected model has usually remained `baseline`; candidate improvements
+  therefore do not translate into a better final calibration.
+- Several comparisons changed the target calibration/evaluation pool itself.
+  Those diagnostics are useful for understanding candidate quality, but they do
+  not prove improvement over the frozen scalar/v4/v5/v6/v8 baseline on an
+  independent OOD suite.
+- The current acceptance gate requires both practical target gain and low
+  in-domain inflation. The expert family has shown a tradeoff: high-gain rows
+  increase in-domain extra inflation, while gate-compatible projections lose
+  target gain.
+- Most recent changes are post-hoc scale manipulations. They are not changing
+  the posterior mean, posterior shape, or representation that creates the
+  misspecification, so there is limited headroom.
+- Combined-shift remains the hard regime. The current expert representation is
+  too blunt: it moves enough to help only when it also inflates in-domain
+  contexts, and strict projection removes the gain.
+
+The revised objective is:
+
+> Produce a final selected calibration that beats the frozen scalar baseline on
+> a fixed, independent OOD validation suite while preserving in-domain and rare
+> validation gates.
+
+This changes the development rule. Do not treat internal calibration-batch
+coverage as success. A change only advances when it improves a fixed
+independent comparison against the frozen baseline.
+
+### Revised Acceptance Gates
+
+Use a frozen evaluation bundle before any more model work:
+
+- fixed in-domain SBC suite,
+- fixed rare-validation suite,
+- fixed OOD suite with `covariate_shift`, `effect_size_shift`, and
+  `combined_shift`,
+- fixed seeds and fixed data-generating settings,
+- frozen scalar/v4/v5/v6/v8 baseline checkpoints,
+- final selected calibration output, not merely candidate diagnostics.
+
+A candidate is promotable only if:
+
+- final selected model is not equivalent to `baseline`, or it beats baseline as
+  an external wrapper in the fixed evaluation harness,
+- mean OOD coverage improves by at least `0.010` over frozen scalar baseline,
+- worst OOD-domain coverage improves or is no worse than baseline by more than
+  `0.005`,
+- combined-shift coverage improves by at least `0.010`,
+- in-domain coverage remains within the existing acceptance window,
+- rare-validation gates remain satisfied,
+- extra-inflation and max extra-cap deltas remain below current gates,
+- the result holds on at least three compact local seeds before LUMI.
+
+### Revised Technical Direction
+
+Stop prioritizing domain-expert projection tuning. The next candidate should be
+a clearly different competitor to the scalar baseline:
+
+1. Fixed Evaluation Harness
+
+   Build a local script that evaluates frozen baselines and candidate
+   calibrations on the same independent suites. It should write one comparison
+   table with in-domain, rare, effect-size, combined-shift, worst-domain, and
+   extra-inflation metrics. This is now the first required step.
+
+2. Conservative External Calibrator
+
+   Implement a post-hoc external calibrator that does not mutate the learned
+   OOD head. A good first competitor is a monotone, context-stratified scale
+   calibrator fitted on calibration batches and evaluated on independent
+   validation batches. It should have very few degrees of freedom:
+
+   - separate intercepts for effect-size and combined-shift,
+   - monotone bins by effect-size and support,
+   - explicit in-domain inflation budget,
+   - shrinkage selected by independent validation,
+   - fallback to scalar baseline when gates fail.
+
+   This creates a stronger baseline competitor than the current neural expert
+   family because it can be evaluated as a wrapper with transparent degrees of
+   freedom and strict external selection.
+
+3. Representation-Level Alternative
+
+   If the conservative calibrator cannot beat scalar baseline, stop tuning
+   scale heads and change the posterior model itself. The likely representation
+   issue is posterior mean/scale misspecification under rare and combined-shift
+   contexts. The next representation-level candidate should train the neural
+   posterior with OOD-aware simulation batches and an explicit combined-shift
+   validation loss, rather than fitting OOD scale corrections after training.
+
+4. Competing Model Track
+
+   Keep a second track for a genuinely different method:
+
+   - ensemble or MC-dropout uncertainty expansion,
+   - conformalized coefficient intervals by context strata,
+   - mixture-of-experts posterior head with a learned domain/context router,
+   - simulation-trained quantile regression for coefficient intervals rather
+     than Gaussian scale inflation.
+
+   Each track must plug into the same fixed evaluation harness.
+
+### Revised Immediate Roadmap
+
+1. Build the fixed independent evaluation harness and regenerate one compact
+   report comparing frozen scalar/v4/v5/v6/v8/default candidates on identical
+   data.
+
+   Status: implemented a first fixed-evaluation harness in
+   `examples/compare_neural_hmsc_fixed_evaluation.py`. The harness consumes
+   existing benchmark output directories, requires identical SBC/OOD row keys
+   across runs, compares final calibrated rows against a named baseline, and
+   writes JSON, CSV, and Markdown reports with mean OOD, worst OOD,
+   combined-shift, in-domain, rare-prevalence, and stratum-level deltas. It
+   applies explicit acceptance gates so candidate diagnostics cannot be
+   mistaken for a selected model improvement.
+
+   Validation:
+
+   - `python -m py_compile examples/compare_neural_hmsc_fixed_evaluation.py`
+   - `pytest tests/test_neural_hmsc_lumi_workflow.py -q` (`13 passed`)
+
+   Smoke check:
+
+   - Compared
+     `/private/tmp/neural_hmsc_v8_context_controlled_low_overlap_check` against
+     `/private/tmp/neural_hmsc_v8_gate_compatible_projection_check` with
+     `context` as the baseline.
+   - Output written to `/private/tmp/neural_hmsc_fixed_eval_smoke`.
+   - The harness reported `80` fixed row keys and zero OOD/combined-shift delta
+     for the projection run, confirming the main retrospective finding: the
+     final calibrated evaluation did not improve even when internal candidate
+     diagnostics changed.
+
+   Compact fixed-bundle check:
+
+   - Generated a local compact probit bundle under
+     `/private/tmp/neural_hmsc_fixed_eval_compact_bundle_20260716` with
+     `scalar`, `v4`, `v5`, `v6`, `v8`, and `default` candidate directories.
+     All non-scalar candidates reused the frozen scalar checkpoint and shared
+     `--seed 20260716`, `--model-seed 20260716`, `--sbc-datasets 8`,
+     `--sbc-draws 64`, and the same `covariate_shift`, `effect_size_shift`,
+     and `combined_shift` OOD regimes. Historical v4/v5/v6 result cache
+     entries were present locally only as empty directory shells, so `v4` and
+     `v5` in this compact bundle are current-code generated analogues rather
+     than restored historical binaries.
+   - Ran
+     `examples/compare_neural_hmsc_fixed_evaluation.py` with `scalar` as the
+     baseline. Output was written to
+     `/private/tmp/neural_hmsc_fixed_eval_compact_bundle_20260716/comparison`.
+     The harness accepted `80` fixed row keys, confirming that all candidates
+     were evaluated on identical independent SBC/OOD rows.
+   - Scalar failed the improvement gates by construction
+     (`mean_ood_coverage_95 = 0.7148`, `combined_shift_coverage_95 = 0.5972`).
+     All generated non-scalar candidates passed the fixed-evaluation gates.
+     The strongest compact result was the rare-aware/default conditional path:
+     `mean_ood_coverage_95 = 0.8392`,
+     `worst_ood_coverage_95 = 0.7704`,
+     `effect_size_shift_coverage_95 = 0.7704`,
+     `combined_shift_coverage_95 = 0.8407`,
+     `in_domain_coverage_95 = 0.9306`, and
+     `rare_prevalence_coverage_95 = 0.8095`.
+   - The generated `v8` hard-target/effect-gated path passed but did not beat
+     the simpler rare-aware/default path in this fixed local bundle
+     (`mean_ood_coverage_95 = 0.8272`,
+     `effect_size_shift_coverage_95 = 0.7546`,
+     `combined_shift_coverage_95 = 0.8324`). This reinforces the revised
+     conclusion: the next competitor should not be another mutation of the
+     domain-expert/hard-target family.
+
+   Status: complete for local compact validation.
+
+   External monotone competitor:
+
+   - Implemented `--coefficient-calibration external_monotone` as a separate
+     competitor. It first fits the ordinary conditional/default calibration,
+     then fits a held-out external context-stratified monotone scale wrapper
+     with three ordered effect-size bins and an activation ramp from support
+     excess or large posterior effect signal. The wrapper is serialized in
+     calibration metadata as `external_context_monotone`; failed gates select
+     zero offsets and fall back to the baseline conditional calibration.
+   - Added `--external-monotone-datasets`,
+     `--external-monotone-max-multiplier`,
+     `--external-monotone-min-ood-gain`, and
+     `--external-monotone-min-combined-gain` to the benchmark runner.
+   - Validation passed:
+     `python -m py_compile pyhmsc/neural/conditional_calibration.py examples/run_neural_hmsc_benchmark.py`,
+     `pytest tests/test_neural_hmsc_conditional_calibration.py tests/test_neural_hmsc_lumi_workflow.py -q`
+     (`32 passed`), and `pytest tests/test_neural_hmsc_public_api.py -q`
+     (`19 passed`).
+
+   Three-seed compact local gate:
+
+   - Ran seeds `20260716`, `20260717`, and `20260718` under
+     `/private/tmp/neural_hmsc_external_monotone_3seed_20260716`. Each seed
+     used a fresh scalar checkpoint, then compared `scalar`, `default`, and
+     `external_monotone` on identical fixed SBC/OOD rows. The external wrapper
+     selected nonzero offsets in all three seeds with selected shrinkage `1.0`
+     and selected log offsets `[0.0, 0.0, 0.6931]`.
+   - Mean across the three compact seeds:
+     `external_monotone` achieved `mean_ood_coverage_95 = 0.8636`,
+     `worst_ood_coverage_95 = 0.8191`,
+     `effect_size_shift_coverage_95 = 0.8191`,
+     `combined_shift_coverage_95 = 0.8448`,
+     `in_domain_coverage_95 = 0.9392`, and
+     `rare_prevalence_coverage_95 = 0.8613`.
+   - The same seeds gave `default` mean OOD `0.8277`, worst OOD `0.7420`,
+     effect-size shift `0.7420`, and combined shift `0.8228`; scalar mean OOD
+     was `0.7204` and combined shift `0.6009`. `external_monotone` therefore
+     passed the local gate and outperformed both scalar and default on the
+     target OOD summaries while keeping in-domain and rare-prevalence coverage
+     inside the acceptance window.
+
+   Five-seed LUMI fixed-evaluation gate:
+
+   - Submitted and completed LUMI job `19940765` on `dev-g`; elapsed time was
+     `00:06:08`, exit code `0:0`, workflow wall time `317` seconds.
+   - Results are documented in
+     `docs/neural_hmsc_external_monotone_lumi_comparison_2026-07-16.md`.
+   - The run root was
+     `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_hmsc_external_monotone_fixed_eval_20260716`.
+   - Across five seeds, `external_monotone` selected nonzero offsets in every
+     seed with shrinkage `1.0` and log offsets `[0.0, 0.0, 0.6931]`.
+   - Five-seed means: `external_monotone` achieved mean OOD `0.8596`,
+     worst OOD `0.8120`, effect-size shift `0.8120`, combined shift `0.8472`,
+     in-domain `0.9404`, and rare-prevalence `0.8741`. The corresponding
+     `default` means were mean OOD `0.8241`, worst OOD `0.7356`, effect-size
+     shift `0.7356`, and combined shift `0.8244`. Scalar mean OOD was `0.7249`
+     and combined shift was `0.6063`.
+
+   Status: complete for implementation, three-seed compact local validation,
+   and five-seed LUMI fixed-evaluation validation.
+
+   Promotion decision: do not promote immediately from the compact gate alone.
+   The five-seed result is strong, but the evaluation used compact settings
+   (`sbc_datasets = 8`, `sbc_draws = 64`, `train_datasets = 8`). Before
+   changing the default recommendation, run one production-shape confirmation
+   with larger independent SBC/OOD evaluation counts. The confirmation should
+   keep the same fixed-evaluation discipline and compare `scalar`, `default`,
+   and `external_monotone` on shared seeds.
+
+   Next substep: submit a production-shape LUMI confirmation, preferably with
+   `sbc_datasets >= 32`, `sbc_draws >= 256`, and the same five seeds. Promote
+   `external_monotone` only if it still beats `default` on mean OOD, worst OOD,
+   effect-size shift, and combined shift while preserving in-domain and
+   rare-prevalence acceptance.
+
+2. Mark the current domain-expert/projection family as paused. Keep the code
+   and diagnostics, but do not add another projection or shrinkage heuristic
+   until an external evaluation report shows it is the bottleneck.
+
+3. Implement the conservative external context-stratified monotone calibrator
+   as a new competitor, not as another mutation of the domain-expert selector.
+   Status: complete locally.
+
+4. Run three compact local seeds against the frozen scalar baseline. Only if
+   the candidate wins on mean OOD, worst OOD, and combined-shift while passing
+   in-domain and rare gates should it move to a five-seed LUMI comparison.
+   Status: complete; local gate passed.
+
+5. Run a five-seed LUMI fixed-evaluation comparison for `scalar`, `default`,
+   and `external_monotone`.
+   Status: complete; `external_monotone` passed and beat both baselines.
+
+6. Decide promotion policy for `external_monotone`: either promote it as the
+   default compact competitor now, or run one production-shape confirmation with
+   larger SBC/OOD evaluation counts first.
+   Status: decided; run production-shape confirmation before promotion.
+
+7. Run the production-shape LUMI confirmation with larger SBC/OOD evaluation
+   counts for `scalar`, `default`, and `external_monotone`.
+   Status: complete; LUMI job `19942240` completed with exit code `0:0`.
+   Results are documented in
+   `docs/neural_hmsc_external_monotone_production_confirmation_2026-07-16.md`.
+   `external_monotone` passed all five fixed-evaluation seeds and beat
+   `default` on mean OOD, worst OOD, effect-size shift, and combined shift
+   while preserving in-domain and rare-prevalence acceptance. It qualifies for
+   promotion as the default compact competitor, with the caveat that the
+   combined-shift margin over `default` was small.
+
+8. Promote `external_monotone` in the benchmark workflow default path while
+   keeping `default` available as the legacy conditional baseline for direct
+   comparisons.
+   Status: implemented in `docs/lumi_neural_hmsc_benchmark_sbatch.sh`. The LUMI
+   benchmark workflow now defaults `COEFFICIENT_CALIBRATION` to
+   `external_monotone`, passes the external monotone calibration controls, and
+   includes rare calibration/validation dataset controls. The legacy
+   conditional baseline remains available with
+   `COEFFICIENT_CALIBRATION=conditional`; scalar remains available with
+   `COEFFICIENT_CALIBRATION=scalar`.
+
+9. If the conservative calibrator fails on later larger or real-data
+   confirmation, pivot to
+   representation-level training changes rather than more post-hoc scale
+   tuning.
 
 ## Testing Strategy
 

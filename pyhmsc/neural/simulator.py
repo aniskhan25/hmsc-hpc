@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +83,9 @@ def simulate_fixed_effect_dataset(
     covariate_mean: float = 0.0,
     covariate_scale: float = 1.0,
     beta_mean: float = 0.0,
+    intercept_mean: float | None = None,
+    detection_probability: float = 1.0,
+    sample_fraction: float = 1.0,
     simulation_domain: str = "in_distribution",
     ood_regime: str | None = None,
 ) -> FixedEffectDataset:
@@ -106,6 +109,12 @@ def simulate_fixed_effect_dataset(
         raise ValueError("poisson_eta_clip must be ordered as (low, high)")
     if not np.isfinite(covariate_mean) or not np.isfinite(beta_mean):
         raise ValueError("covariate_mean and beta_mean must be finite")
+    if intercept_mean is not None and not np.isfinite(intercept_mean):
+        raise ValueError("intercept_mean must be finite")
+    if not 0.0 < detection_probability <= 1.0:
+        raise ValueError("detection_probability must be in (0, 1]")
+    if not 0.0 < sample_fraction <= 1.0:
+        raise ValueError("sample_fraction must be in (0, 1]")
     if not np.isfinite(covariate_scale) or covariate_scale <= 0.0:
         raise ValueError("covariate_scale must be positive and finite")
     if simulation_domain not in {"in_distribution", "ood"}:
@@ -125,7 +134,13 @@ def simulate_fixed_effect_dataset(
     X = pd.DataFrame({"x1": x1, "x2": x2}, index=site_names)
     design = np.column_stack([np.ones(n_sites), x1, x2])
 
-    beta = rng.normal(loc=beta_mean, scale=beta_scale, size=(len(covariate_names), n_species))
+    beta = rng.normal(
+        loc=beta_mean, scale=beta_scale, size=(len(covariate_names), n_species)
+    )
+    if intercept_mean is not None:
+        beta[0, :] = rng.normal(
+            loc=float(intercept_mean), scale=beta_scale, size=n_species
+        )
     if beta_zero_probability > 0:
         keep = rng.uniform(size=beta.shape) >= beta_zero_probability
         beta = beta * keep
@@ -136,11 +151,23 @@ def simulate_fixed_effect_dataset(
         Y_values = linear + rng.normal(scale=gaussian_sigma, size=linear.shape)
     elif key == "probit":
         Y_values = rng.binomial(1, ndtr(linear))
+        if detection_probability < 1.0:
+            detected = rng.binomial(
+                1, float(detection_probability), size=Y_values.shape
+            )
+            Y_values = Y_values * detected
     elif key == "poisson":
         low, high = poisson_eta_clip
         Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
+        if detection_probability < 1.0:
+            Y_values = rng.binomial(Y_values, float(detection_probability))
     else:
-        raise ValueError(f"Unsupported fixed-effect benchmark distribution {distribution!r}")
+        raise ValueError(
+            f"Unsupported fixed-effect benchmark distribution {distribution!r}"
+        )
+    if sample_fraction < 1.0 and key in {"probit", "poisson"}:
+        sampled = rng.binomial(1, float(sample_fraction), size=Y_values.shape)
+        Y_values = Y_values * sampled
 
     Y = pd.DataFrame(Y_values, index=site_names, columns=species_names)
     truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
@@ -155,6 +182,9 @@ def simulate_fixed_effect_dataset(
         "beta_scale": float(beta_scale),
         "beta_zero_probability": float(beta_zero_probability),
         "beta_mean": float(beta_mean),
+        "intercept_mean": None if intercept_mean is None else float(intercept_mean),
+        "detection_probability": float(detection_probability),
+        "sample_fraction": float(sample_fraction),
         "covariate_mean": float(covariate_mean),
         "covariate_scale": float(covariate_scale),
         "simulation_domain": simulation_domain,
@@ -163,7 +193,10 @@ def simulate_fixed_effect_dataset(
     if key == "normal":
         metadata["gaussian_sigma"] = float(gaussian_sigma)
     if key == "poisson":
-        metadata["poisson_eta_clip"] = [float(poisson_eta_clip[0]), float(poisson_eta_clip[1])]
+        metadata["poisson_eta_clip"] = [
+            float(poisson_eta_clip[0]),
+            float(poisson_eta_clip[1]),
+        ]
     return FixedEffectDataset(
         Y=Y,
         X=X,
@@ -180,26 +213,46 @@ def simulate_fixed_effect_ood_dataset(
     distribution: str,
     regime: str,
     seed: int,
+    candidate_context: str = "default",
     gaussian_sigma: float = 0.35,
     poisson_eta_clip: tuple[float, float] = (-6.0, 6.0),
 ) -> FixedEffectDataset:
     """Simulate a named parameter shift outside the default training domain."""
     if regime not in FIXED_EFFECT_OOD_REGIMES:
         choices = ", ".join(sorted(FIXED_EFFECT_OOD_REGIMES))
-        raise ValueError(f"unknown fixed-effect OOD regime {regime!r}; expected one of {choices}")
+        raise ValueError(
+            f"unknown fixed-effect OOD regime {regime!r}; expected one of {choices}"
+        )
+    if candidate_context not in {"default", "low_overlap"}:
+        raise ValueError("candidate_context must be 'default' or 'low_overlap'")
     parameters = FIXED_EFFECT_OOD_REGIMES[regime]
-    return simulate_fixed_effect_dataset(
+    covariate_mean = float(parameters.get("covariate_mean", 0.0))
+    covariate_scale = float(parameters.get("covariate_scale", 1.0))
+    beta_scale = float(parameters.get("beta_scale", 0.75))
+    intercept_mean = None
+    if candidate_context == "low_overlap":
+        if regime == "effect_size_shift":
+            covariate_mean = 1.35
+            covariate_scale = 0.85
+        elif regime == "combined_shift":
+            intercept_mean = 0.75
+    dataset = simulate_fixed_effect_dataset(
         n_sites=n_sites,
         n_species=n_species,
         distribution=distribution,
         seed=seed,
-        beta_scale=float(parameters.get("beta_scale", 0.75)),
+        beta_scale=beta_scale,
         gaussian_sigma=gaussian_sigma,
         poisson_eta_clip=poisson_eta_clip,
-        covariate_mean=float(parameters.get("covariate_mean", 0.0)),
-        covariate_scale=float(parameters.get("covariate_scale", 1.0)),
+        covariate_mean=covariate_mean,
+        covariate_scale=covariate_scale,
+        intercept_mean=intercept_mean,
         simulation_domain="ood",
         ood_regime=regime,
+    )
+    return replace(
+        dataset,
+        metadata={**dataset.metadata, "ood_candidate_context": candidate_context},
     )
 
 
@@ -245,10 +298,16 @@ def simulate_spatial_latent_effect_dataset(
     x2 = rng.normal(size=n_sites)
     X = pd.DataFrame({"x1": x1, "x2": x2}, index=site_names)
     design = np.column_stack([np.ones(n_sites), x1, x2])
-    coords = pd.DataFrame({"xcoord": coords_array[:, 0], "ycoord": coords_array[:, 1]}, index=site_names)
+    coords = pd.DataFrame(
+        {"xcoord": coords_array[:, 0], "ycoord": coords_array[:, 1]}, index=site_names
+    )
     group_codes = np.arange(n_sites, dtype=int)
     study_design = pd.DataFrame(
-        {"plot": site_names, "xcoord": coords_array[:, 0], "ycoord": coords_array[:, 1]},
+        {
+            "plot": site_names,
+            "xcoord": coords_array[:, 0],
+            "ycoord": coords_array[:, 1],
+        },
         index=site_names,
     )
 
@@ -275,7 +334,9 @@ def simulate_spatial_latent_effect_dataset(
         low, high = poisson_eta_clip
         Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
     else:
-        raise ValueError(f"Unsupported spatial latent benchmark distribution {distribution!r}")
+        raise ValueError(
+            f"Unsupported spatial latent benchmark distribution {distribution!r}"
+        )
 
     test_mask = np.arange(n_sites) % holdout_stride == 0
     train_mask = ~test_mask
@@ -285,7 +346,9 @@ def simulate_spatial_latent_effect_dataset(
     truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
     truth_eta = pd.DataFrame(eta, index=site_names, columns=factor_names)
     truth_lambda = pd.DataFrame(loadings, index=factor_names, columns=species_names)
-    truth_random_effect = pd.DataFrame(random_effect, index=site_names, columns=species_names)
+    truth_random_effect = pd.DataFrame(
+        random_effect, index=site_names, columns=species_names
+    )
     linear_predictor = pd.DataFrame(linear, index=site_names, columns=species_names)
     metadata = {
         "distribution": key,
@@ -394,13 +457,17 @@ def simulate_iid_latent_effect_dataset(
         low, high = poisson_eta_clip
         Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
     else:
-        raise ValueError(f"Unsupported iid latent benchmark distribution {distribution!r}")
+        raise ValueError(
+            f"Unsupported iid latent benchmark distribution {distribution!r}"
+        )
 
     Y = pd.DataFrame(Y_values, index=site_names, columns=species_names)
     truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
     truth_eta = pd.DataFrame(eta, index=group_names, columns=factor_names)
     truth_lambda = pd.DataFrame(loadings, index=factor_names, columns=species_names)
-    truth_random_effect = pd.DataFrame(random_effect, index=site_names, columns=species_names)
+    truth_random_effect = pd.DataFrame(
+        random_effect, index=site_names, columns=species_names
+    )
     linear_predictor = pd.DataFrame(linear, index=site_names, columns=species_names)
     metadata = {
         "distribution": key,
@@ -419,7 +486,10 @@ def simulate_iid_latent_effect_dataset(
     if key == "normal":
         metadata["gaussian_sigma"] = float(gaussian_sigma)
     if key == "poisson":
-        metadata["poisson_eta_clip"] = [float(poisson_eta_clip[0]), float(poisson_eta_clip[1])]
+        metadata["poisson_eta_clip"] = [
+            float(poisson_eta_clip[0]),
+            float(poisson_eta_clip[1]),
+        ]
     return IidLatentEffectDataset(
         Y=Y,
         X=X,
@@ -480,7 +550,9 @@ def simulate_trait_effect_dataset(
         {"Intercept": np.ones(n_species), "body": body},
         index=species_names,
     )
-    gamma = rng.normal(loc=0.0, scale=gamma_scale, size=(len(covariate_names), len(trait_names)))
+    gamma = rng.normal(
+        loc=0.0, scale=gamma_scale, size=(len(covariate_names), len(trait_names))
+    )
     beta = gamma @ trait_design.to_numpy(dtype=float).T
     if beta_residual_scale > 0:
         beta = beta + rng.normal(scale=beta_residual_scale, size=beta.shape)
@@ -495,7 +567,9 @@ def simulate_trait_effect_dataset(
         low, high = poisson_eta_clip
         Y_values = rng.poisson(np.exp(np.clip(linear, low, high)))
     else:
-        raise ValueError(f"Unsupported trait-effect benchmark distribution {distribution!r}")
+        raise ValueError(
+            f"Unsupported trait-effect benchmark distribution {distribution!r}"
+        )
 
     Y = pd.DataFrame(Y_values, index=site_names, columns=species_names)
     truth_beta = pd.DataFrame(beta, index=covariate_names, columns=species_names)
@@ -516,7 +590,10 @@ def simulate_trait_effect_dataset(
     if key == "normal":
         metadata["gaussian_sigma"] = float(gaussian_sigma)
     if key == "poisson":
-        metadata["poisson_eta_clip"] = [float(poisson_eta_clip[0]), float(poisson_eta_clip[1])]
+        metadata["poisson_eta_clip"] = [
+            float(poisson_eta_clip[0]),
+            float(poisson_eta_clip[1]),
+        ]
     return TraitEffectDataset(
         Y=Y,
         X=X,
@@ -549,7 +626,11 @@ def generate_fixed_effect_corpus(
     response = simulation.get("response", {})
     beta_config = simulation["beta"]
     rng = np.random.default_rng(int(simulation.get("seed", 1)))
-    formula = model["formula"]["X"] if isinstance(model.get("formula"), dict) else model["formula"]
+    formula = (
+        model["formula"]["X"]
+        if isinstance(model.get("formula"), dict)
+        else model["formula"]
+    )
     distribution = _normalize_distribution(model["distribution"])
     chain_count = int(chains if chains is not None else _mcmc_local_chains(config))
 
@@ -598,8 +679,12 @@ def generate_fixed_effect_corpus(
                     "seed": dataset_seed,
                     "n_sites": n_sites,
                     "n_species": n_species,
-                    "compiled": str((dataset_dir / "compiled" / "init.json").relative_to(output)),
-                    "truth_beta": str((dataset_dir / "data" / "truth_beta.csv").relative_to(output)),
+                    "compiled": str(
+                        (dataset_dir / "compiled" / "init.json").relative_to(output)
+                    ),
+                    "truth_beta": str(
+                        (dataset_dir / "data" / "truth_beta.csv").relative_to(output)
+                    ),
                 }
             )
         manifest["splits"][split] = {"count": int(count), "datasets": records}
@@ -644,8 +729,14 @@ def generate_fixed_effect_corpus(
                         "n_species": n_species,
                         "simulation_domain": "ood",
                         "ood_regime": regime,
-                        "compiled": str((dataset_dir / "compiled" / "init.json").relative_to(output)),
-                        "truth_beta": str((dataset_dir / "data" / "truth_beta.csv").relative_to(output)),
+                        "compiled": str(
+                            (dataset_dir / "compiled" / "init.json").relative_to(output)
+                        ),
+                        "truth_beta": str(
+                            (dataset_dir / "data" / "truth_beta.csv").relative_to(
+                                output
+                            )
+                        ),
                     }
                 )
             manifest["ood"][regime] = {"count": ood_count, "datasets": records}
@@ -688,7 +779,9 @@ def _write_fixed_effect_dataset(
     )
 
 
-def _write_model_yaml(path: Path, *, formula: str, distribution: str, chains: int) -> None:
+def _write_model_yaml(
+    path: Path, *, formula: str, distribution: str, chains: int
+) -> None:
     try:
         import yaml  # type: ignore
     except ImportError as exc:
@@ -710,10 +803,17 @@ def _validate_fixed_effect_config(config: dict[str, Any]) -> None:
         raise ValueError(f"Benchmark config missing required fields: {missing}")
     model = config["model"]
     if model.get("model_type") != "fixed_effect":
-        raise ValueError("Milestone 1 generator only supports model_type='fixed_effect'")
+        raise ValueError(
+            "Milestone 1 generator only supports model_type='fixed_effect'"
+        )
     unsupported = model.get("unsupported", {})
-    if not all(bool(unsupported.get(key, False)) for key in ["traits", "phylogeny", "random_levels", "spatial"]):
-        raise ValueError("Fixed-effect benchmark config must explicitly mark advanced features unsupported")
+    if not all(
+        bool(unsupported.get(key, False))
+        for key in ["traits", "phylogeny", "random_levels", "spatial"]
+    ):
+        raise ValueError(
+            "Fixed-effect benchmark config must explicitly mark advanced features unsupported"
+        )
     simulation = config["simulation"]
     for key in ["dimensions", "beta", "corpus_sizes"]:
         if key not in simulation:
@@ -744,7 +844,10 @@ def _mcmc_local_chains(config: dict[str, Any]) -> int:
 
 def _unit_square_grid(n_sites: int, rng: np.random.Generator) -> np.ndarray:
     side = int(np.ceil(np.sqrt(n_sites)))
-    grid = np.array([(x, y) for y in np.linspace(0, 1, side) for x in np.linspace(0, 1, side)], dtype=float)
+    grid = np.array(
+        [(x, y) for y in np.linspace(0, 1, side) for x in np.linspace(0, 1, side)],
+        dtype=float,
+    )
     coords = grid[:n_sites].copy()
     coords += rng.normal(scale=0.01, size=coords.shape)
     return np.clip(coords, 0.0, 1.0)
