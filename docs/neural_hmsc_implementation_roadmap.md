@@ -4420,6 +4420,52 @@ and an explicit decision separate from this roadmap.
     non-ledger fixtures. Do not authorize 501M until the evaluator and exact
     gate report are executable and reviewed; keep 501M-515M sealed.
 
+63. Implement and review the complete fixed 502M qualification evaluator.
+    Status: complete without opening a ledger seed. The evaluator review is
+    `docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md`,
+    SHA-256
+    `b533654c0e0fa7d3ddc4a8aa9046df2ce2fa98d1581d1355035a072dfb854591`.
+    The exact evaluator source boundary is frozen in
+    `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
+    SHA-256
+    `f40421ef0bd0315f02121288cc0e091abecf8fe0e3597baac749e8b86cd43694`.
+
+    Production training now freezes both the generative candidate and a
+    separately trained same-architecture R=0 likelihood ablation from the
+    exact 501M corpus. The fixed-validation evaluator consumes 256 candidate
+    draws per context and computes all preregistered marginal, rank,
+    projection, invariant, association, masked-cell, new-site,
+    posterior-predictive, conditioning, and runtime diagnostics.
+
+    The fixed comparator paths are concrete: exact-model MCMC on the 36-context
+    subset with one same-chain-state continuation, qualified Python-native
+    HMSC-HPC with two iid factors on the same masked contexts, and immutable
+    v0.1 on only the matched 40-by-75 cells. Exact and Python comparator
+    artifacts are retained under complete SHA-256 inventories. The v0.1
+    adapter preserves its frozen `TMG` coefficient naming while using the
+    unchanged numeric simulated second covariate.
+
+    Every operational, marginal, joint, association, predictive,
+    posterior-predictive, and runtime threshold is an explicit named Boolean.
+    Exact candidate, ablation, MCMC, Python-HMSC, and v0.1 seed ownership is
+    validated before gate evaluation. Missing or non-finite comparator
+    evidence cannot become an implicit pass. The report decision is derived
+    only from the conjunction of all gates and never opens 503M-515M.
+
+    Ordinary-seed validation reports 26 passed and one optional test skipped.
+    The complete synthetic 324-cell gate fixture, exact-MCMC continuation
+    adapter, Python-native HMSC-HPC adapter, immutable v0.1 adapter, Python
+    compilation, scheduler syntax, read-only 501M preflight, and missing-token
+    seed refusals passed.
+    No production scheduler job was submitted. The long 501M and 502M
+    schedulers use `standard-g`; these workflows are not short `dev-g` jobs.
+
+    Next, commit and hash-freeze this evaluator implementation. From that clean
+    commit, run the no-seed seal check and read-only production preflight.
+    Then explicitly decide whether to authorize one-shot 501M
+    candidate-plus-ablation training. Keep 502M-515M sealed until the resulting
+    501M freeze and both checkpoint hashes are independently validated.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and

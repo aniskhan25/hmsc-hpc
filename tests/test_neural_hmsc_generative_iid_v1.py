@@ -597,24 +597,98 @@ def test_production_training_refuses_before_seed_generation(
     assert not (tmp_path / "blocked").exists()
 
 
-def test_fixed_validation_remains_inaccessible_even_with_confirmation(
-    monkeypatch,
-):
-    monkeypatch.setenv(
-        production_harness.VALIDATION_CONFIRMATION_ENV,
-        production_harness.VALIDATION_CONFIRMATION,
-    )
-    with pytest.raises(RuntimeError, match="complete comparator evaluator"):
-        production_harness._generate_production_block(
-            production_harness.FIXED_VALIDATION_SEEDS,
-            masked=True,
-        )
-
-
 def test_production_seal_status_keeps_all_nontraining_blocks_closed():
     status = production_harness.production_seal_status()
     assert status["candidate_training_opened"] is False
     assert status["fixed_validation_opened"] is False
-    assert status["fixed_validation_executable"] is False
+    assert status["fixed_validation_executable"] is True
     assert status["reserved_seed_ranges_opened"] is False
     assert status["redesign_seed_ranges_opened"] is False
+
+
+def test_training_preflight_is_read_only_and_keeps_every_block_closed(
+    monkeypatch,
+):
+    monkeypatch.delenv(
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.delenv(
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_require_clean_pinned_source",
+        lambda commit: commit,
+    )
+    result = production_harness.preflight_candidate_training(
+        expected_source_commit="reviewed-clean-commit",
+    )
+    assert result["status"] == "candidate_training_preflight_sealed"
+    assert result["source_commit"] == "reviewed-clean-commit"
+    assert result["candidate_training_context_count"] == 324
+    assert result["training_realization_count"] == 648
+    assert result["candidate_training_opened"] is False
+    assert result["fixed_validation_seed_ranges_opened"] is False
+    assert result["reserved_seed_ranges_opened"] is False
+    assert result["redesign_seed_ranges_opened"] is False
+    assert {
+        item["path"] for item in result["source_files"]
+    } == set(production_harness.PRODUCTION_SOURCE_PATHS)
+
+
+@pytest.mark.parametrize(
+    "confirmation_env",
+    [
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+    ],
+)
+def test_training_preflight_refuses_when_an_opening_token_is_present(
+    monkeypatch,
+    confirmation_env,
+):
+    monkeypatch.delenv(
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.delenv(
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setenv(confirmation_env, "must-not-be-present")
+    monkeypatch.setattr(
+        production_harness,
+        "_require_clean_pinned_source",
+        lambda commit: pytest.fail("preflight inspected source after token"),
+    )
+    with pytest.raises(RuntimeError, match="must remain unset"):
+        production_harness.preflight_candidate_training(
+            expected_source_commit="not-opened",
+        )
+
+
+def test_fixed_validation_refuses_before_any_502m_generation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_generate_fixed_validation_block",
+        lambda: pytest.fail("502M seeds were generated"),
+    )
+    with pytest.raises(RuntimeError, match="OPEN_GENERATIVE_IID_502M"):
+        production_harness.run_fixed_validation(
+            tmp_path / "training",
+            tmp_path / "evaluation",
+            expected_source_commit="not-opened",
+            expected_checkpoint_content_sha256="a" * 64,
+            expected_ablation_content_sha256="b" * 64,
+            release_registry=tmp_path / "release",
+            python="python3",
+        )
+    assert not (tmp_path / "evaluation").exists()

@@ -120,6 +120,7 @@ def run_exact_model_mcmc(
     seed: int,
     target_acceptance: float = 0.85,
     step_size: float = 0.02,
+    initial_state: np.ndarray | None = None,
 ) -> ExactMcmcResult:
     """Run the independent TensorFlow Probability NUTS reference."""
     if chains <= 0 or warmup <= 0 or draws <= 0:
@@ -133,10 +134,23 @@ def run_exact_model_mcmc(
             "tensorflow-probability is required for exact-model MCMC"
         ) from error
 
-    initial = tf.convert_to_tensor(
-        initial_exact_mcmc_state(dataset, chains=chains, seed=seed),
-        dtype=tf.float64,
-    )
+    if initial_state is None:
+        initial_values = initial_exact_mcmc_state(
+            dataset,
+            chains=chains,
+            seed=seed,
+        )
+    else:
+        initial_values = np.asarray(initial_state, dtype=np.float64)
+        expected = (chains, JointStateLayout(*dataset.Y.shape).size)
+        if initial_values.shape != expected:
+            raise ValueError(
+                "continued exact-MCMC initial state must have shape "
+                f"{expected}"
+            )
+        if not np.isfinite(initial_values).all():
+            raise ValueError("continued exact-MCMC initial state is non-finite")
+    initial = tf.convert_to_tensor(initial_values, dtype=tf.float64)
 
     def target_log_prob(state: tf.Tensor) -> tf.Tensor:
         return exact_model_log_joint(state, dataset)
@@ -182,6 +196,9 @@ def run_exact_model_mcmc(
             "warmup": int(warmup),
             "draws": int(draws),
             "target_acceptance": float(target_acceptance),
+            "continued_from_supplied_chain_states": (
+                initial_state is not None
+            ),
             "acceptance_probability_mean": float(np.mean(acceptance)),
             "split_rhat_max": float(np.max(split_rhat)),
             "bulk_ess_min": float(np.min(bulk_ess)),

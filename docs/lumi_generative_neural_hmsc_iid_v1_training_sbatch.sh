@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --job-name=gen-neural-iid-v1-train
 #SBATCH --account=project_462000131
-#SBATCH --partition=dev-g
+#SBATCH --partition=standard-g
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=7
 #SBATCH --gpus-per-node=1
@@ -79,6 +79,14 @@ echo "Fixed schedule: 200 epochs, batch size 4, model seed 501900001"
 echo "Sealed blocks: 502000001-505000324 and 511000001-515000324"
 "${PYTHON}" -c \
   "import tensorflow as tf; print('TensorFlow:', tf.__version__); print('GPUs:', tf.config.list_physical_devices('GPU'))"
+
+SAVED_CONFIRMATION="${OPEN_GENERATIVE_IID_501M_TRAINING}"
+unset OPEN_GENERATIVE_IID_501M_TRAINING
+"${PYTHON}" examples/run_generative_neural_hmsc_iid_v1_production.py \
+  preflight-training \
+  --expected-source-commit "${EXPECTED_SOURCE_COMMIT}" \
+  > "${RUN_ROOT}.preflight.json"
+export OPEN_GENERATIVE_IID_501M_TRAINING="${SAVED_CONFIRMATION}"
 
 SECONDS=0
 "${PYTHON}" examples/run_generative_neural_hmsc_iid_v1_production.py \

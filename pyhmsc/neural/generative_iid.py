@@ -1026,6 +1026,166 @@ def train_generative_iid_model(
     return GenerativeTrainingHistory(losses, iwelbos, gradient_norms)
 
 
+def importance_weighted_no_latent_ablation_loss(
+    posterior: JointLowRankPosterior,
+    inputs: dict[str, tf.Tensor | np.ndarray],
+    *,
+    draws: int = 8,
+    kl_weight: float = 1.0,
+    seed: int | None = None,
+) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
+    """IWAE objective with Eta@Lambda removed from the response likelihood.
+
+    The encoder and posterior head are unchanged. Eta and Lambda remain
+    prior-regularized nuisance outputs, but cannot explain Y. This is the
+    preregistered R=0 architecture ablation rather than a fitted per-species
+    generalized linear model.
+    """
+    if draws <= 0:
+        raise ValueError("draws must be positive")
+    if not 0.0 < kl_weight <= 1.0:
+        raise ValueError("kl_weight must be in (0, 1]")
+    samples = posterior.sample(draws, seed=seed)
+    likelihood_state = zero_latent_state_draws(samples, posterior.layout)
+    log_likelihood = probit_log_likelihood(
+        likelihood_state,
+        layout=posterior.layout,
+        X=tf.convert_to_tensor(inputs["X"], dtype=tf.float32),
+        Y=tf.convert_to_tensor(inputs["Y"], dtype=tf.float32),
+        response_mask=tf.convert_to_tensor(
+            inputs["response_mask"], dtype=tf.bool
+        ),
+        site_mask=posterior.site_mask,
+        species_mask=posterior.species_mask,
+    )
+    log_prior = generative_log_prior(
+        samples,
+        layout=posterior.layout,
+        site_mask=posterior.site_mask,
+        species_mask=posterior.species_mask,
+    )
+    log_q = posterior.log_prob(samples)
+    weights = log_likelihood + float(kl_weight) * (log_prior - log_q)
+    iwelbo_by_batch = tf.reduce_logsumexp(weights, axis=0) - tf.math.log(
+        tf.cast(draws, weights.dtype)
+    )
+    loss = -tf.reduce_mean(iwelbo_by_batch)
+    return loss, {
+        "iwelbo": tf.reduce_mean(iwelbo_by_batch),
+        "log_likelihood": tf.reduce_mean(log_likelihood),
+        "log_prior": tf.reduce_mean(log_prior),
+        "log_q": tf.reduce_mean(log_q),
+    }
+
+
+def train_generative_iid_no_latent_ablation(
+    model: GenerativeIidPosteriorModel,
+    batch: GenerativeIidBatch,
+    *,
+    epochs: int = 200,
+    batch_size: int = 4,
+    learning_rate: float = 3e-4,
+    final_learning_rate: float = 3e-5,
+    weight_decay: float = 1e-5,
+    gradient_clip_norm: float = 5.0,
+    model_seed: int = 501900001,
+    importance_draws: int = 8,
+) -> GenerativeTrainingHistory:
+    """Train the frozen same-architecture R=0 likelihood ablation."""
+    if epochs <= 0 or batch_size <= 0:
+        raise ValueError("epochs and batch_size must be positive")
+    tf.keras.utils.set_random_seed(int(model_seed))
+    steps_per_epoch = math.ceil(len(batch.metadata) / batch_size)
+    schedule = tf.keras.optimizers.schedules.CosineDecay(
+        initial_learning_rate=learning_rate,
+        decay_steps=max(epochs * steps_per_epoch, 1),
+        alpha=final_learning_rate / learning_rate,
+    )
+    optimizer = tf.keras.optimizers.AdamW(
+        learning_rate=schedule,
+        weight_decay=weight_decay,
+    )
+    rng = np.random.default_rng(model_seed)
+    losses: list[float] = []
+    iwelbos: list[float] = []
+    gradient_norms: list[float] = []
+    for epoch in range(epochs):
+        order = rng.permutation(len(batch.metadata))
+        epoch_loss: list[float] = []
+        epoch_iwelbo: list[float] = []
+        epoch_norm: list[float] = []
+        kl_weight = min(1.0, 0.25 + 0.75 * epoch / 19.0)
+        for start in range(0, len(order), batch_size):
+            indices = order[start : start + batch_size]
+            inputs = {
+                name: value[indices]
+                for name, value in batch.model_inputs().items()
+            }
+            with tf.GradientTape() as tape:
+                posterior = model(inputs, training=True)
+                loss, diagnostics = (
+                    importance_weighted_no_latent_ablation_loss(
+                        posterior,
+                        inputs,
+                        draws=importance_draws,
+                        kl_weight=kl_weight,
+                    )
+                )
+            gradients = tape.gradient(loss, model.trainable_variables)
+            finite = [
+                gradient for gradient in gradients if gradient is not None
+            ]
+            if not finite or not all(
+                bool(
+                    tf.reduce_all(
+                        tf.math.is_finite(tf.convert_to_tensor(gradient))
+                    )
+                )
+                for gradient in finite
+            ):
+                raise FloatingPointError(
+                    "non-finite no-latent ablation gradient"
+                )
+            clipped, norm = tf.clip_by_global_norm(
+                finite, gradient_clip_norm
+            )
+            variables = [
+                variable
+                for gradient, variable in zip(
+                    gradients, model.trainable_variables
+                )
+                if gradient is not None
+            ]
+            optimizer.apply_gradients(zip(clipped, variables))
+            if not bool(tf.math.is_finite(loss)):
+                raise FloatingPointError(
+                    "non-finite no-latent ablation loss"
+                )
+            epoch_loss.append(float(loss.numpy()))
+            epoch_iwelbo.append(float(diagnostics["iwelbo"].numpy()))
+            epoch_norm.append(float(norm.numpy()))
+        losses.append(float(np.mean(epoch_loss)))
+        iwelbos.append(float(np.mean(epoch_iwelbo)))
+        gradient_norms.append(float(np.mean(epoch_norm)))
+    return GenerativeTrainingHistory(losses, iwelbos, gradient_norms)
+
+
+def zero_latent_state_draws(
+    state: tf.Tensor | np.ndarray,
+    layout: JointStateLayout,
+) -> tf.Tensor:
+    """Return state draws with Eta and Lambda coordinates fixed to zero."""
+    values = tf.convert_to_tensor(state)
+    before_eta = values[..., : layout.eta_slice.start]
+    eta = tf.zeros_like(values[..., layout.eta_slice])
+    between = values[
+        ..., layout.eta_slice.stop : layout.lambda_slice.start
+    ]
+    loadings = tf.zeros_like(values[..., layout.lambda_slice])
+    after = values[..., layout.lambda_slice.stop :]
+    return tf.concat([before_eta, eta, between, loadings, after], axis=-1)
+
+
 def state_vector_from_truth(
     batch: GenerativeIidBatch, layout: JointStateLayout
 ) -> tf.Tensor:

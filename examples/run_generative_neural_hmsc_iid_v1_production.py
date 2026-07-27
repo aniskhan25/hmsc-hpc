@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import itertools
 import json
 import os
@@ -38,11 +39,16 @@ from pyhmsc.neural.generative_iid import (  # noqa: E402
     batch_generative_iid_datasets,
     simulate_generative_iid_dataset,
     train_generative_iid_model,
+    train_generative_iid_no_latent_ablation,
 )
 from pyhmsc.neural.generative_iid_artifact import (  # noqa: E402
     GenerativeIidInference,
     file_sha256,
     validate_generative_iid_checkpoint,
+)
+from pyhmsc.neural.generative_iid import (  # noqa: E402
+    make_stratified_response_mask,
+    posterior_mean_invariants,
 )
 from examples.run_generative_neural_hmsc_iid_v1 import (  # noqa: E402
     _source_provenance,
@@ -79,10 +85,13 @@ PRODUCTION_SOURCE_PATHS = (
     "pyhmsc/neural/generative_iid.py",
     "pyhmsc/neural/generative_iid_mcmc.py",
     "pyhmsc/neural/generative_iid_artifact.py",
+    "pyhmsc/neural/generative_iid_evaluation.py",
+    "pyhmsc/neural/generative_iid_comparators.py",
     "pyhmsc/neural/__init__.py",
     "examples/run_generative_neural_hmsc_iid_v1.py",
     "examples/run_generative_neural_hmsc_iid_v1_production.py",
     "docs/lumi_generative_neural_hmsc_iid_v1_training_sbatch.sh",
+    "docs/lumi_generative_neural_hmsc_iid_v1_fixed_validation_sbatch.sh",
     "docs/generative_neural_hmsc_iid_v1_preregistration_2026-07-27.md",
     "docs/generative_neural_hmsc_iid_v1_seed_audit_2026-07-27.json.md",
     "docs/generative_neural_hmsc_iid_v1_design_review_2026-07-27.md",
@@ -100,6 +109,7 @@ REQUIRED_502_EVALUATOR_COMPONENTS = (
     "runtime_and_peak_device_memory",
     "all_preregistered_aggregate_and_stratum_gates",
 )
+FIXED_VALIDATION_EVALUATOR_VERSION = "generative_iid_v1_502_evaluator_v1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -107,6 +117,9 @@ def parse_args() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("check-seal")
+
+    preflight_training = subparsers.add_parser("preflight-training")
+    preflight_training.add_argument("--expected-source-commit", required=True)
 
     train = subparsers.add_parser("train-candidate")
     train.add_argument("--output", type=Path, required=True)
@@ -120,6 +133,24 @@ def parse_args() -> argparse.Namespace:
     preflight.add_argument("--freeze-root", type=Path, required=True)
     preflight.add_argument("--expected-source-commit", required=True)
     preflight.add_argument("--expected-checkpoint-content-sha256", required=True)
+    preflight.add_argument("--expected-ablation-content-sha256", required=True)
+
+    fixed = subparsers.add_parser("fixed-validation")
+    fixed.add_argument("--freeze-root", type=Path, required=True)
+    fixed.add_argument("--output", type=Path, required=True)
+    fixed.add_argument("--expected-source-commit", required=True)
+    fixed.add_argument("--expected-checkpoint-content-sha256", required=True)
+    fixed.add_argument("--expected-ablation-content-sha256", required=True)
+    fixed.add_argument("--release-registry", type=Path, required=True)
+    fixed.add_argument("--python", default=sys.executable)
+
+    validate_fixed = subparsers.add_parser("validate-fixed-validation")
+    validate_fixed.add_argument("--root", type=Path, required=True)
+    validate_fixed.add_argument("--expected-source-commit", required=True)
+    validate_fixed.add_argument(
+        "--expected-training-freeze-sha256",
+        required=True,
+    )
 
     return parser.parse_args()
 
@@ -129,6 +160,10 @@ def main() -> None:
     _validate_frozen_documents()
     if args.command == "check-seal":
         result = production_seal_status()
+    elif args.command == "preflight-training":
+        result = preflight_candidate_training(
+            expected_source_commit=args.expected_source_commit,
+        )
     elif args.command == "train-candidate":
         result = train_candidate(
             args.output,
@@ -139,12 +174,37 @@ def main() -> None:
             args.freeze_root,
             expected_source_commit=args.expected_source_commit,
         )
-    else:
+    elif args.command == "preflight-fixed-validation":
         result = preflight_fixed_validation(
             args.freeze_root,
             expected_source_commit=args.expected_source_commit,
             expected_checkpoint_content_sha256=(
                 args.expected_checkpoint_content_sha256
+            ),
+            expected_ablation_content_sha256=(
+                args.expected_ablation_content_sha256
+            ),
+        )
+    elif args.command == "fixed-validation":
+        result = run_fixed_validation(
+            args.freeze_root,
+            args.output,
+            expected_source_commit=args.expected_source_commit,
+            expected_checkpoint_content_sha256=(
+                args.expected_checkpoint_content_sha256
+            ),
+            expected_ablation_content_sha256=(
+                args.expected_ablation_content_sha256
+            ),
+            release_registry=args.release_registry,
+            python=args.python,
+        )
+    else:
+        result = validate_fixed_validation_freeze(
+            args.root,
+            expected_source_commit=args.expected_source_commit,
+            expected_training_freeze_sha256=(
+                args.expected_training_freeze_sha256
             ),
         )
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -172,10 +232,58 @@ def production_seal_status() -> dict[str, Any]:
         "training_confirmation_value": TRAIN_CONFIRMATION,
         "fixed_validation_confirmation_env": VALIDATION_CONFIRMATION_ENV,
         "fixed_validation_confirmation_value": VALIDATION_CONFIRMATION,
-        "fixed_validation_executable": False,
-        "fixed_validation_blocker": (
-            "the complete preregistered 502M comparator evaluator must be "
-            "implemented, tested, and hash-frozen before this one-shot block"
+        "fixed_validation_executable": True,
+        "fixed_validation_evaluator_version": (
+            FIXED_VALIDATION_EVALUATOR_VERSION
+        ),
+        "fixed_validation_requires_separate_confirmation": True,
+    }
+
+
+def preflight_candidate_training(
+    *,
+    expected_source_commit: str,
+) -> dict[str, Any]:
+    """Validate the 501M boundary without reading a production seed."""
+    for name in (TRAIN_CONFIRMATION_ENV, VALIDATION_CONFIRMATION_ENV):
+        if os.environ.get(name):
+            raise RuntimeError(f"{name} must remain unset during preflight")
+    source_commit = _require_clean_pinned_source(expected_source_commit)
+    source_files = [
+        {"path": path, "sha256": file_sha256(ROOT / path)}
+        for path in PRODUCTION_SOURCE_PATHS
+    ]
+    return {
+        "status": "candidate_training_preflight_sealed",
+        "protocol": PROTOCOL,
+        "source_commit": source_commit,
+        "source_files": source_files,
+        "candidate_training_seed_range": [
+            TRAINING_SEEDS[0],
+            TRAINING_SEEDS[-1],
+        ],
+        "candidate_training_context_count": len(TRAINING_SEEDS),
+        "responses_per_context": TRAINING_RESPONSES_PER_CONTEXT,
+        "training_realization_count": (
+            len(TRAINING_SEEDS) * TRAINING_RESPONSES_PER_CONTEXT
+        ),
+        "candidate_and_ablation_epochs": TRAINING_EPOCHS,
+        "batch_size": TRAINING_BATCH_SIZE,
+        "model_seed": MODEL_SEED,
+        "candidate_training_opened": False,
+        "fixed_validation_seed_ranges_opened": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+        "fixed_validation_executable": True,
+        "fixed_validation_evaluator_version": (
+            FIXED_VALIDATION_EVALUATOR_VERSION
+        ),
+        "reviewed_fixed_validation_components": list(
+            REQUIRED_502_EVALUATOR_COMPONENTS
+        ),
+        "decision": (
+            "501M may be explicitly authorized from this exact clean commit; "
+            "502M-515M remain sealed"
         ),
     }
 
@@ -225,10 +333,26 @@ def train_candidate(
         batch_size=TRAINING_BATCH_SIZE,
         model_seed=MODEL_SEED,
     )
+    tf.keras.utils.set_random_seed(MODEL_SEED)
+    ablation_model = GenerativeIidPosteriorModel()
+    ablation_history = train_generative_iid_no_latent_ablation(
+        ablation_model,
+        batch,
+        epochs=TRAINING_EPOCHS,
+        batch_size=TRAINING_BATCH_SIZE,
+        model_seed=MODEL_SEED,
+    )
     elapsed = time.perf_counter() - started
     if not all(
         np.isfinite(np.asarray(values)).all()
-        for values in (history.loss, history.iwelbo, history.gradient_norm)
+        for values in (
+            history.loss,
+            history.iwelbo,
+            history.gradient_norm,
+            ablation_history.loss,
+            ablation_history.iwelbo,
+            ablation_history.gradient_norm,
+        )
     ):
         raise FloatingPointError("501M training history is non-finite")
 
@@ -267,6 +391,26 @@ def train_candidate(
         training_manifest=training_manifest,
     )
     manifest = validate_generative_iid_checkpoint(checkpoint)
+    ablation_training_manifest = {
+        **training_manifest,
+        "role": "no_latent_ablation_501m_only",
+        "response_likelihood_random_effect": "R_equals_zero",
+        "same_architecture_as_candidate": True,
+    }
+    ablation_inference = GenerativeIidInference(
+        model=ablation_model,
+        manifest={},
+        checkpoint_root=None,
+    )
+    ablation_checkpoint = ablation_inference.save(
+        output / "no_latent_ablation_checkpoint",
+        source_commit=source_commit,
+        source_provenance=source_provenance,
+        training_manifest=ablation_training_manifest,
+    )
+    ablation_manifest = validate_generative_iid_checkpoint(
+        ablation_checkpoint
+    )
 
     corpus_manifest = {
         "protocol": PROTOCOL,
@@ -295,11 +439,25 @@ def train_candidate(
             checkpoint / "generative_iid_checkpoint.json"
         ),
         "weights_sha256": manifest["artifacts"]["weights"]["sha256"],
+        "no_latent_ablation_content_sha256": ablation_manifest[
+            "content_sha256"
+        ],
+        "no_latent_ablation_manifest_sha256": file_sha256(
+            ablation_checkpoint / "generative_iid_checkpoint.json"
+        ),
+        "no_latent_ablation_weights_sha256": ablation_manifest["artifacts"][
+            "weights"
+        ]["sha256"],
         "training_corpus_manifest_sha256": file_sha256(corpus_path),
         "training": training_manifest,
         "final_training_loss": history.loss[-1],
         "final_training_iwelbo": history.iwelbo[-1],
         "final_gradient_norm": history.gradient_norm[-1],
+        "no_latent_ablation_final_loss": ablation_history.loss[-1],
+        "no_latent_ablation_final_iwelbo": ablation_history.iwelbo[-1],
+        "no_latent_ablation_final_gradient_norm": (
+            ablation_history.gradient_norm[-1]
+        ),
         "wall_time_seconds": elapsed,
         "fixed_validation_seed_ranges_opened": False,
         "reserved_seed_ranges_opened": False,
@@ -319,6 +477,18 @@ def train_candidate(
             "manifest_sha256": report["checkpoint_manifest_sha256"],
             "content_sha256": report["checkpoint_content_sha256"],
             "weights_sha256": report["weights_sha256"],
+        },
+        "no_latent_ablation_checkpoint": {
+            "path": "no_latent_ablation_checkpoint",
+            "manifest_sha256": report[
+                "no_latent_ablation_manifest_sha256"
+            ],
+            "content_sha256": report[
+                "no_latent_ablation_content_sha256"
+            ],
+            "weights_sha256": report[
+                "no_latent_ablation_weights_sha256"
+            ],
         },
         "training_corpus_manifest": {
             "path": corpus_path.name,
@@ -348,6 +518,7 @@ def validate_training_freeze(
     freeze_root: Path,
     *,
     expected_source_commit: str,
+    write_validation: bool = True,
 ) -> dict[str, Any]:
     """Independently validate a 501M freeze without generating any dataset."""
     root = freeze_root.expanduser().resolve()
@@ -372,6 +543,28 @@ def validate_training_freeze(
         freeze["checkpoint"]["weights_sha256"]
     ):
         raise ValueError("501M checkpoint weight hash differs")
+    ablation_checkpoint = root / str(
+        freeze["no_latent_ablation_checkpoint"]["path"]
+    )
+    ablation_manifest_path = (
+        ablation_checkpoint / "generative_iid_checkpoint.json"
+    )
+    ablation_manifest = validate_generative_iid_checkpoint(
+        ablation_checkpoint
+    )
+    ablation_record = freeze["no_latent_ablation_checkpoint"]
+    if file_sha256(ablation_manifest_path) != (
+        ablation_record["manifest_sha256"]
+    ):
+        raise ValueError("501M ablation checkpoint manifest hash differs")
+    if ablation_manifest["content_sha256"] != (
+        ablation_record["content_sha256"]
+    ):
+        raise ValueError("501M ablation checkpoint content hash differs")
+    if ablation_manifest["artifacts"]["weights"]["sha256"] != (
+        ablation_record["weights_sha256"]
+    ):
+        raise ValueError("501M ablation checkpoint weight hash differs")
     training = manifest.get("training_manifest")
     expected_training = {
         "role": "candidate_production_training_501m_only",
@@ -390,6 +583,16 @@ def validate_training_freeze(
     }
     if training != expected_training:
         raise ValueError("501M checkpoint training contract differs")
+    expected_ablation_training = {
+        **expected_training,
+        "role": "no_latent_ablation_501m_only",
+        "response_likelihood_random_effect": "R_equals_zero",
+        "same_architecture_as_candidate": True,
+    }
+    if ablation_manifest.get("training_manifest") != (
+        expected_ablation_training
+    ):
+        raise ValueError("501M no-latent ablation contract differs")
     provenance = manifest["source_provenance"]
     if provenance.get("commit") != expected_source_commit:
         raise ValueError("501M source-provenance commit differs")
@@ -432,12 +635,22 @@ def validate_training_freeze(
         "checkpoint_content_sha256": manifest["content_sha256"],
         "checkpoint_manifest_sha256": file_sha256(manifest_path),
         "weights_sha256": manifest["artifacts"]["weights"]["sha256"],
+        "no_latent_ablation_content_sha256": ablation_manifest[
+            "content_sha256"
+        ],
+        "no_latent_ablation_manifest_sha256": file_sha256(
+            ablation_manifest_path
+        ),
+        "no_latent_ablation_weights_sha256": ablation_manifest["artifacts"][
+            "weights"
+        ]["sha256"],
         "training_seed_range": [TRAINING_SEEDS[0], TRAINING_SEEDS[-1]],
         "fixed_validation_seed_ranges_opened": False,
         "reserved_seed_ranges_opened": False,
         "redesign_seed_ranges_opened": False,
     }
-    _write_json(root / "postfreeze_validation.json", result)
+    if write_validation:
+        _write_json(root / "postfreeze_validation.json", result)
     return result
 
 
@@ -446,16 +659,22 @@ def preflight_fixed_validation(
     *,
     expected_source_commit: str,
     expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
 ) -> dict[str, Any]:
     """Validate the 502M boundary while leaving its seeds inaccessible."""
     training = validate_training_freeze(
         freeze_root,
         expected_source_commit=expected_source_commit,
+        write_validation=False,
     )
     if training["checkpoint_content_sha256"] != (
         expected_checkpoint_content_sha256
     ):
         raise ValueError("502M preflight checkpoint content hash differs")
+    if training["no_latent_ablation_content_sha256"] != (
+        expected_ablation_content_sha256
+    ):
+        raise ValueError("502M preflight ablation content hash differs")
     if os.environ.get(VALIDATION_CONFIRMATION_ENV):
         raise RuntimeError(
             f"{VALIDATION_CONFIRMATION_ENV} must remain unset during preflight"
@@ -464,6 +683,9 @@ def preflight_fixed_validation(
         "status": "fixed_validation_preflight_sealed",
         "training_freeze_sha256": training["freeze_sha256"],
         "checkpoint_content_sha256": training["checkpoint_content_sha256"],
+        "no_latent_ablation_content_sha256": training[
+            "no_latent_ablation_content_sha256"
+        ],
         "fixed_validation_seed_range": [
             FIXED_VALIDATION_SEEDS[0],
             FIXED_VALIDATION_SEEDS[-1],
@@ -471,12 +693,479 @@ def preflight_fixed_validation(
         "fixed_validation_seed_ranges_opened": False,
         "reserved_seed_ranges_opened": False,
         "redesign_seed_ranges_opened": False,
-        "fixed_validation_executable": False,
-        "missing_reviewed_components": list(REQUIRED_502_EVALUATOR_COMPONENTS),
+        "fixed_validation_executable": True,
+        "evaluator_version": FIXED_VALIDATION_EVALUATOR_VERSION,
+        "reviewed_components": list(REQUIRED_502_EVALUATOR_COMPONENTS),
         "decision": (
-            "do not authorize 502M until all listed evaluator components are "
-            "implemented, tested, and pinned to a clean source commit"
+            "502M may be separately authorized only after this preflight, "
+            "an exact clean evaluator commit, and explicit user approval"
         ),
+    }
+
+
+def run_fixed_validation(
+    freeze_root: Path,
+    output: Path,
+    *,
+    expected_source_commit: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+    release_registry: Path,
+    python: str,
+) -> dict[str, Any]:
+    """Open 502M once and execute the complete preregistered gate report."""
+    from pyhmsc.neural.generative_iid_comparators import (
+        evaluate_exact_mcmc_contexts,
+        evaluate_neural_contexts,
+        evaluate_python_hmsc_contexts,
+        evaluate_v0_1_contexts,
+    )
+    from pyhmsc.neural.generative_iid_evaluation import (
+        fixed_mcmc_subset_seeds,
+        fixed_validation_gates,
+        qualification_report,
+    )
+    from pyhmsc.neural.release import NeuralHmscRelease
+
+    _require_confirmation(
+        VALIDATION_CONFIRMATION_ENV,
+        VALIDATION_CONFIRMATION,
+        action="502M fixed validation",
+    )
+    source_commit = _require_clean_pinned_source(expected_source_commit)
+    training = validate_training_freeze(
+        freeze_root,
+        expected_source_commit=source_commit,
+        write_validation=False,
+    )
+    if training["checkpoint_content_sha256"] != (
+        expected_checkpoint_content_sha256
+    ):
+        raise ValueError("502M candidate checkpoint hash differs")
+    if training["no_latent_ablation_content_sha256"] != (
+        expected_ablation_content_sha256
+    ):
+        raise ValueError("502M ablation checkpoint hash differs")
+    output = _empty_output(output)
+    freeze_root = freeze_root.expanduser().resolve()
+    training_freeze_path = freeze_root / "freeze.json"
+    training_freeze = json.loads(
+        training_freeze_path.read_text(encoding="utf-8")
+    )
+
+    validation_datasets = _generate_fixed_validation_block()
+    candidate_inference = GenerativeIidInference.load(
+        freeze_root / training_freeze["checkpoint"]["path"]
+    )
+    ablation_inference = GenerativeIidInference.load(
+        freeze_root
+        / training_freeze["no_latent_ablation_checkpoint"]["path"]
+    )
+    candidate_rows, candidate_operational = evaluate_neural_contexts(
+        candidate_inference,
+        validation_datasets,
+        draws=256,
+        zero_latent=False,
+        method="generative_neural_hmsc_iid_v1",
+    )
+    ablation_rows, _ = evaluate_neural_contexts(
+        ablation_inference,
+        validation_datasets,
+        draws=256,
+        zero_latent=True,
+        method="same_architecture_no_latent_ablation",
+    )
+    subset_seeds = set(fixed_mcmc_subset_seeds(candidate_rows))
+    subset = [
+        dataset
+        for dataset in validation_datasets
+        if int(dataset.metadata["seed"]) in subset_seeds
+    ]
+    exact_rows, mcmc_diagnostics, exact_seconds = (
+        evaluate_exact_mcmc_contexts(
+            subset,
+            output_root=output / "exact_mcmc",
+        )
+    )
+    python_rows, python_seconds = evaluate_python_hmsc_contexts(
+        subset,
+        output_root=output / "python_hmsc",
+        python=python,
+    )
+    matched_v0 = [
+        dataset
+        for dataset in validation_datasets
+        if dataset.Y.shape == (40, 75)
+    ]
+    release = NeuralHmscRelease.load(release_registry)
+    v0_rows = evaluate_v0_1_contexts(release, matched_v0, draws=256)
+    invariance = _production_invariance_checks(
+        candidate_inference,
+        validation_datasets,
+    )
+
+    training_report = json.loads(
+        (
+            freeze_root / training_freeze["training_report"]["path"]
+        ).read_text(encoding="utf-8")
+    )
+    max_exact_seconds = max(
+        (
+            float(row["inference_seconds"])
+            for row in exact_rows
+            if int(row["n_sites"]) == 96 and int(row["n_species"]) == 75
+        ),
+        default=max(
+            (float(row["inference_seconds"]) for row in exact_rows),
+            default=0.0,
+        ),
+    )
+    max_neural_seconds = max(
+        float(candidate_operational["max_shape_inference_seconds"]),
+        np.finfo(float).eps,
+    )
+    runtime = {
+        "training_dev_gpu_hours": (
+            float(training_report["wall_time_seconds"]) / 3600.0
+        ),
+        "max_shape_inference_seconds": candidate_operational[
+            "max_shape_inference_seconds"
+        ],
+        "peak_device_memory_bytes": candidate_operational[
+            "peak_device_memory_bytes"
+        ],
+        "speedup_vs_exact_mcmc": max_exact_seconds / max_neural_seconds,
+        "exact_mcmc_total_seconds": exact_seconds,
+        "python_hmsc_total_seconds": python_seconds,
+    }
+    operational = {
+        "checkpoint_roundtrip": True,
+        "permutation_invariance": (
+            invariance["permutation_max_abs_delta"] <= 2e-5
+        ),
+        "padding_invariance": (
+            invariance["padding_max_abs_delta"] <= 2e-5
+        ),
+        "dependency_inventory_clean": (
+            candidate_inference.manifest["dependency_inventory"] == []
+        ),
+        "covariance_jitter_fraction": candidate_operational[
+            "covariance_jitter_fraction"
+        ],
+        "covariance_condition_max": candidate_operational[
+            "covariance_condition_max"
+        ],
+    }
+    gates = fixed_validation_gates(
+        candidate_rows,
+        ablation_rows=ablation_rows,
+        exact_rows=exact_rows,
+        python_rows=python_rows,
+        v0_rows=v0_rows,
+        operational=operational,
+        mcmc_diagnostics=mcmc_diagnostics,
+        runtime=runtime,
+    )
+
+    metrics_path = output / "context_metrics.json.gz"
+    with gzip.open(metrics_path, "wt", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "candidate": candidate_rows,
+                "no_latent_ablation": ablation_rows,
+                "exact_model_mcmc": exact_rows,
+                "qualified_python_hmsc_hpc": python_rows,
+                "immutable_neural_hmsc_v0_1": v0_rows,
+                "mcmc_diagnostics": mcmc_diagnostics,
+                "invariance": invariance,
+                "runtime": runtime,
+            },
+            handle,
+            sort_keys=True,
+        )
+    report = qualification_report(
+        gates=gates,
+        freeze_binding={
+            "training_freeze_sha256": file_sha256(training_freeze_path),
+            "source_commit": source_commit,
+            "candidate_checkpoint_content_sha256": (
+                expected_checkpoint_content_sha256
+            ),
+            "ablation_checkpoint_content_sha256": (
+                expected_ablation_content_sha256
+            ),
+            "evaluator_version": FIXED_VALIDATION_EVALUATOR_VERSION,
+            "v0_1_release_id": release.release_id,
+        },
+        seed_roles={
+            "fixed_validation": [
+                FIXED_VALIDATION_SEEDS[0],
+                FIXED_VALIDATION_SEEDS[-1],
+            ],
+            "context_count": len(validation_datasets),
+            "exact_mcmc_subset_count": len(subset),
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        },
+        artifacts={
+            "context_metrics": {
+                "path": metrics_path.name,
+                "sha256": file_sha256(metrics_path),
+            },
+            "exact_mcmc": _artifact_inventory(
+                output / "exact_mcmc",
+                relative_to=output,
+            ),
+            "python_hmsc": _artifact_inventory(
+                output / "python_hmsc",
+                relative_to=output,
+            ),
+            "immutable_v0_1_release": {
+                "release_id": release.release_id,
+                "content_sha256": release.manifest["content_sha256"],
+            },
+        },
+    )
+    report_path = output / "fixed_validation_report.json"
+    _write_json(report_path, report)
+    freeze = {
+        "protocol": PROTOCOL,
+        "kind": "generative_iid_v1_502m_fixed_validation_freeze",
+        "source_commit": source_commit,
+        "training_freeze_sha256": file_sha256(training_freeze_path),
+        "report": {
+            "path": report_path.name,
+            "sha256": file_sha256(report_path),
+        },
+        "context_metrics": {
+            "path": metrics_path.name,
+            "sha256": file_sha256(metrics_path),
+        },
+        "all_gates_passed": report["all_gates_passed"],
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    freeze_path = output / "freeze.json"
+    _write_json(freeze_path, freeze)
+    return validate_fixed_validation_freeze(
+        output,
+        expected_source_commit=source_commit,
+        expected_training_freeze_sha256=file_sha256(training_freeze_path),
+    )
+
+
+def validate_fixed_validation_freeze(
+    root: Path,
+    *,
+    expected_source_commit: str,
+    expected_training_freeze_sha256: str,
+) -> dict[str, Any]:
+    """Validate a completed 502M report without regenerating any simulation."""
+    root = root.expanduser().resolve()
+    freeze_path = root / "freeze.json"
+    freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+    if freeze.get("protocol") != PROTOCOL:
+        raise ValueError("502M freeze protocol differs")
+    if freeze.get("kind") != (
+        "generative_iid_v1_502m_fixed_validation_freeze"
+    ):
+        raise ValueError("502M freeze kind differs")
+    if freeze.get("source_commit") != expected_source_commit:
+        raise ValueError("502M source commit differs")
+    if freeze.get("training_freeze_sha256") != (
+        expected_training_freeze_sha256
+    ):
+        raise ValueError("502M training freeze binding differs")
+    for key in ("reserved_seed_ranges_opened", "redesign_seed_ranges_opened"):
+        if freeze.get(key) is not False:
+            raise ValueError(f"502M freeze opened {key}")
+    for key in ("report", "context_metrics"):
+        record = freeze[key]
+        if file_sha256(root / record["path"]) != record["sha256"]:
+            raise ValueError(f"502M {key} hash differs")
+    report = json.loads(
+        (root / freeze["report"]["path"]).read_text(encoding="utf-8")
+    )
+    for name in ("exact_mcmc", "python_hmsc"):
+        _validate_artifact_inventory(root, report["artifacts"][name])
+    if report["all_gates_passed"] != all(report["gates"].values()):
+        raise ValueError("502M gate decision differs")
+    expected_decision = (
+        "eligible_to_authorize_503m_505m"
+        if report["all_gates_passed"]
+        else "stop_before_reserved_evaluation"
+    )
+    if report["decision"] != expected_decision:
+        raise ValueError("502M report decision differs")
+    return {
+        "status": "fixed_validation_freeze_valid",
+        "freeze_sha256": file_sha256(freeze_path),
+        "report_sha256": freeze["report"]["sha256"],
+        "context_metrics_sha256": freeze["context_metrics"]["sha256"],
+        "all_gates_passed": report["all_gates_passed"],
+        "failed_gates": report["failed_gates"],
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+
+
+def _generate_fixed_validation_block() -> list:
+    _require_confirmation(
+        VALIDATION_CONFIRMATION_ENV,
+        VALIDATION_CONFIRMATION,
+        action="502M fixed validation",
+    )
+    datasets = []
+    for seed, cell in zip(FIXED_VALIDATION_SEEDS, _factorial_cells()):
+        mask = make_stratified_response_mask(
+            cell["n_sites"],
+            cell["n_species"],
+            seed=seed,
+        )
+        datasets.append(
+            simulate_generative_iid_dataset(
+                n_sites=cell["n_sites"],
+                n_species=cell["n_species"],
+                covariate_shape=cell["covariate_shape"],
+                loading_stratum=cell["loading_stratum"],
+                prevalence_stratum=cell["prevalence_stratum"],
+                seed=seed,
+                response_realization=0,
+                response_mask=mask,
+            )
+        )
+    if len(datasets) != 324:
+        raise AssertionError("502M fixed validation must contain 324 contexts")
+    return datasets
+
+
+def _production_invariance_checks(
+    inference: GenerativeIidInference,
+    datasets: list,
+) -> dict[str, float]:
+    representatives = {}
+    for dataset in datasets:
+        representatives.setdefault(dataset.Y.shape, dataset)
+    permutation_deltas = []
+    for dataset in representatives.values():
+        batch = batch_generative_iid_datasets(
+            [dataset],
+            max_sites=inference.model.max_sites,
+            max_species=inference.model.max_species,
+        )
+        n_sites, n_species = dataset.Y.shape
+        site_order = np.random.default_rng(
+            int(dataset.metadata["seed"]) + 11
+        ).permutation(n_sites)
+        species_order = np.random.default_rng(
+            int(dataset.metadata["seed"]) + 12
+        ).permutation(n_species)
+        full_site_order = np.concatenate(
+            [site_order, np.arange(n_sites, inference.model.max_sites)]
+        )
+        full_species_order = np.concatenate(
+            [
+                species_order,
+                np.arange(n_species, inference.model.max_species),
+            ]
+        )
+        permuted = {
+            "X": batch.X[:, full_site_order],
+            "Y": batch.Y[:, full_site_order][:, :, full_species_order],
+            "response_mask": batch.response_mask[:, full_site_order][
+                :, :, full_species_order
+            ],
+            "site_mask": batch.site_mask[:, full_site_order],
+            "species_mask": batch.species_mask[:, full_species_order],
+        }
+        original = posterior_mean_invariants(
+            inference.model(batch.model_inputs(), training=False)
+        )
+        moved = posterior_mean_invariants(
+            inference.model(permuted, training=False)
+        )
+        site_inverse = np.argsort(site_order)
+        species_inverse = np.argsort(species_order)
+        permutation_deltas.extend(
+            [
+                float(
+                    np.max(
+                        np.abs(
+                            np.asarray(moved["Beta"])[
+                                0, :, :n_species
+                            ][:, species_inverse]
+                            - np.asarray(original["Beta"])[
+                                0, :, :n_species
+                            ]
+                        )
+                    )
+                ),
+                float(
+                    np.max(
+                        np.abs(
+                            np.asarray(moved["R"])[
+                                0, :n_sites, :n_species
+                            ][site_inverse][:, species_inverse]
+                            - np.asarray(original["R"])[
+                                0, :n_sites, :n_species
+                            ]
+                        )
+                    )
+                ),
+                float(
+                    np.max(
+                        np.abs(
+                            np.asarray(moved["C"])[
+                                0, :n_species, :n_species
+                            ][species_inverse][:, species_inverse]
+                            - np.asarray(original["C"])[
+                                0, :n_species, :n_species
+                            ]
+                        )
+                    )
+                ),
+            ]
+        )
+
+    smallest = min(datasets, key=lambda value: value.Y.size)
+    largest = max(datasets, key=lambda value: value.Y.size)
+    alone = batch_generative_iid_datasets(
+        [smallest],
+        max_sites=inference.model.max_sites,
+        max_species=inference.model.max_species,
+    )
+    together = batch_generative_iid_datasets(
+        [smallest, largest],
+        max_sites=inference.model.max_sites,
+        max_species=inference.model.max_species,
+    )
+    alone_posterior = inference.model(alone.model_inputs(), training=False)
+    together_posterior = inference.model(
+        together.model_inputs(),
+        training=False,
+    )
+    padding_delta = max(
+        float(
+            np.max(
+                np.abs(
+                    np.asarray(alone_posterior.mean)[0]
+                    - np.asarray(together_posterior.mean)[0]
+                )
+            )
+        ),
+        float(
+            np.max(
+                np.abs(
+                    np.asarray(alone_posterior.low_rank_factor)[0]
+                    - np.asarray(together_posterior.low_rank_factor)[0]
+                )
+            )
+        ),
+    )
+    return {
+        "permutation_max_abs_delta": max(permutation_deltas, default=0.0),
+        "padding_max_abs_delta": padding_delta,
+        "representative_shape_count": len(representatives),
     }
 
 
@@ -517,18 +1206,8 @@ def _generate_production_block(
     *,
     masked: bool,
 ) -> list:
-    if seeds not in (TRAINING_SEEDS, FIXED_VALIDATION_SEEDS):
-        raise ValueError("unregistered generative iid production seed block")
-    if seeds == FIXED_VALIDATION_SEEDS:
-        _require_confirmation(
-            VALIDATION_CONFIRMATION_ENV,
-            VALIDATION_CONFIRMATION,
-            action="502M fixed validation",
-        )
-        raise RuntimeError(
-            "502M remains sealed until its complete comparator evaluator is "
-            "implemented and reviewed"
-        )
+    if seeds != TRAINING_SEEDS:
+        raise ValueError("501M generator accepts only the training seed block")
     if masked:
         raise ValueError("501M training contexts must be fully observed")
     datasets = []
@@ -587,6 +1266,49 @@ def _metadata_sha256(datasets: list) -> str:
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+def _artifact_inventory(
+    root: Path,
+    *,
+    relative_to: Path,
+) -> dict[str, Any]:
+    files = sorted(path for path in root.rglob("*") if path.is_file())
+    return {
+        "root": str(root.resolve().relative_to(relative_to.resolve())),
+        "file_count": len(files),
+        "files": [
+            {
+                "path": str(path.resolve().relative_to(relative_to.resolve())),
+                "sha256": file_sha256(path),
+                "bytes": path.stat().st_size,
+            }
+            for path in files
+        ],
+    }
+
+
+def _validate_artifact_inventory(
+    root: Path,
+    inventory: dict[str, Any],
+) -> None:
+    records = inventory.get("files")
+    if not isinstance(records, list):
+        raise ValueError("502M comparator inventory is missing")
+    if int(inventory.get("file_count", -1)) != len(records):
+        raise ValueError("502M comparator inventory count differs")
+    for record in records:
+        path = (root / str(record["path"])).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError as error:
+            raise ValueError("502M comparator path escapes run root") from error
+        if not path.is_file():
+            raise FileNotFoundError(f"502M comparator artifact missing: {path}")
+        if file_sha256(path) != record["sha256"]:
+            raise ValueError("502M comparator artifact hash differs")
+        if path.stat().st_size != int(record["bytes"]):
+            raise ValueError("502M comparator artifact size differs")
 
 
 def _require_confirmation(name: str, value: str, *, action: str) -> None:
