@@ -148,12 +148,16 @@ def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
                   W22 = d22 / rLPar["alphapw"][:,0,None,None]
                 W22[np.isnan(W22)] = 0
                 W22 = tf.exp(-W22)
+                eyeK = tf.eye(nK, nK, [gN], dtype)
+                jitter = tf.cast(1e-8, dtype)
+                W22 = W22 + eyeK * jitter
                 LW22 = tfla.cholesky(W22)
-                iW22 = tfla.cholesky_solve(LW22, tf.eye(nK, nK, [gN], dtype))
+                iW22 = tfla.cholesky_solve(LW22, eyeK)
                 dD = 1 - tf.einsum("gik,gkh,gih->gi", W12, iW22, W12)
+                dD = tf.maximum(dD, tf.cast(np.finfo(dtype).eps, dtype))
                 idD = dD**-1
                 F = W22 + tf.einsum("gik,gi,gih->gkh", W12, idD, W12)
-                LF = tfla.cholesky(F)
+                LF = tfla.cholesky(F + eyeK * jitter)
                 iDW12 = tf.einsum("gi,gik->gik", idD, W12)
                 detD = tf.reduce_sum(tfm.log(dD), -1) - 2*tf.reduce_sum(tfm.log(tfla.diag_part(LW22)), -1) + \
                   2*tf.reduce_sum(tfm.log(tfla.diag_part(LF)), -1)
@@ -162,7 +166,7 @@ def load_random_level_hyperparams(hmscModel, dataParList, dtype=np.float64):
                 rLPar["idDg"] = idD
                 rLPar["idDW12g"] = iDW12
                 rLPar["Fg"] = F
-                rLPar["iFg"] = tfla.cholesky_solve(tf.cast(tfla.cholesky(F), dtype=dtype), tf.eye(nK, nK, [gN], dtype))
+                rLPar["iFg"] = tfla.cholesky_solve(LF, eyeK)
                 rLPar["detDg"] = detD
                 
             elif rLPar["spatialMethod"] == "NNGP":

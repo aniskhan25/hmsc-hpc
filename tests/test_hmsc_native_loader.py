@@ -14,7 +14,7 @@ from pyhmsc.validation import validate_compiled_native_model
 def test_native_loader_builds_fixed_effect_sampler_state(tmp_path):
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2], "sp2": [0, 3]}),
-        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 2.0]}),
         x_formula="~ x",
         distr="poisson",
     )
@@ -34,7 +34,7 @@ def test_native_loader_builds_fixed_effect_sampler_state(tmp_path):
     assert priors["iUGamma"].shape == (2, 2)
     assert len(init_list) == 2
     np.testing.assert_allclose(init_list[0]["Beta"].numpy(), np.zeros((2, 2)))
-    np.testing.assert_allclose(init_list[0]["Xeff"].numpy(), [[1, 0], [1, 1]])
+    np.testing.assert_allclose(init_list[0]["Xeff"].numpy(), [[1, -np.sqrt(0.5)], [1, np.sqrt(0.5)]])
 
 
 def test_native_loader_builds_iid_random_intercept_state(tmp_path):
@@ -71,11 +71,12 @@ def test_native_loader_builds_trait_state(tmp_path):
     dims, data, priors, _model_hyper, _random_hyper, init_list, _n_chains = load_native_params(
         compiled.init_json
     )
-    assert dims["nt"] == 2
-    assert data["T"].shape == (2, 2)
-    assert priors["mGamma"].shape == (4,)
-    assert priors["UGamma"].shape == (4, 4)
-    assert init_list[0]["Gamma"].shape == (2, 2)
+    assert dims["nt"] == 1
+    assert data["T"].shape == (2, 1)
+    np.testing.assert_allclose(data["T"], [[-np.sqrt(0.5)], [np.sqrt(0.5)]])
+    assert priors["mGamma"].shape == (2,)
+    assert priors["UGamma"].shape == (2, 2)
+    assert init_list[0]["Gamma"].shape == (2, 1)
 
 
 def test_native_loader_builds_phylogeny_state(tmp_path):
@@ -121,7 +122,10 @@ def test_native_loader_builds_full_spatial_random_level_state(tmp_path):
     assert data["Pi"].tolist() == [[0], [1], [2]]
     assert random_hyper[0]["sDim"] == 2
     assert random_hyper[0]["spatialMethod"] == "Full"
-    assert random_hyper[0]["iWg"].shape == (1, 3, 3)
+    assert random_hyper[0]["alphapw"].shape == (101, 2)
+    assert random_hyper[0]["alphapw"][0].tolist() == [0.0, 0.5]
+    assert np.isclose(random_hyper[0]["alphapw"][1, 1], 0.005)
+    assert random_hyper[0]["iWg"].shape == (101, 3, 3)
     assert init_list[0]["Eta"][0].shape == (3, 1)
 
 
@@ -156,8 +160,9 @@ def test_native_loader_builds_spatial_gpp_random_level_state(tmp_path):
     assert random_hyper[0]["sDim"] == 2
     assert random_hyper[0]["spatialMethod"] == "GPP"
     assert random_hyper[0]["nK"] == 2
-    assert random_hyper[0]["idDg"].shape == (1, 4)
-    assert random_hyper[0]["Fg"].shape == (1, 2, 2)
+    assert random_hyper[0]["alphapw"].shape == (101, 2)
+    assert random_hyper[0]["idDg"].shape == (101, 4)
+    assert random_hyper[0]["Fg"].shape == (101, 2, 2)
     assert init_list[0]["Eta"][0].shape == (4, 1)
     metadata = json.loads(compiled.init_json.read_text(encoding="utf-8"))
     np.testing.assert_allclose(metadata["random_levels"][0]["knots"], [[0.0, 0.0], [1.0, 1.0]])
@@ -193,10 +198,11 @@ def test_native_loader_builds_spatial_nngp_random_level_state(tmp_path):
     assert data["Pi"].tolist() == [[0], [1], [2], [3]]
     assert random_hyper[0]["sDim"] == 2
     assert random_hyper[0]["spatialMethod"] == "NNGP"
-    assert len(random_hyper[0]["iWList_csr"]) == 1
+    assert random_hyper[0]["alphapw"].shape == (101, 2)
+    assert len(random_hyper[0]["iWList_csr"]) == 101
     assert random_hyper[0]["iWList_csr"][0].shape == (4, 4)
-    assert len(random_hyper[0]["RiWList"]) == 1
-    assert random_hyper[0]["detWg"].shape == (1,)
+    assert len(random_hyper[0]["RiWList"]) == 101
+    assert random_hyper[0]["detWg"].shape == (101,)
     assert init_list[0]["Eta"][0].shape == (4, 1)
 
     results = validate_compiled_native_model(compiled.init_json)

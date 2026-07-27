@@ -62,7 +62,10 @@ def test_whittaker_holdout_analyzer_smoke(tmp_path):
         with h5py.File(model_root / "posterior.h5", "w") as handle:
             handle.create_dataset("Beta", data=np.zeros((2, 4, 2, len(species))))
             if name == "fixed":
-                handle.create_dataset("Gamma", data=np.zeros((2, 4, 2, 2)))
+                handle.create_dataset(
+                    "Gamma",
+                    data=np.zeros((2, 4, 2, metadata["dimensions"]["n_traits"])),
+                )
             if name == "iid":
                 level = handle.create_group("random_levels").create_group("0")
                 level.create_dataset("Eta", data=np.zeros((2, 4, 40, 1)))

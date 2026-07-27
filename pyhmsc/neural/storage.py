@@ -9,7 +9,11 @@ from typing import Any, Sequence
 import numpy as np
 
 from pyhmsc.neural.calibration import calibration_metadata
-from pyhmsc.neural.posterior_heads import BetaPosterior, GammaPosterior, IidLatentPosterior
+from pyhmsc.neural.posterior_heads import (
+    BetaPosterior,
+    GammaPosterior,
+    IidLatentPosterior,
+)
 
 
 def write_beta_posterior_hdf5(
@@ -39,7 +43,9 @@ def write_beta_posterior_hdf5(
     mean = _as_numpy(posterior.mean)
     scale = _as_numpy(posterior.scale)
     if mean.ndim != 3 or mean.shape[0] != 1:
-        raise ValueError("write_beta_posterior_hdf5 currently supports one posterior dataset at a time")
+        raise ValueError(
+            "write_beta_posterior_hdf5 currently supports one posterior dataset at a time"
+        )
     if scale.shape != mean.shape:
         raise ValueError("posterior mean and scale must have the same shape")
     beta_mean = mean[0]
@@ -56,9 +62,18 @@ def write_beta_posterior_hdf5(
         )
     else:
         scale_tril = _as_numpy(posterior.scale_tril)
-        if scale_tril.shape != (1, len(species_names), len(covariate_names), len(covariate_names)):
-            raise ValueError("posterior scale_tril does not match Beta covariate/species shape")
-        noise = rng.normal(size=(chains, draws, len(species_names), len(covariate_names)))
+        if scale_tril.shape != (
+            1,
+            len(species_names),
+            len(covariate_names),
+            len(covariate_names),
+        ):
+            raise ValueError(
+                "posterior scale_tril does not match Beta covariate/species shape"
+            )
+        noise = rng.normal(
+            size=(chains, draws, len(species_names), len(covariate_names))
+        )
         correlated = np.einsum("sij,cdsj->cdsi", scale_tril[0], noise)
         beta = beta_mean.T[None, None, :, :] + correlated
         beta = np.transpose(beta, (0, 1, 3, 2))
@@ -111,7 +126,9 @@ def write_gamma_posterior_hdf5(
     mean = _as_numpy(posterior.mean)
     scale = _as_numpy(posterior.scale)
     if mean.ndim != 3 or mean.shape[0] != 1:
-        raise ValueError("write_gamma_posterior_hdf5 currently supports one posterior dataset at a time")
+        raise ValueError(
+            "write_gamma_posterior_hdf5 currently supports one posterior dataset at a time"
+        )
     if scale.shape != mean.shape:
         raise ValueError("posterior mean and scale must have the same shape")
     gamma_mean = mean[0]
@@ -159,6 +176,87 @@ def write_gamma_posterior_hdf5(
     return output
 
 
+def write_trait_gamma_posterior_hdf5(
+    gamma_posterior: GammaPosterior,
+    beta_posterior: BetaPosterior,
+    output: str | Path,
+    *,
+    covariate_names: Sequence[str],
+    species_names: Sequence[str],
+    trait_names: Sequence[str],
+    distribution: str,
+    formula: str,
+    trait_formula: str,
+    chains: int = 1,
+    draws: int = 100,
+    seed: int | None = None,
+    metadata: dict[str, Any] | None = None,
+    gamma_calibration: Any | None = None,
+) -> Path:
+    """Write coherent-shape Beta and Gamma marginal approximations to HDF5.
+
+    Beta and Gamma are sampled from their separately calibrated marginal
+    approximations.  The artifact therefore supports ordinary ``HmscFit``
+    summaries and prediction, but does not claim a joint posterior coupling.
+    """
+    if chains <= 0 or draws <= 0:
+        raise ValueError("chains and draws must be positive")
+    gamma_mean = _single_posterior_array(gamma_posterior.mean, "gamma mean")
+    gamma_scale = _single_posterior_array(gamma_posterior.scale, "gamma scale")
+    beta_mean = _single_posterior_array(beta_posterior.mean, "beta mean")
+    beta_scale = _single_posterior_array(beta_posterior.scale, "beta scale")
+    if gamma_scale.shape != gamma_mean.shape:
+        raise ValueError("Gamma mean and scale shapes differ")
+    if beta_scale.shape != beta_mean.shape:
+        raise ValueError("Beta mean and scale shapes differ")
+    if gamma_mean.shape != (len(covariate_names), len(trait_names)):
+        raise ValueError("covariate/trait names do not match Gamma shape")
+    if beta_mean.shape != (len(covariate_names), len(species_names)):
+        raise ValueError("covariate/species names do not match Beta shape")
+    rng = np.random.default_rng(seed)
+    gamma = rng.normal(
+        gamma_mean[None, None, ...],
+        gamma_scale[None, None, ...],
+        size=(chains, draws) + gamma_mean.shape,
+    )
+    beta = rng.normal(
+        beta_mean[None, None, ...],
+        beta_scale[None, None, ...],
+        size=(chains, draws) + beta_mean.shape,
+    )
+    artifact_metadata = dict(metadata or {})
+    artifact_metadata["distribution"] = str(distribution)
+    artifact_metadata["formula"] = {"X": str(formula), "T": str(trait_formula)}
+    artifact_metadata["names"] = {
+        "covariates": [str(value) for value in covariate_names],
+        "species": [str(value) for value in species_names],
+        "traits": [str(value) for value in trait_names],
+    }
+    artifact_metadata["inference"] = {
+        "backend": "neural-hmsc",
+        "parameters": ["Beta", "Gamma"],
+        "posterior_semantics": "separate_marginal_approximations",
+        "chains": int(chains),
+        "draws": int(draws),
+        "seed": seed,
+    }
+    if gamma_calibration is not None:
+        artifact_metadata["calibration"] = gamma_calibration.to_metadata()
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import h5py  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install h5py to write Neural-HMSC posterior files") from exc
+    with h5py.File(output, "w") as handle:
+        handle.create_dataset("Beta", data=beta)
+        handle.create_dataset("Gamma", data=gamma)
+        handle.attrs["nChains"] = int(chains)
+        handle.attrs["nDraws"] = int(draws)
+        handle.attrs["pyhmsc_metadata"] = json.dumps(artifact_metadata)
+    return output
+
+
 def write_iid_latent_posterior_hdf5(
     posterior: IidLatentPosterior,
     output: str | Path,
@@ -187,7 +285,11 @@ def write_iid_latent_posterior_hdf5(
     eta_scale = _single_posterior_array(posterior.eta_scale, "eta_scale")
     lambda_mean = _single_posterior_array(posterior.lambda_mean, "lambda_mean")
     lambda_scale = _single_posterior_array(posterior.lambda_scale, "lambda_scale")
-    if beta_scale.shape != beta_mean.shape or eta_scale.shape != eta_mean.shape or lambda_scale.shape != lambda_mean.shape:
+    if (
+        beta_scale.shape != beta_mean.shape
+        or eta_scale.shape != eta_mean.shape
+        or lambda_scale.shape != lambda_mean.shape
+    ):
         raise ValueError("posterior means and scales must have matching shapes")
     if beta_mean.shape != (len(covariate_names), len(species_names)):
         raise ValueError("covariate/species names do not match posterior Beta shape")
@@ -242,7 +344,9 @@ def write_iid_latent_posterior_hdf5(
         if coord_array.shape != (len(group_names), 2):
             raise ValueError(f"coords must have shape {(len(group_names), 2)}")
         posterior_metadata["random_levels"][0]["coords"] = ["xcoord", "ycoord"]
-        posterior_metadata["random_levels"][0]["coordinate_values"] = coord_array.tolist()
+        posterior_metadata["random_levels"][0][
+            "coordinate_values"
+        ] = coord_array.tolist()
 
     try:
         import h5py  # type: ignore

@@ -50,13 +50,35 @@ def _stack_dense(postList, param):
 
 
 def _stack_random_level(postList, param, level):
-    chains = []
+    max_shape = None
+    raw_values = []
     for chain in postList:
         draws = []
         for sample in chain:
             value = sample[param][level]
             if param == "AlphaInd":
                 value = value + 1
-            draws.append(value.numpy())
+            array = value.numpy()
+            draws.append(array)
+            if max_shape is None:
+                max_shape = array.shape
+            else:
+                max_shape = tuple(max(left, right) for left, right in zip(max_shape, array.shape))
+        raw_values.append(draws)
+    chains = []
+    for chain in raw_values:
+        draws = []
+        for value in chain:
+            fill_value = 1 if param == "AlphaInd" else 0
+            draws.append(_pad_to_shape(value, max_shape, fill_value=fill_value))
         chains.append(np.stack(draws, axis=0))
     return np.stack(chains, axis=0)
+
+
+def _pad_to_shape(value, shape, fill_value=0):
+    if value.shape == shape:
+        return value
+    padded = np.full(shape, fill_value, dtype=value.dtype)
+    slices = tuple(slice(0, dim) for dim in value.shape)
+    padded[slices] = value
+    return padded

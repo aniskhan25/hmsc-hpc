@@ -63,6 +63,13 @@ from pyhmsc.neural.conditional_calibration import (
 )
 from pyhmsc.neural.diagnostics import beta_sbc_stratified_diagnostics
 from pyhmsc.neural.inference import NeuralHmscInference
+from pyhmsc.neural.mean_calibration import (
+    BetaResponseCalibrationBatch,
+    apply_beta_predictive_mean_calibration,
+    fit_beta_predictive_mean_calibration,
+    fit_beta_response_mean_calibration,
+    fit_beta_transfer_response_mean_calibration,
+)
 from pyhmsc.neural.posterior_heads import sample_beta_posterior
 from pyhmsc.neural.simulator import (
     FIXED_EFFECT_OOD_REGIMES,
@@ -225,6 +232,50 @@ def main() -> None:
         choices=["scalar", "conditional", "external_monotone"],
         default="scalar",
         help="coefficient-posterior calibration method; predictive calibration remains scalar",
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration",
+        choices=[
+            "none",
+            "affine_shrinkage",
+            "probit_response_affine",
+            "probit_transfer_response_affine",
+        ],
+        default="none",
+        help=(
+            "optional predictive-only Beta-mean calibration competitor; does not "
+            "change coefficient posterior or SBC calibration"
+        ),
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration-validation-datasets",
+        type=int,
+        default=0,
+        help="independent simulations used to gate predictive mean calibration",
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration-max-rmse-ratio",
+        type=float,
+        default=1.0,
+        help="maximum validation Beta-mean RMSE ratio allowed before fallback",
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration-max-brier-ratio",
+        type=float,
+        default=1.0,
+        help="maximum validation Brier ratio allowed for response-scale mean calibration",
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration-max-log-loss-ratio",
+        type=float,
+        default=1.0,
+        help="maximum validation log-loss ratio allowed for response-scale mean calibration",
+    )
+    parser.add_argument(
+        "--predictive-mean-calibration-min-improvement",
+        type=float,
+        default=0.0,
+        help="minimum validation score improvement required before selection",
     )
     parser.add_argument("--conditional-calibration-epochs", type=int, default=400)
     parser.add_argument(
@@ -411,6 +462,51 @@ def main() -> None:
         parser.error("--rank-mean-penalty-design-mean-guard-tolerance must be positive")
     if args.conditional_calibration_epochs <= 0:
         parser.error("--conditional-calibration-epochs must be positive")
+    if args.predictive_mean_calibration_validation_datasets < 0:
+        parser.error(
+            "--predictive-mean-calibration-validation-datasets must be non-negative"
+        )
+    if (
+        args.predictive_mean_calibration != "none"
+        and args.predictive_mean_calibration_validation_datasets <= 0
+    ):
+        parser.error(
+            "--predictive-mean-calibration requires "
+            "--predictive-mean-calibration-validation-datasets"
+        )
+    if args.predictive_mean_calibration_max_rmse_ratio < 1.0:
+        parser.error(
+            "--predictive-mean-calibration-max-rmse-ratio must be at least one"
+        )
+    if args.predictive_mean_calibration_max_brier_ratio < 1.0:
+        parser.error(
+            "--predictive-mean-calibration-max-brier-ratio must be at least one"
+        )
+    if args.predictive_mean_calibration_max_log_loss_ratio < 1.0:
+        parser.error(
+            "--predictive-mean-calibration-max-log-loss-ratio must be at least one"
+        )
+    if args.predictive_mean_calibration_min_improvement < 0.0:
+        parser.error(
+            "--predictive-mean-calibration-min-improvement must be non-negative"
+        )
+    if (
+        args.predictive_mean_calibration != "none"
+        and args.predictive_mean_calibration_min_improvement == 0.0
+    ):
+        parser.error(
+            "--predictive-mean-calibration requires a positive "
+            "--predictive-mean-calibration-min-improvement"
+        )
+    if (
+        args.predictive_mean_calibration
+        in {"probit_response_affine", "probit_transfer_response_affine"}
+        and args.suite != ["probit"]
+    ):
+        parser.error(
+            "--predictive-mean-calibration probit response methods currently "
+            "requires exactly --suite probit"
+        )
     if args.conditional_calibration_learning_rate <= 0.0:
         parser.error("--conditional-calibration-learning-rate must be positive")
     if args.conditional_calibration_regularization < 0.0:
@@ -521,6 +617,19 @@ def main() -> None:
         "mse_weight": args.mse_weight,
         "calibration_enabled": not bool(args.disable_calibration),
         "coefficient_calibration": args.coefficient_calibration,
+        "predictive_mean_calibration": args.predictive_mean_calibration,
+        "predictive_mean_calibration_validation_datasets": (
+            args.predictive_mean_calibration_validation_datasets
+        ),
+        "predictive_mean_calibration_max_brier_ratio": (
+            args.predictive_mean_calibration_max_brier_ratio
+        ),
+        "predictive_mean_calibration_max_log_loss_ratio": (
+            args.predictive_mean_calibration_max_log_loss_ratio
+        ),
+        "predictive_mean_calibration_min_improvement": (
+            args.predictive_mean_calibration_min_improvement
+        ),
         "sbc_datasets": args.sbc_datasets,
         "sbc_draws": args.sbc_draws,
         "sbc_bins": args.sbc_bins,
@@ -751,6 +860,7 @@ def main() -> None:
         )
         uncalibrated_path = uncalibrated_fit.output_file or uncalibrated_path
         uncalibrated_posterior = engine.predict_beta_posterior(test)
+        predictive_mean_calibration_result = None
         if args.disable_calibration:
             calibration_result = None
             posterior = uncalibrated_posterior
@@ -760,6 +870,62 @@ def main() -> None:
         else:
             calibration_data = fixed_shape_training_data(calibration)
             calibration_posterior = engine.predict_beta_posterior(calibration_data)
+            mean_validation_posterior = None
+            mean_validation_beta = None
+            mean_transfer_validation_batches = None
+            if args.predictive_mean_calibration != "none":
+                mean_validation = _datasets(
+                    count=args.predictive_mean_calibration_validation_datasets,
+                    n_sites=args.n_sites,
+                    n_species=args.n_species,
+                    distribution=distribution,
+                    seed=distribution_seed(args.seed, distribution, delta=750),
+                )
+                mean_validation_data = fixed_shape_training_data(mean_validation)
+                mean_validation_posterior = engine.predict_beta_posterior(
+                    mean_validation_data
+                )
+                mean_validation_beta = mean_validation_data.Beta
+                if (
+                    args.predictive_mean_calibration
+                    == "probit_transfer_response_affine"
+                ):
+                    mean_transfer_validation_batches = []
+                    for regime_idx, regime in enumerate(args.ood_regimes):
+                        regime_count = _balanced_regime_count(
+                            args.predictive_mean_calibration_validation_datasets,
+                            len(args.ood_regimes),
+                            regime_idx,
+                        )
+                        if regime_count <= 0:
+                            continue
+                        transfer_validation = [
+                            simulate_fixed_effect_ood_dataset(
+                                n_sites=args.n_sites,
+                                n_species=args.n_species,
+                                distribution=distribution,
+                                regime=regime,
+                                seed=distribution_seed(
+                                    args.seed,
+                                    distribution,
+                                    delta=9750 + 10_000 * regime_idx + idx,
+                                ),
+                            )
+                            for idx in range(regime_count)
+                        ]
+                        transfer_data = fixed_shape_training_data(
+                            transfer_validation
+                        )
+                        mean_transfer_validation_batches.append(
+                            BetaResponseCalibrationBatch(
+                                posterior=engine.predict_beta_posterior(
+                                    transfer_data
+                                ),
+                                X=transfer_data.X,
+                                Y=transfer_data.Y,
+                                label=f"transfer_validation:{regime}",
+                            )
+                        )
             predictive_calibration_result = fit_beta_scale_calibration(
                 calibration_posterior,
                 calibration_data.Beta,
@@ -1033,6 +1199,96 @@ def main() -> None:
                 predictive_calibration_result,
                 distribution=distribution,
             )
+            if args.predictive_mean_calibration != "none":
+                if args.predictive_mean_calibration == "probit_response_affine":
+                    if mean_validation_posterior is None or mean_validation_beta is None:
+                        raise RuntimeError(
+                            "predictive mean validation data was not prepared"
+                        )
+                    predictive_mean_calibration_result = (
+                        fit_beta_response_mean_calibration(
+                            calibration_posterior,
+                            calibration_X=calibration_data.X,
+                            calibration_Y=calibration_data.Y,
+                            validation_posterior=mean_validation_posterior,
+                            validation_X=mean_validation_data.X,
+                            validation_Y=mean_validation_data.Y,
+                            distribution=distribution,
+                            method=args.predictive_mean_calibration,
+                            max_validation_brier_ratio=(
+                                args.predictive_mean_calibration_max_brier_ratio
+                            ),
+                            max_validation_log_loss_ratio=(
+                                args.predictive_mean_calibration_max_log_loss_ratio
+                            ),
+                            min_validation_score_improvement=(
+                                args.predictive_mean_calibration_min_improvement
+                            ),
+                        )
+                    )
+                elif (
+                    args.predictive_mean_calibration
+                    == "probit_transfer_response_affine"
+                ):
+                    if (
+                        mean_validation_posterior is None
+                        or mean_transfer_validation_batches is None
+                    ):
+                        raise RuntimeError(
+                            "predictive mean transfer validation data was not prepared"
+                        )
+                    predictive_mean_calibration_result = (
+                        fit_beta_transfer_response_mean_calibration(
+                            calibration_posterior,
+                            calibration_X=calibration_data.X,
+                            calibration_Y=calibration_data.Y,
+                            source_validation_posterior=mean_validation_posterior,
+                            source_validation_X=mean_validation_data.X,
+                            source_validation_Y=mean_validation_data.Y,
+                            transfer_validation_batches=(
+                                mean_transfer_validation_batches
+                            ),
+                            distribution=distribution,
+                            method=args.predictive_mean_calibration,
+                            max_source_validation_brier_ratio=(
+                                args.predictive_mean_calibration_max_brier_ratio
+                            ),
+                            max_source_validation_log_loss_ratio=(
+                                args.predictive_mean_calibration_max_log_loss_ratio
+                            ),
+                            max_transfer_validation_brier_ratio=(
+                                args.predictive_mean_calibration_max_brier_ratio
+                            ),
+                            max_transfer_validation_log_loss_ratio=(
+                                args.predictive_mean_calibration_max_log_loss_ratio
+                            ),
+                            min_transfer_validation_score_improvement=(
+                                args.predictive_mean_calibration_min_improvement
+                            ),
+                        )
+                    )
+                else:
+                    predictive_mean_calibration_result = (
+                        fit_beta_predictive_mean_calibration(
+                            calibration_posterior,
+                            calibration_data.Beta,
+                            validation_posterior=mean_validation_posterior,
+                            validation_beta_true=mean_validation_beta,
+                            distribution=distribution,
+                            method=args.predictive_mean_calibration,
+                            max_validation_rmse_ratio=(
+                                args.predictive_mean_calibration_max_rmse_ratio
+                            ),
+                            min_validation_rmse_improvement=(
+                                args.predictive_mean_calibration_min_improvement
+                            ),
+                        )
+                    )
+                predictive_posterior = apply_beta_predictive_mean_calibration(
+                    predictive_posterior,
+                    predictive_mean_calibration_result,
+                    distribution=distribution,
+                )
         neural_path = write_beta_posterior_hdf5(
             posterior,
             neural_path,
@@ -1068,6 +1324,11 @@ def main() -> None:
                     "distribution": distribution,
                 },
                 "artifact_role": "predictive_only",
+                "predictive_mean_calibration": (
+                    None
+                    if predictive_mean_calibration_result is None
+                    else predictive_mean_calibration_result.to_metadata()
+                ),
             },
             calibration=predictive_calibration_result,
         )
@@ -1156,6 +1417,10 @@ def main() -> None:
         if predictive_calibration_result is not None:
             record["predictive_calibration"] = (
                 predictive_calibration_result.to_metadata()
+            )
+        if predictive_mean_calibration_result is not None:
+            record["predictive_mean_calibration"] = (
+                predictive_mean_calibration_result.to_metadata()
             )
         if args.run_mcmc_reference:
             mcmc_seconds = _run_mcmc_reference(

@@ -606,6 +606,91 @@ def simulate_trait_effect_dataset(
     )
 
 
+def simulate_trait_gamma_boundary_dataset(
+    *,
+    n_sites: int,
+    n_species: int,
+    seed: int,
+    distribution: str = "probit",
+    covariate_name: str = "TMG",
+    trait_name: str = "CN",
+    covariate_values: np.ndarray | None = None,
+    trait_values: np.ndarray | None = None,
+    gamma_scale: float = 0.8,
+    beta_residual_scale: float = 0.25,
+) -> TraitEffectDataset:
+    """Simulate the Python/R Hmsc boundary for one scaled species trait.
+
+    R/Hmsc drops the trait-formula intercept before scaling ``TrScaled``.  This
+    simulator mirrors that boundary so Gamma truth and compiled ``T`` have the
+    same shape and meaning.
+    """
+    if n_sites <= 0 or n_species <= 1:
+        raise ValueError("n_sites must be positive and n_species greater than one")
+    if gamma_scale <= 0.0 or beta_residual_scale < 0.0:
+        raise ValueError("gamma_scale must be positive and residual scale non-negative")
+    rng = np.random.default_rng(seed)
+    site_names = [f"site_{idx + 1:04d}" for idx in range(n_sites)]
+    species_names = [f"sp{idx + 1}" for idx in range(n_species)]
+    x = (
+        rng.normal(size=n_sites)
+        if covariate_values is None
+        else np.asarray(covariate_values, dtype=float)
+    )
+    trait = (
+        rng.normal(size=n_species)
+        if trait_values is None
+        else np.asarray(trait_values, dtype=float)
+    )
+    if x.shape != (n_sites,) or trait.shape != (n_species,):
+        raise ValueError("provided covariate or trait values have the wrong shape")
+    x_sd = float(np.std(x, ddof=1)) or 1.0
+    trait_sd = float(np.std(trait, ddof=1)) or 1.0
+    x_scaled = (x - float(np.mean(x))) / x_sd
+    trait_scaled = (trait - float(np.mean(trait))) / trait_sd
+    design = np.column_stack([np.ones(n_sites), x_scaled])
+    trait_design_values = trait_scaled[:, None]
+    gamma = rng.normal(scale=gamma_scale, size=(2, 1))
+    beta = gamma @ trait_design_values.T
+    if beta_residual_scale > 0.0:
+        beta += rng.normal(scale=beta_residual_scale, size=beta.shape)
+    linear = design @ beta
+    key = _normalize_distribution(distribution)
+    if key == "probit":
+        response = rng.binomial(1, ndtr(linear))
+    elif key == "normal":
+        response = linear + rng.normal(scale=0.35, size=linear.shape)
+    else:
+        raise ValueError("trait Gamma boundary simulator supports normal or probit")
+    X = pd.DataFrame({covariate_name: x_scaled}, index=site_names)
+    traits = pd.DataFrame({trait_name: trait}, index=species_names)
+    trait_design = pd.DataFrame({trait_name: trait_scaled}, index=species_names)
+    covariate_names = ["Intercept", covariate_name]
+    metadata = {
+        "distribution": key,
+        "seed": int(seed),
+        "n_sites": int(n_sites),
+        "n_species": int(n_species),
+        "n_covariates": 2,
+        "n_traits": 1,
+        "formula": f"~ {covariate_name}",
+        "trait_formula": f"~ {trait_name}",
+        "trait_boundary": "non_intercept_scaled_TrScaled",
+        "gamma_scale": float(gamma_scale),
+        "beta_residual_scale": float(beta_residual_scale),
+    }
+    return TraitEffectDataset(
+        Y=pd.DataFrame(response, index=site_names, columns=species_names),
+        X=X,
+        truth_beta=pd.DataFrame(beta, index=covariate_names, columns=species_names),
+        linear_predictor=pd.DataFrame(linear, index=site_names, columns=species_names),
+        metadata=metadata,
+        traits=traits,
+        trait_design=trait_design,
+        truth_gamma=pd.DataFrame(gamma, index=covariate_names, columns=[trait_name]),
+    )
+
+
 def generate_fixed_effect_corpus(
     config: dict[str, Any],
     output: str | Path,

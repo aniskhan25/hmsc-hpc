@@ -49,8 +49,10 @@ def compile_hmsc_model(
         raise ValueError("chains must be positive")
 
     formula = normalize_formula(formula)
-    X_design = build_design_matrix(formula, X_frame)
-    T_design = _compile_traits(traits, trait_formula, Y_frame)
+    X_design_raw = build_design_matrix(formula, X_frame)
+    X_design, X_scale_par = _scale_design_matrix(X_design_raw)
+    T_design_raw = _compile_traits(traits, trait_formula, Y_frame)
+    T_design, T_scale_par = _scale_design_matrix(T_design_raw)
     C = _compile_phylo_cov(phylo_cov, phylo_tree, Y_frame)
     beta_init = np.zeros((chains, X_design.shape[1], Y_frame.shape[1]), dtype=float)
     arrays = {
@@ -74,7 +76,14 @@ def compile_hmsc_model(
         "model_type": "hmsc",
         "format": "pyhmsc-json-hdf5",
         "distribution": distr,
-        "formula": {"X": formula},
+        "formula": {
+            "X": formula,
+            "T": (
+                normalize_formula(trait_formula or "~ .")
+                if traits is not None
+                else "~ 1"
+            ),
+        },
         "dimensions": {
             "n_sites": int(Y_frame.shape[0]),
             "n_species": int(Y_frame.shape[1]),
@@ -87,6 +96,11 @@ def compile_hmsc_model(
             "species": [str(value) for value in Y_frame.columns],
             "covariates": [str(value) for value in X_design.columns],
             "traits": [str(value) for value in T_design.columns],
+        },
+        "preprocessing": {
+            "XScalePar": _scale_par_metadata(X_scale_par),
+            "TrScalePar": _scale_par_metadata(T_scale_par),
+            "scaled_with_sample_sd": True,
         },
         "priors": {
             "Beta": {
@@ -137,7 +151,14 @@ def _compile_random_levels(
     arrays: dict[str, np.ndarray] = {}
     for idx, (name, spec) in enumerate(random_levels.items()):
         level_type = spec.get("type", "iid")
-        if level_type not in {"iid", "spatial_full", "spatial_gpp", "gpp", "spatial_nngp", "nngp"}:
+        if level_type not in {
+            "iid",
+            "spatial_full",
+            "spatial_gpp",
+            "gpp",
+            "spatial_nngp",
+            "nngp",
+        }:
             raise NotImplementedError(
                 "Only iid, spatial_full, spatial_gpp, and spatial_nngp random levels are currently supported"
             )
@@ -156,37 +177,43 @@ def _compile_random_levels(
         x_design = _random_level_design(spec, design, codes)
         x_dim = x_design.shape[1]
         arrays[f"{prefix}_Eta_init"] = np.zeros((chains, n_levels, nf), dtype=float)
-        lambda_shape = (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        lambda_shape = (
+            (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        )
         arrays[f"{prefix}_Lambda_init"] = np.zeros(lambda_shape, dtype=float)
-        psi_shape = (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        psi_shape = (
+            (chains, nf, n_species) if x_dim == 0 else (chains, nf, n_species, x_dim)
+        )
         arrays[f"{prefix}_Psi_init"] = np.ones(psi_shape, dtype=float)
         arrays[f"{prefix}_Delta_init"] = np.ones((chains, nf, 1), dtype=float)
         arrays[f"{prefix}_Alpha_init"] = np.ones((chains, nf), dtype=int)
         if x_dim > 0:
             arrays[f"{prefix}_xMat"] = x_design
         level_meta = {
-                "name": name,
-                "column": column,
-                "type": level_type,
-                "n_levels": n_levels,
-                "levels": [str(level) for level in levels],
-                "nf": nf,
-                "xDim": x_dim,
-                "x_formula": spec.get("x_formula"),
-                "array_prefix": prefix,
-                "nu": float(spec.get("nu", 3.0)),
-                "a1": float(spec.get("a1", 2.0)),
-                "b1": float(spec.get("b1", 1.0)),
-                "a2": float(spec.get("a2", 3.0)),
-                "b2": float(spec.get("b2", 1.0)),
-                "nfMin": int(spec.get("nfMin", nf)),
-                "nfMax": int(spec.get("nfMax", max(nf, 4))),
-                "spatial": level_type in {"spatial_full", "spatial_gpp", "spatial_nngp"},
-            }
+            "name": name,
+            "column": column,
+            "type": level_type,
+            "n_levels": n_levels,
+            "levels": [str(level) for level in levels],
+            "nf": nf,
+            "xDim": x_dim,
+            "x_formula": spec.get("x_formula"),
+            "array_prefix": prefix,
+            "nu": float(spec.get("nu", 3.0)),
+            "a1": float(spec.get("a1", 2.0)),
+            "b1": float(spec.get("b1", 1.0)),
+            "a2": float(spec.get("a2", 3.0)),
+            "b2": float(spec.get("b2", 1.0)),
+            "nfMin": int(spec.get("nfMin", nf)),
+            "nfMax": int(spec.get("nfMax", max(nf, 4))),
+            "spatial": level_type in {"spatial_full", "spatial_gpp", "spatial_nngp"},
+        }
         if level_type in {"spatial_full", "spatial_gpp", "spatial_nngp"}:
             coord_cols = spec.get("coords", ["x", "y"])
             if len(coord_cols) != 2 or any(col not in design for col in coord_cols):
-                raise ValueError(f"{level_type} random levels require coordinate columns via coords")
+                raise ValueError(
+                    f"{level_type} random levels require coordinate columns via coords"
+                )
             coords = (
                 design.assign(__code=codes)
                 .groupby("__code", sort=True)[coord_cols]
@@ -194,19 +221,30 @@ def _compile_random_levels(
                 .to_numpy(dtype=float)
             )
             dist = _pairwise_distances(coords)
-            scale = float(spec.get("alpha", np.median(dist[dist > 0]) if np.any(dist > 0) else 1.0))
-            level_meta["alphapw"] = [[scale, 1.0]]
+            level_meta["alphapw"] = _spatial_alphapw(coords, spec)
             if level_type == "spatial_full":
                 arrays[f"{prefix}_distMat"] = dist
             elif level_type == "spatial_gpp":
-                n_knots = int(spec.get("n_knots", spec.get("nKnots", min(max(2, int(np.sqrt(n_levels))), n_levels))))
+                n_knots = int(
+                    spec.get(
+                        "n_knots",
+                        spec.get(
+                            "nKnots", min(max(2, int(np.sqrt(n_levels))), n_levels)
+                        ),
+                    )
+                )
                 knots = _select_gpp_knots(coords, n_knots)
                 arrays[f"{prefix}_distMat12"] = _cross_distances(coords, knots)
                 arrays[f"{prefix}_distMat22"] = _pairwise_distances(knots)
                 level_meta["nKnots"] = int(knots.shape[0])
                 level_meta["knots"] = knots.tolist()
             else:
-                n_neighbors = int(spec.get("n_neighbors", spec.get("nNeighbors", min(10, max(1, n_levels - 1)))))
+                n_neighbors = int(
+                    spec.get(
+                        "n_neighbors",
+                        spec.get("nNeighbors", min(10, max(1, n_levels - 1))),
+                    )
+                )
                 indices, local_dists = _nngp_neighbors(dist, n_neighbors)
                 arrays[f"{prefix}_nngp_indices"] = indices
                 arrays[f"{prefix}_nngp_distances"] = local_dists
@@ -216,7 +254,9 @@ def _compile_random_levels(
     return meta, arrays
 
 
-def _compile_traits(traits: Any | None, trait_formula: str | None, Y: pd.DataFrame) -> pd.DataFrame:
+def _compile_traits(
+    traits: Any | None, trait_formula: str | None, Y: pd.DataFrame
+) -> pd.DataFrame:
     if traits is None:
         return pd.DataFrame({"Intercept": np.ones(Y.shape[1])}, index=Y.columns)
     trait_frame = _as_frame(traits, "traits")
@@ -224,16 +264,72 @@ def _compile_traits(traits: Any | None, trait_formula: str | None, Y: pd.DataFra
     if missing:
         raise ValueError(f"traits missing species rows: {missing}")
     trait_frame = trait_frame.loc[Y.columns]
-    return build_design_matrix(trait_formula or "~ .", trait_frame)
+    design = build_design_matrix(trait_formula or "~ .", trait_frame)
+    non_intercept = [
+        column for column in design.columns if not _is_intercept_column(column)
+    ]
+    if not non_intercept:
+        raise ValueError("trait_formula must include at least one non-intercept trait")
+    return design.loc[:, non_intercept]
 
 
-def _compile_phylo_cov(phylo_cov: Any | None, phylo_tree: str | Path | None, Y: pd.DataFrame) -> np.ndarray | None:
+def _scale_design_matrix(design: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    scaled = design.astype(float).copy()
+    scale_par = pd.DataFrame(index=["mean", "sd"], columns=scaled.columns, dtype=float)
+    for column in scaled.columns:
+        values = scaled[column].to_numpy(dtype=float)
+        if (
+            _is_intercept_column(column)
+            or _is_indicator_column(values)
+            or np.allclose(values, values[0])
+        ):
+            mean = 0.0
+            sd = 1.0
+            scaled[column] = values
+        else:
+            mean = float(np.mean(values))
+            sd = float(np.std(values, ddof=1))
+            if not np.isfinite(sd) or sd <= 0.0:
+                sd = 1.0
+            scaled[column] = (values - mean) / sd
+        scale_par.loc["mean", column] = mean
+        scale_par.loc["sd", column] = sd
+    return scaled, scale_par
+
+
+def _is_intercept_column(column: object) -> bool:
+    return str(column) in {"Intercept", "(Intercept)"}
+
+
+def _is_indicator_column(values: np.ndarray) -> bool:
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return False
+    unique = np.unique(finite)
+    return bool(unique.size <= 2 and np.all(np.isin(unique, [0.0, 1.0])))
+
+
+def _scale_par_metadata(scale_par: pd.DataFrame) -> dict[str, list[float] | list[str]]:
+    return {
+        "columns": [str(column) for column in scale_par.columns],
+        "mean": [float(value) for value in scale_par.loc["mean"]],
+        "sd": [float(value) for value in scale_par.loc["sd"]],
+    }
+
+
+def _compile_phylo_cov(
+    phylo_cov: Any | None, phylo_tree: str | Path | None, Y: pd.DataFrame
+) -> np.ndarray | None:
     if phylo_cov is None and phylo_tree is None:
         return None
     if phylo_tree is not None:
         return _phylo_cov_from_newick(phylo_tree, Y)
     cov = _as_frame(phylo_cov, "phylo_cov")
-    missing = [species for species in Y.columns if species not in cov.index or species not in cov.columns]
+    missing = [
+        species
+        for species in Y.columns
+        if species not in cov.index or species not in cov.columns
+    ]
     if missing:
         raise ValueError(f"phylo_cov missing species rows/columns: {missing}")
     cov = cov.loc[Y.columns, Y.columns].to_numpy(dtype=float)
@@ -242,7 +338,9 @@ def _compile_phylo_cov(phylo_cov: Any | None, phylo_tree: str | Path | None, Y: 
     return cov
 
 
-def _random_level_design(spec: dict[str, Any], design: pd.DataFrame, codes: np.ndarray) -> np.ndarray:
+def _random_level_design(
+    spec: dict[str, Any], design: pd.DataFrame, codes: np.ndarray
+) -> np.ndarray:
     formula = spec.get("x_formula")
     if not formula:
         return np.zeros((len(np.unique(codes)), 0), dtype=float)
@@ -285,6 +383,23 @@ def _cross_distances(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return np.sqrt(np.sum(delta * delta, axis=-1))
 
 
+def _spatial_alphapw(coords: np.ndarray, spec: dict[str, Any]) -> list[list[float]]:
+    if "alphapw" in spec:
+        alphapw = np.asarray(spec["alphapw"], dtype=float)
+        if alphapw.ndim != 2 or alphapw.shape[1] != 2:
+            raise ValueError("spatial alphapw must be a matrix with two columns")
+        return alphapw.tolist()
+    if "alpha" in spec:
+        return [[float(spec["alpha"]), 1.0]]
+
+    alpha_n = 100
+    ranges = np.ptp(coords, axis=0)
+    enclosing_rect_diag = float(np.sqrt(np.sum(ranges * ranges)))
+    alpha_grid = enclosing_rect_diag * np.arange(alpha_n + 1, dtype=float) / alpha_n
+    weights = np.concatenate([[0.5], np.repeat(0.5 / alpha_n, alpha_n)])
+    return np.column_stack([alpha_grid, weights]).tolist()
+
+
 def _select_gpp_knots(coords: np.ndarray, n_knots: int) -> np.ndarray:
     if n_knots <= 0:
         raise ValueError("spatial_gpp n_knots must be positive")
@@ -297,11 +412,15 @@ def _select_gpp_knots(coords: np.ndarray, n_knots: int) -> np.ndarray:
     while len(selected) < n_knots:
         next_idx = int(np.argmax(min_dist))
         selected.append(next_idx)
-        min_dist = np.minimum(min_dist, np.sum((coords - coords[next_idx]) ** 2, axis=1))
+        min_dist = np.minimum(
+            min_dist, np.sum((coords - coords[next_idx]) ** 2, axis=1)
+        )
     return coords[selected]
 
 
-def _nngp_neighbors(dist: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+def _nngp_neighbors(
+    dist: np.ndarray, n_neighbors: int
+) -> tuple[np.ndarray, np.ndarray]:
     if n_neighbors <= 0:
         raise ValueError("spatial_nngp n_neighbors must be positive")
     n_units = dist.shape[0]

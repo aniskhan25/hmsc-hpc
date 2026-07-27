@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -10,8 +11,14 @@ from pyhmsc.neural import (
     NEURAL_CHECKPOINT_VERSION,
     NeuralHmscCompatibilityError,
     NeuralHmscInference,
+    package_neural_hmsc_coefficient_calibration,
     simulate_fixed_effect_dataset,
 )
+from pyhmsc.neural.conditional_calibration import (
+    ConditionalBetaScaleCalibration,
+    apply_conditional_beta_scale_calibration,
+)
+from pyhmsc.neural.train import fixed_shape_training_data
 
 
 def test_public_neural_hmsc_api_saves_loads_and_infers(tmp_path):
@@ -179,6 +186,125 @@ def test_public_neural_hmsc_round_trips_probit_anchor_configuration(tmp_path):
     assert loaded.model.probit_anchor_eta_clip == pytest.approx(5.0)
 
 
+def test_public_neural_hmsc_packages_and_applies_frozen_external_calibration(
+    tmp_path,
+):
+    dataset = simulate_fixed_effect_dataset(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+        seed=1350,
+    )
+    source_engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+    )
+    source = source_engine.save(tmp_path / "source")
+    source_weights_hash = _sha256(source / "weights.weights.h5")
+    calibration = _external_monotone_calibration(n_covariates=3, n_species=2)
+    packaged = package_neural_hmsc_coefficient_calibration(
+        source,
+        tmp_path / "packaged",
+        calibration_metadata=calibration.to_metadata(),
+        provenance=_calibration_provenance(seed=1350),
+    )
+
+    loaded = NeuralHmscInference.load(packaged)
+    raw = loaded.predict_beta_posterior(dataset, calibrated=False)
+    calibrated = loaded.predict_beta_posterior(dataset)
+    data = fixed_shape_training_data([dataset])
+    expected = apply_conditional_beta_scale_calibration(
+        raw,
+        calibration,
+        X=data.X,
+        Y=data.Y,
+        distribution="probit",
+        coefficient_names=("Intercept", "x1", "x2"),
+    )
+    fit = loaded.infer(
+        dataset,
+        draws=8,
+        seed=1351,
+        output=tmp_path / "packaged_posterior.h5",
+    )
+
+    np.testing.assert_allclose(calibrated.mean.numpy(), expected.mean.numpy())
+    np.testing.assert_allclose(calibrated.scale.numpy(), expected.scale.numpy())
+    assert not np.allclose(calibrated.scale.numpy(), raw.scale.numpy())
+    assert loaded.coefficient_calibration is not None
+    assert loaded.coefficient_calibration.method == "external_context_monotone_scale"
+    assert loaded.coefficient_calibration_record["parameter"] == "Beta"
+    assert fit.beta_samples().shape == (1, 8, 3, 2)
+    assert _sha256(packaged / "weights.weights.h5") == source_weights_hash
+
+
+def test_public_neural_hmsc_rejects_tampered_calibration_artifact(tmp_path):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+    )
+    packaged = package_neural_hmsc_coefficient_calibration(
+        engine.save(tmp_path / "source"),
+        tmp_path / "packaged",
+        calibration_metadata=_external_monotone_calibration(
+            n_covariates=3, n_species=2
+        ).to_metadata(),
+        provenance=_calibration_provenance(seed=1360),
+    )
+    artifact = packaged / "coefficient_calibration.json"
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    payload["calibration"]["scale_multiplier"] = 99.0
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        NeuralHmscCompatibilityError, match="calibration artifact hash mismatch"
+    ):
+        NeuralHmscInference.load(packaged)
+
+
+def test_public_neural_hmsc_rejects_calibration_domain_mismatch(tmp_path):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+    )
+
+    with pytest.raises(ValueError, match="species dimension mismatch"):
+        package_neural_hmsc_coefficient_calibration(
+            engine.save(tmp_path / "source"),
+            tmp_path / "packaged",
+            calibration_metadata=_external_monotone_calibration(
+                n_covariates=3, n_species=3
+            ).to_metadata(),
+            provenance=_calibration_provenance(seed=1370),
+        )
+
+
+def test_public_neural_hmsc_rejects_unqualified_calibration_provenance(tmp_path):
+    engine = NeuralHmscInference.for_fixed_effects(
+        n_sites=8,
+        n_species=2,
+        distribution="probit",
+    )
+    provenance = _calibration_provenance(seed=1380)
+    provenance["target_response_used_for_calibration"] = True
+
+    with pytest.raises(
+        ValueError,
+        match="target_response_used_for_calibration mismatch",
+    ):
+        package_neural_hmsc_coefficient_calibration(
+            engine.save(tmp_path / "source"),
+            tmp_path / "packaged",
+            calibration_metadata=_external_monotone_calibration(
+                n_covariates=3, n_species=2
+            ).to_metadata(),
+            provenance=provenance,
+        )
+
+
 @pytest.mark.parametrize(
     ("distribution", "expected_family"),
     [
@@ -233,6 +359,72 @@ def test_public_neural_hmsc_rejects_negative_mse_weight():
 
     with pytest.raises(ValueError, match="mse_weight must be non-negative"):
         engine.fit([dataset], epochs=1, batch_size=1, mse_weight=-1.0)
+
+
+def _external_monotone_calibration(
+    *, n_covariates: int, n_species: int
+) -> ConditionalBetaScaleCalibration:
+    raw_names = (
+        "prevalence_logit",
+        "log_design_information",
+        "log_raw_scale",
+    )
+    feature_names = (
+        tuple(
+            name
+            for raw_name in raw_names
+            for name in (raw_name, f"{raw_name}_positive_hinge")
+        )
+        + tuple(f"coefficient_{index}" for index in range(n_covariates))
+        + tuple(f"prevalence_by_coefficient_{index}" for index in range(n_covariates))
+    )
+    zero_matrix = tuple(tuple(0.0 for _ in range(n_covariates)) for _ in range(3))
+    return ConditionalBetaScaleCalibration(
+        global_scale_multiplier=2.0,
+        normalization_multiplier=2.0,
+        feature_location=(0.0, 0.0, 0.0),
+        feature_scale=(1.0, 1.0, 1.0),
+        weights=tuple(0.0 for _ in feature_names),
+        feature_names=feature_names,
+        coefficient_names=tuple(
+            ["Intercept"] + [f"x{index}" for index in range(1, n_covariates)]
+        ),
+        nominal_level=0.95,
+        uncalibrated_coverage=0.5,
+        calibrated_coverage=0.95,
+        n_observations=100,
+        distribution="probit",
+        n_covariates=n_covariates,
+        n_species=n_species,
+        regularization=0.0,
+        epochs=1,
+        learning_rate=0.1,
+        scalar_nll=1.0,
+        conditional_nll=0.9,
+        mean_bias_correction=zero_matrix,
+        rank_centering_offsets=zero_matrix,
+        base_scale_stratum_offsets=tuple(0.0 for _ in range(6 + n_covariates)),
+        fallback_strength=0.0,
+        method="external_context_monotone_scale",
+    )
+
+
+def _calibration_provenance(*, seed: int) -> dict[str, object]:
+    return {
+        "kind": "independent_simulation_calibration_provenance",
+        "training_corpus_version": "0.1",
+        "calibration_training_role": "independent_simulation",
+        "target_response_used_for_calibration": False,
+        "packaging_refit_performed": False,
+        "packaging_reselection_performed": False,
+        "source_run_metadata_path": f"seed_{seed}/run_metadata.json",
+        "source_run_metadata_sha256": "a" * 64,
+        "source_seed": seed,
+    }
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_public_neural_hmsc_rank_mean_penalty_records_history():

@@ -88,12 +88,15 @@ def test_compiled_trait_effect_training_data_uses_compiler_trait_design(tmp_path
     data = compiled_trait_effect_training_data(
         compiled.init_json,
         dataset.truth_gamma.to_numpy(dtype=np.float32),
+        beta_true=dataset.truth_beta.to_numpy(dtype=np.float32),
     )
 
     assert data.X.shape == (1, 10, 3)
     assert data.Y.shape == (1, 10, 4)
-    assert data.T.shape == (1, 4, 2)
-    np.testing.assert_allclose(data.T[0], dataset.trait_design.to_numpy(dtype=np.float32))
+    assert data.T.shape == (1, 4, 1)
+    body = dataset.traits["body"].to_numpy(dtype=np.float32)
+    expected_body = (body - body.mean()) / body.std(ddof=1)
+    np.testing.assert_allclose(data.T[0, :, 0], expected_body, rtol=1e-6, atol=1e-6)
     np.testing.assert_allclose(data.Beta[0], dataset.truth_beta.to_numpy(dtype=np.float32), atol=1e-5)
 
 

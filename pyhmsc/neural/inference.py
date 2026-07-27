@@ -10,7 +10,9 @@ boundary users should build against.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +28,10 @@ os.environ.setdefault(
 
 import tensorflow as tf
 
+from pyhmsc.neural.conditional_calibration import (
+    ConditionalBetaScaleCalibration,
+    apply_conditional_beta_scale_calibration,
+)
 from pyhmsc.neural.evaluation import predict_beta_posterior
 from pyhmsc.neural.models import FixedShapeBetaPosteriorModel
 from pyhmsc.neural.posterior_heads import BetaPosterior, beta_negative_log_probability
@@ -40,12 +46,15 @@ from pyhmsc.posterior import HmscFit
 from pyhmsc.serialization import read_compiled_model
 
 
-NEURAL_CHECKPOINT_VERSION = "0.3"
-LEGACY_NEURAL_CHECKPOINT_VERSIONS = {"0.2"}
+NEURAL_CHECKPOINT_VERSION = "0.4"
+LEGACY_NEURAL_CHECKPOINT_VERSIONS = {"0.2", "0.3"}
 NEURAL_TRAINING_CORPUS_VERSION = "0.1"
 SUPPORTED_MODEL_FAMILY = "fixed_effect_beta"
 CHECKPOINT_MANIFEST = "neural_checkpoint.json"
 CHECKPOINT_WEIGHTS = "weights.weights.h5"
+CHECKPOINT_COEFFICIENT_CALIBRATION = "coefficient_calibration.json"
+COEFFICIENT_CALIBRATION_KIND = "pyhmsc_neural_coefficient_calibration"
+COEFFICIENT_CALIBRATION_SCHEMA_VERSION = 1
 
 
 class NeuralHmscCompatibilityError(ValueError):
@@ -71,6 +80,9 @@ class NeuralHmscInference:
     hidden_units: tuple[int, ...] = (64, 64)
     checkpoint_version: str = NEURAL_CHECKPOINT_VERSION
     training_corpus_version: str = NEURAL_TRAINING_CORPUS_VERSION
+    coefficient_calibration: ConditionalBetaScaleCalibration | None = None
+    coefficient_calibration_record: dict[str, Any] | None = None
+    coefficient_calibration_provenance: dict[str, Any] | None = None
 
     @classmethod
     def for_fixed_effects(
@@ -175,6 +187,33 @@ class NeuralHmscInference:
         model.load_weights(checkpoint / CHECKPOINT_WEIGHTS)
         names = manifest.get("names", {})
         formula = manifest.get("formula", {})
+        covariate_names = tuple(
+            str(name)
+            for name in names.get(
+                "covariates", _default_covariate_names(model.n_covariates)
+            )
+        )
+        species_names = tuple(
+            str(name)
+            for name in names.get(
+                "species", [f"sp{idx + 1}" for idx in range(model.n_species)]
+            )
+        )
+        (
+            coefficient_calibration,
+            coefficient_calibration_record,
+            coefficient_calibration_provenance,
+        ) = _load_checkpoint_coefficient_calibration(
+            checkpoint,
+            manifest,
+            distribution=str(manifest.get("distribution", "normal")),
+            n_covariates=model.n_covariates,
+            n_species=model.n_species,
+            covariate_names=covariate_names,
+            training_corpus_version=str(
+                manifest.get("training_corpus_version", NEURAL_TRAINING_CORPUS_VERSION)
+            ),
+        )
         return cls(
             model=model,
             model_family=model_family,
@@ -182,23 +221,16 @@ class NeuralHmscInference:
             formula=str(
                 formula.get("X", "~ x1 + x2") if isinstance(formula, dict) else formula
             ),
-            covariate_names=tuple(
-                str(name)
-                for name in names.get(
-                    "covariates", _default_covariate_names(model.n_covariates)
-                )
-            ),
-            species_names=tuple(
-                str(name)
-                for name in names.get(
-                    "species", [f"sp{idx + 1}" for idx in range(model.n_species)]
-                )
-            ),
+            covariate_names=covariate_names,
+            species_names=species_names,
             hidden_units=hidden_units,
             checkpoint_version=NEURAL_CHECKPOINT_VERSION,
             training_corpus_version=str(
                 manifest.get("training_corpus_version", NEURAL_TRAINING_CORPUS_VERSION)
             ),
+            coefficient_calibration=coefficient_calibration,
+            coefficient_calibration_record=coefficient_calibration_record,
+            coefficient_calibration_provenance=coefficient_calibration_provenance,
         )
 
     @property
@@ -216,7 +248,15 @@ class NeuralHmscInference:
         checkpoint.mkdir(parents=True, exist_ok=True)
         _build_fixed_shape_model(self.model)
         self.model.save_weights(checkpoint / CHECKPOINT_WEIGHTS)
-        manifest = self._manifest()
+        calibration_record = None
+        if self.coefficient_calibration is not None:
+            calibration_record = _write_checkpoint_coefficient_calibration(
+                checkpoint,
+                self.coefficient_calibration,
+                provenance=self.coefficient_calibration_provenance,
+                training_corpus_version=self.training_corpus_version,
+            )
+        manifest = self._manifest(calibration_record=calibration_record)
         (checkpoint / CHECKPOINT_MANIFEST).write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
@@ -488,6 +528,18 @@ class NeuralHmscInference:
         """Return a compatibility summary or raise a clear compatibility error."""
         data, context = self._prepare_inference_data(model_or_compiled_artifact)
         self._check_training_data_shape(data, batch_size=1)
+        if self.coefficient_calibration is not None:
+            try:
+                self.coefficient_calibration.validate_domain(
+                    distribution=context.distribution,
+                    n_covariates=int(data.X.shape[2]),
+                    n_species=int(data.Y.shape[2]),
+                    coefficient_names=context.covariate_names,
+                )
+            except ValueError as exc:
+                raise NeuralHmscCompatibilityError(
+                    f"compiled artifact calibration domain mismatch: {exc}"
+                ) from exc
         return {
             "compatible": True,
             "model_family": self.model_family,
@@ -519,7 +571,11 @@ class NeuralHmscInference:
             raise ValueError("chains must be positive")
         data, context = self._prepare_inference_data(model_or_compiled_artifact)
         self._check_training_data_shape(data, batch_size=1)
-        posterior = predict_beta_posterior(self.model, data)
+        posterior = self._calibrated_posterior(
+            predict_beta_posterior(self.model, data),
+            data=data,
+            context=context,
+        )
         posterior_metadata = {"neural_api": self._manifest()}
         if metadata:
             posterior_metadata.update(metadata)
@@ -536,6 +592,7 @@ class NeuralHmscInference:
                     draws=draws,
                     seed=seed,
                     metadata=posterior_metadata,
+                    calibration=self.coefficient_calibration,
                 )
                 fit = HmscFit.from_file(path)
         else:
@@ -550,16 +607,47 @@ class NeuralHmscInference:
                 draws=draws,
                 seed=seed,
                 metadata=posterior_metadata,
+                calibration=self.coefficient_calibration,
             )
             fit = HmscFit.from_file(path)
             fit.output_file = path
         return fit
 
-    def predict_beta_posterior(self, model_or_compiled_artifact: Any) -> BetaPosterior:
-        """Return the raw Normal fixed-effect ``Beta`` posterior."""
-        data, _ = self._prepare_inference_data(model_or_compiled_artifact)
+    def predict_beta_posterior(
+        self,
+        model_or_compiled_artifact: Any,
+        *,
+        calibrated: bool = True,
+    ) -> BetaPosterior:
+        """Return the fixed-effect ``Beta`` posterior.
+
+        Packaged coefficient calibration is applied by default. Set
+        ``calibrated=False`` only for diagnostics against the raw amortizer.
+        """
+        data, context = self._prepare_inference_data(model_or_compiled_artifact)
         self._check_training_data_shape(data, batch_size=None)
-        return predict_beta_posterior(self.model, data)
+        posterior = predict_beta_posterior(self.model, data)
+        if not calibrated:
+            return posterior
+        return self._calibrated_posterior(posterior, data=data, context=context)
+
+    def _calibrated_posterior(
+        self,
+        posterior: BetaPosterior,
+        *,
+        data: FixedShapeTrainingData,
+        context: "_InferenceContext",
+    ) -> BetaPosterior:
+        if self.coefficient_calibration is None:
+            return posterior
+        return apply_conditional_beta_scale_calibration(
+            posterior,
+            self.coefficient_calibration,
+            X=data.X,
+            Y=data.Y,
+            distribution=context.distribution,
+            coefficient_names=context.covariate_names,
+        )
 
     def _prepare_inference_data(
         self, value: Any
@@ -691,8 +779,10 @@ class NeuralHmscInference:
                 f"Y shape {data.Y.shape} does not match checkpoint tail {expected_y_tail}"
             )
 
-    def _manifest(self) -> dict[str, Any]:
-        return {
+    def _manifest(
+        self, *, calibration_record: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        manifest = {
             "checkpoint_version": self.checkpoint_version,
             "training_corpus_version": self.training_corpus_version,
             "model_family": self.model_family,
@@ -711,6 +801,74 @@ class NeuralHmscInference:
             "hidden_units": list(self.hidden_units),
             "limitations": _PUBLIC_LIMITATIONS,
         }
+        record = (
+            self.coefficient_calibration_record
+            if calibration_record is None
+            else calibration_record
+        )
+        if record is not None:
+            manifest["coefficient_calibration"] = dict(record)
+        return manifest
+
+
+def package_neural_hmsc_coefficient_calibration(
+    source_checkpoint: str | Path,
+    output_checkpoint: str | Path,
+    *,
+    calibration_metadata: dict[str, Any],
+    provenance: dict[str, Any],
+) -> Path:
+    """Bind a frozen external-monotone calibration to an existing checkpoint.
+
+    Model weights are copied byte-for-byte. This function validates and packages
+    retained metadata; it never fits or selects calibration parameters.
+    """
+    source = Path(source_checkpoint).expanduser().resolve()
+    output = Path(output_checkpoint).expanduser().resolve()
+    if source == output:
+        raise ValueError("output_checkpoint must differ from source_checkpoint")
+    if output.exists():
+        raise FileExistsError(f"output checkpoint already exists: {output}")
+    engine = NeuralHmscInference.load(source)
+    if engine.coefficient_calibration is not None:
+        raise ValueError("source checkpoint already contains coefficient calibration")
+    calibration = ConditionalBetaScaleCalibration.from_metadata(
+        dict(calibration_metadata)
+    )
+    _validate_packaged_calibration_domain(
+        calibration,
+        distribution=engine.distribution,
+        n_covariates=engine.model.n_covariates,
+        n_species=engine.model.n_species,
+        covariate_names=engine.covariate_names,
+    )
+    _validate_calibration_provenance(
+        provenance,
+        training_corpus_version=engine.training_corpus_version,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, output)
+    try:
+        record = _write_checkpoint_coefficient_calibration(
+            output,
+            calibration,
+            provenance=provenance,
+            training_corpus_version=engine.training_corpus_version,
+            calibration_metadata=calibration_metadata,
+        )
+        manifest_path = output / CHECKPOINT_MANIFEST
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["checkpoint_version"] = NEURAL_CHECKPOINT_VERSION
+        manifest["coefficient_calibration"] = record
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        NeuralHmscInference.load(output)
+    except Exception:
+        shutil.rmtree(output, ignore_errors=True)
+        raise
+    return output
 
 
 @dataclass(frozen=True)
@@ -727,6 +885,241 @@ _PUBLIC_LIMITATIONS = [
     "no trait, phylogeny, iid latent, spatial latent, random-effect, or detection submodel inference",
     "uncertainty is an amortized neural approximation, not an MCMC posterior",
 ]
+
+
+def _write_checkpoint_coefficient_calibration(
+    checkpoint: Path,
+    calibration: ConditionalBetaScaleCalibration,
+    *,
+    provenance: dict[str, Any] | None,
+    training_corpus_version: str,
+    calibration_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if provenance is None:
+        raise ValueError("packaged coefficient calibration requires provenance")
+    _validate_packaged_calibration_domain(
+        calibration,
+        distribution=calibration.distribution,
+        n_covariates=calibration.n_covariates,
+        n_species=calibration.n_species,
+        covariate_names=calibration.coefficient_names,
+    )
+    _validate_calibration_provenance(
+        provenance,
+        training_corpus_version=training_corpus_version,
+    )
+    metadata = (
+        calibration.to_metadata()
+        if calibration_metadata is None
+        else dict(calibration_metadata)
+    )
+    reconstructed = ConditionalBetaScaleCalibration.from_metadata(metadata)
+    _validate_packaged_calibration_domain(
+        reconstructed,
+        distribution=calibration.distribution,
+        n_covariates=calibration.n_covariates,
+        n_species=calibration.n_species,
+        covariate_names=calibration.coefficient_names,
+    )
+    calibration_sha256 = hashlib.sha256(_canonical_json_bytes(metadata)).hexdigest()
+    payload = {
+        "schema_version": COEFFICIENT_CALIBRATION_SCHEMA_VERSION,
+        "kind": COEFFICIENT_CALIBRATION_KIND,
+        "parameter": "Beta",
+        "method": calibration.method,
+        "calibration_sha256": calibration_sha256,
+        "calibration": metadata,
+        "provenance": dict(provenance),
+    }
+    path = checkpoint / CHECKPOINT_COEFFICIENT_CALIBRATION
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return {
+        "schema_version": COEFFICIENT_CALIBRATION_SCHEMA_VERSION,
+        "kind": COEFFICIENT_CALIBRATION_KIND,
+        "path": CHECKPOINT_COEFFICIENT_CALIBRATION,
+        "sha256": _file_sha256(path),
+        "calibration_sha256": calibration_sha256,
+        "parameter": "Beta",
+        "method": calibration.method,
+        "distribution": calibration.distribution,
+        "n_covariates": calibration.n_covariates,
+        "n_species": calibration.n_species,
+        "coefficient_names": list(calibration.coefficient_names),
+    }
+
+
+def _load_checkpoint_coefficient_calibration(
+    checkpoint: Path,
+    manifest: dict[str, Any],
+    *,
+    distribution: str,
+    n_covariates: int,
+    n_species: int,
+    covariate_names: tuple[str, ...],
+    training_corpus_version: str,
+) -> tuple[
+    ConditionalBetaScaleCalibration | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
+    record = manifest.get("coefficient_calibration")
+    if record is None:
+        return None, None, None
+    if str(manifest.get("checkpoint_version")) != NEURAL_CHECKPOINT_VERSION:
+        raise NeuralHmscCompatibilityError(
+            "packaged coefficient calibration requires the current checkpoint version"
+        )
+    if not isinstance(record, dict):
+        raise NeuralHmscCompatibilityError(
+            "checkpoint coefficient_calibration record must be an object"
+        )
+    expected_record = {
+        "schema_version": COEFFICIENT_CALIBRATION_SCHEMA_VERSION,
+        "kind": COEFFICIENT_CALIBRATION_KIND,
+        "path": CHECKPOINT_COEFFICIENT_CALIBRATION,
+        "parameter": "Beta",
+        "method": "external_context_monotone_scale",
+        "distribution": distribution,
+        "n_covariates": int(n_covariates),
+        "n_species": int(n_species),
+        "coefficient_names": list(covariate_names),
+    }
+    for key, expected in expected_record.items():
+        if record.get(key) != expected:
+            raise NeuralHmscCompatibilityError(
+                f"checkpoint coefficient calibration {key} mismatch"
+            )
+    expected_hash = str(record.get("sha256", ""))
+    expected_calibration_hash = str(record.get("calibration_sha256", ""))
+    if not _is_sha256(expected_hash) or not _is_sha256(expected_calibration_hash):
+        raise NeuralHmscCompatibilityError(
+            "checkpoint coefficient calibration hash is invalid"
+        )
+    path = (checkpoint / str(record["path"])).resolve()
+    try:
+        path.relative_to(checkpoint.resolve())
+    except ValueError as exc:
+        raise NeuralHmscCompatibilityError(
+            "checkpoint coefficient calibration path escapes checkpoint"
+        ) from exc
+    if _file_sha256(path) != expected_hash:
+        raise NeuralHmscCompatibilityError(
+            "checkpoint coefficient calibration artifact hash mismatch"
+        )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for key, expected in {
+        "schema_version": COEFFICIENT_CALIBRATION_SCHEMA_VERSION,
+        "kind": COEFFICIENT_CALIBRATION_KIND,
+        "parameter": "Beta",
+        "method": "external_context_monotone_scale",
+        "calibration_sha256": expected_calibration_hash,
+    }.items():
+        if payload.get(key) != expected:
+            raise NeuralHmscCompatibilityError(
+                f"coefficient calibration artifact {key} mismatch"
+            )
+    metadata = payload.get("calibration")
+    if not isinstance(metadata, dict):
+        raise NeuralHmscCompatibilityError(
+            "coefficient calibration artifact lacks metadata"
+        )
+    if (
+        hashlib.sha256(_canonical_json_bytes(metadata)).hexdigest()
+        != expected_calibration_hash
+    ):
+        raise NeuralHmscCompatibilityError(
+            "coefficient calibration metadata hash mismatch"
+        )
+    provenance = payload.get("provenance")
+    try:
+        _validate_calibration_provenance(
+            provenance,
+            training_corpus_version=training_corpus_version,
+        )
+        calibration = ConditionalBetaScaleCalibration.from_metadata(metadata)
+        _validate_packaged_calibration_domain(
+            calibration,
+            distribution=distribution,
+            n_covariates=n_covariates,
+            n_species=n_species,
+            covariate_names=covariate_names,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise NeuralHmscCompatibilityError(
+            f"invalid packaged coefficient calibration: {exc}"
+        ) from exc
+    return calibration, dict(record), dict(provenance)
+
+
+def _validate_packaged_calibration_domain(
+    calibration: ConditionalBetaScaleCalibration,
+    *,
+    distribution: str,
+    n_covariates: int,
+    n_species: int,
+    covariate_names: Sequence[str],
+) -> None:
+    if calibration.method != "external_context_monotone_scale":
+        raise ValueError(
+            "public checkpoint packaging supports external_context_monotone_scale only"
+        )
+    calibration.validate_domain(
+        distribution=distribution,
+        n_covariates=n_covariates,
+        n_species=n_species,
+        coefficient_names=covariate_names,
+    )
+
+
+def _validate_calibration_provenance(
+    provenance: Any,
+    *,
+    training_corpus_version: str,
+) -> None:
+    if not isinstance(provenance, dict):
+        raise ValueError("coefficient calibration provenance must be an object")
+    expected = {
+        "kind": "independent_simulation_calibration_provenance",
+        "training_corpus_version": str(training_corpus_version),
+        "calibration_training_role": "independent_simulation",
+        "target_response_used_for_calibration": False,
+        "packaging_refit_performed": False,
+        "packaging_reselection_performed": False,
+    }
+    for key, value in expected.items():
+        if provenance.get(key) != value:
+            raise ValueError(f"coefficient calibration provenance {key} mismatch")
+    if not _is_sha256(str(provenance.get("source_run_metadata_sha256", ""))):
+        raise ValueError("coefficient calibration provenance source hash is invalid")
+    if not isinstance(provenance.get("source_seed"), int):
+        raise ValueError("coefficient calibration provenance source_seed is invalid")
+    if not str(provenance.get("source_run_metadata_path", "")):
+        raise ValueError("coefficient calibration provenance source path is missing")
+
+
+def _canonical_json_bytes(payload: dict[str, Any]) -> bytes:
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("ascii")
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(
+        character in "0123456789abcdef" for character in value
+    )
 
 
 def _check_compiled_artifact_supported(metadata: dict[str, Any]) -> None:

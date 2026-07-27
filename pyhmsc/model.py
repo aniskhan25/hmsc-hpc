@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from pyhmsc.compiler import CompiledModel, compile_hmsc_model
-from pyhmsc.formulas import covariate_names_from_formula, normalize_formula
+from pyhmsc.formulas import build_design_matrix, covariate_names_from_formula, normalize_formula
 from pyhmsc.posterior import HmscFit
 from pyhmsc.r_bridge import make_init_with_r
 from pyhmsc.runner import run_gibbs_sampler
@@ -52,6 +52,7 @@ class HmscModel:
         self.phylo_tree = phylo_tree
         self.species_names = list(self.Y.columns)
         self.covariate_names = covariate_names_from_formula(self.x_formula, self.X)
+        self.trait_names = self._trait_names()
 
     @staticmethod
     def _as_frame(value: Any, name: str) -> pd.DataFrame:
@@ -62,6 +63,14 @@ class HmscModel:
         if frame.empty:
             raise ValueError(f"{name} must not be empty")
         return frame
+
+    def _trait_names(self) -> list[str]:
+        if self.traits is None:
+            return ["Intercept"]
+        trait_frame = self.traits.loc[self.species_names]
+        design = build_design_matrix(self.trait_formula or "~ .", trait_frame)
+        names = [str(column) for column in design.columns if str(column) not in {"Intercept", "(Intercept)"}]
+        return names or ["trait_0"]
 
     def compile(
         self,

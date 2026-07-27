@@ -7,7 +7,13 @@ import numpy as np
 import pandas as pd
 
 from examples.generate_neural_hmsc_big_spatial_transfer import generate_project
-from examples.run_neural_hmsc_big_spatial_transfer import _directory_sha256
+from examples.run_neural_hmsc_big_spatial_transfer import (
+    _directory_sha256,
+    _source_coefficient_calibration,
+    _target_context_covariate_support,
+)
+from pyhmsc.neural.calibration import BetaScaleCalibration
+from pyhmsc.neural.conditional_calibration import ConditionalBetaScaleCalibration
 
 
 SOURCE_MATRIX = Path("examples/big_spatial/data")
@@ -62,6 +68,70 @@ def test_frozen_artifact_directory_fingerprint_is_content_sensitive(tmp_path):
     assert second == _directory_sha256(checkpoint)
 
 
+def test_target_context_support_uses_unlabeled_covariate_quantiles():
+    train_X = pd.DataFrame({"TMG": [-2.0, -1.0, 0.0]})
+    test_X = pd.DataFrame({"TMG": [1.0, 2.0, 3.0]})
+
+    support = _target_context_covariate_support(train_X, test_X, n_sites=3)
+
+    expected = np.quantile(
+        np.array([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]),
+        np.array([1.0 / 6.0, 0.5, 5.0 / 6.0]),
+    )
+    np.testing.assert_allclose(support, expected)
+
+
+def test_transfer_loads_scalar_and_conditional_source_calibrations():
+    scalar = BetaScaleCalibration(
+        scale_multiplier=1.2,
+        nominal_level=0.95,
+        uncalibrated_coverage=0.5,
+        calibrated_coverage=0.9,
+        n_observations=10,
+        distribution="probit",
+        n_covariates=2,
+        n_species=3,
+    )
+    conditional = ConditionalBetaScaleCalibration(
+        global_scale_multiplier=1.1,
+        normalization_multiplier=1.0,
+        feature_location=(0.0, 0.0, 0.0),
+        feature_scale=(1.0, 1.0, 1.0),
+        weights=(0.0, 0.0, 0.0),
+        feature_names=("prevalence_logit", "log_design_information", "log_raw_scale"),
+        coefficient_names=("Intercept", "TMG"),
+        nominal_level=0.95,
+        uncalibrated_coverage=0.5,
+        calibrated_coverage=0.9,
+        n_observations=10,
+        distribution="probit",
+        n_covariates=2,
+        n_species=3,
+        regularization=0.0,
+        epochs=1,
+        learning_rate=0.1,
+        scalar_nll=0.0,
+        conditional_nll=0.0,
+        method="external_context_monotone_scale",
+        mean_bias_correction=((0.0, 0.0), (0.0, 0.0), (0.0, 0.0)),
+        rank_centering_offsets=((0.0, 0.0), (0.0, 0.0), (0.0, 0.0)),
+    )
+
+    assert isinstance(
+        _source_coefficient_calibration(scalar.to_metadata()),
+        BetaScaleCalibration,
+    )
+    conditional_metadata = conditional.to_metadata()
+    conditional_metadata["base_scale_strata"]["prevalence_offsets"] = [0.0, 0.0, 0.0]
+    conditional_metadata["base_scale_strata"]["design_offsets"] = [0.0, 0.0, 0.0]
+    conditional_metadata["base_scale_strata"]["coefficient_offsets"] = [0.0, 0.0]
+
+    assert isinstance(
+        _source_coefficient_calibration(conditional_metadata),
+        ConditionalBetaScaleCalibration,
+    )
+
+
 def test_transfer_runner_has_no_training_or_calibration_fit_path():
     tree = ast.parse(RUNNER.read_text(encoding="utf-8"))
     called_attributes = {
@@ -80,7 +150,16 @@ def test_transfer_runner_has_no_training_or_calibration_fit_path():
 
 
 def test_big_spatial_transfer_lumi_script_syntax():
+    text = Path("docs/lumi_neural_hmsc_big_spatial_transfer_sbatch.sh").read_text(
+        encoding="utf-8"
+    )
+
     subprocess.run(
         ["bash", "-n", "docs/lumi_neural_hmsc_big_spatial_transfer_sbatch.sh"],
         check=True,
     )
+
+    assert "REFERENCE_PARITY_METRICS" in text
+    assert "--reference-parity-metrics" in text
+    assert "--target-context-gate" in text
+    assert "--target-context-gate-datasets" in text

@@ -1,5 +1,13 @@
 # Amortized Neural-HMSC Implementation Roadmap
 
+> **Current outcome (2026-07-27):** the completed branch qualifies bounded
+> fixed-effect probit neural approximations, not structural Neural HMSC or
+> MCMC near-equivalence. Neural model-family development on this branch is
+> closed after terminal trait, variable-design, covariance, and joint
+> Student-t results. See
+> `docs/neural_hmsc_branch_closure_audit_2026-07-27.md`. Any new structural
+> attempt requires a new branch and fresh generative-model preregistration.
+
 This roadmap describes a staged implementation plan for the first deep learning
 research direction selected from `docs/deep_learning_jsdm_directions.md`:
 
@@ -35,6 +43,76 @@ fixed-effect Gaussian / probit / Poisson HMSC
 
 Only after this works should the project add traits, random effects, latent
 associations, and spatial structure.
+
+## Expected Outcome and Meaning of MCMC Equivalence
+
+The neural method is amortized approximate inference. It will not reproduce the
+MCMC algorithm, finite-chain draws, or exact Bayesian posterior. The roadmap
+therefore distinguishes four claims that must not be collapsed into one:
+
+1. **Interface equivalence** means neural output uses the existing HDF5 schema
+   and can be consumed by `HmscFit` summaries and prediction APIs. This is
+   already achieved for the supported fixed-effect `Beta` path.
+2. **Operational equivalence** means a pretrained checkpoint accepts the same
+   supported compiled model boundary, emits the same named parameter families,
+   and provides materially faster inference with explicit compatibility
+   rejection outside its scope. This is the target for Neural-HMSC v0.1.
+3. **Summary-level near-equivalence** means predeclared posterior and predictive
+   summaries remain within quantitative tolerances of qualified MCMC over
+   independent simulations and real-data diagnostics. This must be earned
+   separately for each model family; it is not yet established generally.
+4. **Joint-posterior equivalence** would require matching posterior dependence,
+   multimodality, latent-factor uncertainty, and all derived HMSC semantics.
+   This is not promised by the current architecture and is not a v0.1 goal.
+
+Following this roadmap will first produce a fast, documented fixed-effect
+approximation, not a drop-in statistical replacement for MCMC. Later versions
+may qualify as summary-level near-equivalent for specific fixed, trait, iid, or
+spatial families if they pass their family-specific gates. MCMC remains the
+reference and fallback whenever a model lies outside the qualified domain or a
+near-equivalence gate fails.
+
+For a supported family, a future summary-level near-equivalence claim requires
+all of the following on frozen independent evaluations:
+
+- coefficient posterior means track MCMC and known simulation truth under a
+  predeclared error/correlation tolerance;
+- 80%, 90%, and 95% marginal intervals pass SBC coverage and rank gates;
+- interval widths and overlap with MCMC do not show systematic collapse or
+  uncontrolled inflation;
+- held-out Brier/log-loss or distribution-appropriate proper scores remain
+  within a predeclared tolerance of MCMC;
+- identifiable association or spatial summaries pass when those parameter
+  families are included;
+- inference is materially faster after checkpoint training is amortized.
+
+Passing only prediction, coverage, or file compatibility is insufficient for a
+general MCMC-equivalence claim.
+
+The default frozen thresholds for a future fixed-effect summary-level
+near-equivalence decision are:
+
+- posterior-mean correlation with qualified MCMC at least `0.95`, with truth
+  RMSE no more than `1.10` times the MCMC truth RMSE on simulations;
+- 95% SBC coverage between `0.925` and `0.975`, normalized-rank mean error no
+  greater than `0.025`, and rank-variance error no greater than `0.025`;
+- median MCMC/neural marginal interval-width ratio between `0.80` and `1.25`
+  and median 95% interval overlap at least `0.80`;
+- held-out proper-score ratios no greater than `1.05` relative to qualified
+  MCMC on every declared real-data benchmark;
+- inference-only speedup at least `10x`, reported together with training cost
+  and amortization break-even.
+
+These thresholds must be frozen before the qualifying evaluation. A structural
+family may declare stricter thresholds, but may not weaken them after observing
+test or real-data outcomes.
+
+Current evidence does not satisfy this near-equivalence definition. Interface
+equivalence is achieved and operational equivalence is close for fixed effects,
+but Big Spatial neural/MCMC proper-score ratios remain about `1.079/1.073` and
+the previously measured 95% coefficient-interval overlap was `0.1648` despite
+useful posterior-mean correlation. Neural-HMSC v0.1 must therefore be labelled
+an amortized approximate alternative, not near-equivalent MCMC.
 
 ## Non-Goals
 
@@ -2499,6 +2577,1824 @@ a clearly different competitor to the scalar baseline:
    representation-level training changes rather than more post-hoc scale
    tuning.
 
+10. Run Whittaker promoted-default real-data requalification with the Python
+    MCMC reference retained as comparator.
+    Status: complete; LUMI job `19948534` completed with exit code `0:0`.
+    Results are documented in
+    `docs/neural_hmsc_whittaker_external_monotone_requalification_2026-07-16.md`.
+    The promoted `external_monotone` coefficient calibration passed coefficient
+    SBC acceptance, held-out predictive acceptance, and the combined
+    qualification gate on the fixed-effect Whittaker split. The predictive-only
+    artifact passed the real held-out gate, but MCMC remained better on Brier
+    score, log loss, prevalence MAE, and richness MAE. This supports real-data
+    transfer utility for the promoted neural calibration, not exact posterior
+    equivalence.
+
+11. Run a direct Whittaker Python-only HMSC parity comparison against the
+    original R-created HMSC model exported through the R+Python HMSC-HPC
+    boundary. This should use the same split, formula, MCMC settings, posterior
+    summaries, held-out predictions, and qualitative HMSC book checks. Keep
+    this separate from the neural `external_monotone` evidence.
+    Status: complete for fixed-effect Whittaker trait/phylogeny. Initial LUMI
+    job `19967782` found preprocessing mismatches in `XScaled` and `TrScaled`;
+    LUMI job `19983202` passed after Python-native preprocessing was corrected.
+
+12. Extend direct R/Python parity beyond Whittaker trait/phylogeny to compact
+    fixture coverage: fixed-effect no-trait first, then iid random intercept,
+    then spatial random effects only after inspecting R/Hmsc spatial boundary
+    semantics explicitly.
+    Status: implementation added. `examples/run_direct_r_python_parity.py`
+    provides a reusable direct parity workflow for YAML configs,
+    `docs/lumi_direct_r_python_parity_sbatch.sh` runs
+    `examples/projects/simulated_poisson_recovery/model.yaml` and
+    `examples/projects/simulated_spatial_validation/model_iid.yaml`, and the R
+    bridge now emits iid `studyDesign`/`ranLevels` instead of silently dropping
+    random levels. Status: complete; results are documented in
+    `docs/direct_r_python_hmsc_fixture_parity_2026-07-18.md`. First LUMI
+    attempt `19983642` used overly small smoke
+    fixtures and strict absolute-error deltas; it passed fixed-effect boundary
+    equality but failed posterior/predictive gates. The rerun should use the
+    corrected fixture set and non-degradation predictive semantics. Attempt
+    `19983758` exposed a second preprocessing rule: R/Hmsc leaves binary 0/1
+    indicator columns unscaled. Attempt `19983981` passed the fixed-effect
+    boundary arrays after that fix, but failed posterior-summary correlations;
+    compact fixture posterior correlations are now treated as diagnostics so
+    this workflow can enforce boundary parity and predictive non-degradation
+    while still reporting stochastic posterior disagreement. LUMI job
+    `19984923` passed the corrected fixture workflow for
+    `simulated_poisson_recovery` and `simulated_spatial_validation/model_iid.yaml`.
+    Spatial boundary inspection is now documented in
+    `docs/spatial_r_python_hmsc_boundary_inspection_2026-07-18.md`: Full and
+    GPP distance arrays match the R boundary exactly, NNGP requires ragged-list
+    versus padded-tensor normalization, and Python-native spatial compilation
+    now uses the R/Hmsc 101-point default `alphapw` grid instead of the previous
+    one-point compact support unless `alphapw` or `alpha` is explicitly
+    provided. Corrected inspection job `19995051` passed with exact `alphapw`
+    equality for Full, GPP, and NNGP. Direct spatial parity is now complete for
+    compact Full, GPP, and NNGP fixtures: Full passed in retry job `19995352`;
+    GPP and NNGP passed in job `19999784` after padding variable random-level
+    posterior shapes and applying the native GPP jitter/clipping stabilization
+    to the legacy RDS import path. Decision recorded in
+    `docs/python_only_hmsc_parity_decision_2026-07-19.md`: compact fixtures are
+    sufficient for a bounded boundary/parity implementation claim, but not for
+    the broader Python-only HMSC ecological-spatial parity claim. Larger
+    real-data full-spatial requalification was then added for
+    `examples/projects/big_spatial_plants_validation/model_spatial_full.yaml`.
+    LUMI job `20000066` completed both samplers; the final report was
+    regenerated from existing posteriors using `--reuse-existing-posteriors`
+    after correcting stale remote source/data sync. The Big Spatial run passed
+    boundary and predictive gates: `Y`, `X`, `T`, and `Pi` matched; `Beta`
+    diagnostic correlation was `0.984128`; `Gamma` diagnostic correlation was
+    `0.999570`; spatial association diagnostic correlation was `0.749967`; and
+    Python-native predictive MAE was better than the R-boundary comparator
+    (`0.099725` vs `0.113449`). Next action: return to neural work with
+    Python-only parity scaffolding considered adequate for the current feature
+    scope.
+
+13. Use the qualified Python-only/R-boundary comparator when evaluating the
+    promoted neural `external_monotone` path on real-data transfer.
+    Status: complete. Implemented in the Whittaker and Big Spatial neural real-data
+    runners. `examples/run_neural_hmsc_whittaker.py` and
+    `examples/run_neural_hmsc_big_spatial_transfer.py` now accept
+    `--reference-parity-metrics`; when a passed direct R/Python parity metrics
+    JSON is supplied, the MCMC reference row is labelled
+    `qualified_python_mcmc_fixed` and the generated report, acceptance JSON,
+    and run metadata record the boundary parity provenance. The corresponding
+    LUMI sbatch scripts expose `REFERENCE_PARITY_METRICS` and
+    `QUALIFIED_REFERENCE_LABEL` without changing the default local behavior.
+    LUMI job `20000918` completed the promoted Whittaker `external_monotone`
+    requalification with the passed Whittaker parity metrics attached; it
+    passed coefficient SBC, held-out predictive, combined qualification, and
+    reference parity gates. Whittaker predictive-only metrics were Brier
+    `0.077161`, log loss `0.273998`, macro AUC `0.549285`, prevalence MAE
+    `0.077720`, and richness MAE `3.716901`; the qualified Python MCMC
+    comparator remained stronger on Brier/log loss/prevalence/richness while
+    matching macro AUC. Big Spatial dependent job `20000925` and retry
+    `20001335` exposed transfer-runner assumptions about promoted calibration
+    artifact separation; after fixing the runner to load coefficient
+    calibration from `neural_posterior.h5` and predictive calibration from
+    `neural_predictive_distribution.h5`, LUMI job `20001432` completed the
+    Big Spatial frozen-transfer check with the Big Spatial parity metrics
+    attached. Big Spatial predictive transfer passed: predictive-only metrics
+    were Brier `0.052811`, log loss `0.211215`, macro AUC `0.632069`,
+    prevalence MAE `0.059852`, and richness MAE `5.148121`; the qualified
+    Python MCMC comparator remained stronger.
+
+14. Decide whether to run one multi-seed real-data sensitivity check or return
+    directly to simulated neural competitor development.
+    Status: complete. The bounded three-seed real-data sensitivity check ran
+    first, and the result supports returning to simulated neural competitor
+    development. The workflow was deliberately limited: three Whittaker seeds
+    with attached Whittaker parity metrics, each feeding a matching Big Spatial
+    frozen-transfer run with attached Big Spatial parity metrics. It aggregated
+    pass rate, predictive-only Brier/log-loss ratios versus uncalibrated and
+    qualified Python MCMC, macro AUC deltas, prevalence/richness MAE ratios,
+    source SBC coverage/rank moments, and runtime. It did not introduce new
+    calibration objectives or tune thresholds. The workflow is implemented as
+    `docs/lumi_neural_hmsc_realdata_sensitivity_sbatch.sh`, with aggregation in
+    `examples/aggregate_neural_hmsc_realdata_sensitivity.py`.
+    LUMI job `20001710` completed on `dev-g` with seeds `20260721`,
+    `20260722`, and `20260723`, elapsed wall time `1962` seconds, run root
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_realdata_sensitivity_20260719`.
+    The downloaded aggregate is in
+    `/private/tmp/neural_realdata_sensitivity_20001710`, and the summarized
+    report is `docs/neural_hmsc_realdata_sensitivity_2026-07-19.md`.
+    All six dataset-seed rows completed and passed. The paired pass count was
+    `3/3`, and the qualified Python MCMC comparator retained a Brier/log-loss
+    advantage in all three paired seeds. Whittaker means were Brier ratio
+    versus qualified MCMC `1.0386`, log-loss ratio `1.0576`, macro AUC delta
+    `0.0019`, SBC coverage `0.9550`, rank mean `0.4943`, and rank variance
+    `0.0702`. Big Spatial means were Brier ratio versus qualified MCMC
+    `1.0945`, log-loss ratio `1.0866`, and macro AUC delta `-0.0167`.
+    Decision: `stable_return_to_competitor_development`. The evidence supports
+    stable neural predictive transfer with qualified comparator provenance, but
+    it confirms that qualified Python MCMC remains stronger on core real-data
+    proper scores.
+
+15. Resume simulated neural competitor development with the qualified real-data
+    evidence treated as a benchmark constraint.
+    Status: implementation added. The first competitor in this return-to-neural
+    phase is a conservative predictive-only Beta-mean calibrator, exposed as
+    `--predictive-mean-calibration affine_shrinkage` in
+    `examples/run_neural_hmsc_benchmark.py`. It fits a scalar affine/shrinkage
+    correction on simulated calibration posterior means, gates selection on an
+    independent simulated validation pool, and falls back to identity if the
+    validation RMSE improvement is not positive enough. It writes metadata under
+    `predictive_mean_calibration` on `neural_predictive_distribution.h5` with
+    `artifact_role = predictive_only_mean`; it does not alter
+    `neural_posterior.h5`, coefficient-posterior calibration, SBC rank
+    diagnostics, OOD gates, rare-validation gates, or real-data acceptance
+    thresholds. A local smoke run passed with:
+    `python3 examples/run_neural_hmsc_benchmark.py --output /private/tmp/neural_mean_calibration_smoke --suite probit --n-sites 12 --n-species 2 --train-datasets 4 --calibration-datasets 3 --predictive-mean-calibration affine_shrinkage --predictive-mean-calibration-validation-datasets 2 --predictive-mean-calibration-min-improvement 0.0001 --epochs 2 --batch-size 2 --neural-chains 1 --neural-draws 8 --sbc-datasets 0`.
+    The smoke selected a non-identity calibrator with validation RMSE ratio
+    `0.9420` while retaining the existing predictive-only scale calibration
+    metadata separately.
+
+16. Run a compact fixed-evaluation simulated comparison for the new
+    predictive-mean competitor.
+    Status: complete; do not submit to LUMI. The compact local comparison is
+    documented in
+    `docs/neural_hmsc_predictive_mean_compact_comparison_2026-07-19.md`.
+    It compared `external_monotone` against `external_monotone +
+    affine_shrinkage` on shared probit seeds, reused the baseline neural
+    checkpoint for the affine run, and wrote both MCMC-reference predictive
+    rows and fixed SBC/OOD rows. The affine calibrator correctly wrote
+    predictive-only metadata, but it rejected the non-identity candidate on the
+    independent validation pool and fell back to identity: selected `false`,
+    slope `1.0000`, intercept `0.0000`, validation RMSE ratio `1.0000`.
+    Neural predictive RMSE was unchanged (`0.3493` uncalibrated and `0.3529`
+    calibrated in both runs), and coefficient SBC/OOD rows were unchanged as
+    expected. The compact fixed-evaluation gate also did not qualify because
+    in-domain coverage was `0.8750`, below the frozen `0.9000` gate. This
+    candidate is therefore mechanically valid but not promotable.
+
+17. Redesign the predictive-mean competitor around response-scale proper-score
+    selection instead of global coefficient-RMSE affine fitting.
+    Status: implementation added. The compact comparison showed that a global
+    affine correction to Beta means can improve calibration-pool coefficient
+    RMSE while failing independent validation and producing no predictive
+    movement. The new implementation adds
+    `--predictive-mean-calibration probit_response_affine`, which fits bounded
+    slope/intercept candidates against simulated response-scale Brier plus
+    log-loss, then accepts the selected candidate only if an independent
+    validation pool improves the combined score without exceeding configured
+    Brier/log-loss degradation ratios. It falls back to identity otherwise.
+    The implementation keeps the same separation: `neural_posterior.h5`,
+    coefficient uncertainty calibration, SBC rank diagnostics, OOD gates,
+    rare-validation gates, Whittaker gates, and Big Spatial gates stay frozen.
+    Only `neural_predictive_distribution.h5` receives the predictive-only mean
+    metadata. A local smoke run passed:
+    `python3 examples/run_neural_hmsc_benchmark.py --output /private/tmp/neural_response_mean_smoke --suite probit --n-sites 12 --n-species 2 --train-datasets 4 --calibration-datasets 3 --predictive-mean-calibration probit_response_affine --predictive-mean-calibration-validation-datasets 2 --predictive-mean-calibration-min-improvement 0.0001 --epochs 2 --batch-size 2 --neural-chains 1 --neural-draws 8 --sbc-datasets 0`.
+    The smoke selected a non-identity correction with slope `1.25`, intercept
+    `-0.0250`, validation Brier ratio `0.9569`, and validation log-loss ratio
+    `0.9530`, and wrote these metrics under `predictive_mean_calibration`.
+
+18. Run a compact fixed-evaluation simulated comparison for the
+    response-scale predictive-mean competitor.
+    Status: complete; not yet LUMI-ready. The compact comparison is documented
+    in `docs/neural_hmsc_response_mean_compact_comparison_2026-07-19.md`. It
+    compared `external_monotone` against `external_monotone +
+    probit_response_affine` on shared probit seeds, reusing the baseline neural
+    checkpoint and fixed SBC/OOD settings. The response-scale selector accepted
+    a non-identity predictive-only correction: slope `1.2500`, intercept
+    `0.0250`, validation Brier ratio `0.9911`, and validation log-loss ratio
+    `0.9877`. Calibrated predictive RMSE improved from `0.3529` to `0.3505`
+    (`0.9934x`). Coefficient SBC/OOD rows were unchanged, as intended. The
+    compact fixed-evaluation acceptance flag did not pass because in-domain
+    coverage was `0.8750`, below the frozen `0.9000` gate, identical to the
+    baseline. This is likely sensitive to the very small `sbc_datasets = 8`
+    compact check, but the result is not enough to submit a five-seed LUMI
+    comparison.
+
+19. Run a larger local fixed-evaluation confirmation for
+    `probit_response_affine`.
+    Status: complete; not promotable on this compact checkpoint. The larger
+    local confirmation is documented in
+    `docs/neural_hmsc_response_mean_larger_local_confirmation_2026-07-19.md`.
+    It reused the same frozen checkpoint and seed schedule as the compact
+    comparison, but increased fixed SBC/OOD evaluation from `8 x 64` to
+    `24 x 128`. The response-scale selector again accepted the non-identity
+    predictive-only correction: slope `1.2500`, intercept `0.0250`, validation
+    Brier ratio `0.9911`, and validation log-loss ratio `0.9877`. Calibrated
+    predictive RMSE again improved from `0.3529` to `0.3505` (`0.9934x`).
+    Coefficient SBC/OOD rows were unchanged, as required. However, in-domain
+    coefficient coverage was `0.8519` for both baseline and response candidate,
+    below the frozen `0.9000` gate. This shows the compact in-domain failure was
+    not rescued by larger local evaluation and is not caused by the
+    response-mean layer; it reflects the underqualified compact checkpoint or
+    coefficient calibration setup used for this local experiment. Do not submit
+    this result to five-seed LUMI.
+
+20. Evaluate `probit_response_affine` on a previously qualified
+    external-monotone baseline.
+    Status: complete; viable predictive-only competitor, not default yet. Added
+    `examples/compare_neural_hmsc_predictive_scores.py` to compute direct
+    probit Brier, log-loss, predictive RMSE, prevalence MAE, and richness MAE
+    from `neural_predictive_distribution.h5` plus benchmark `data/X.csv` and
+    `data/Y.csv`, avoiding an unnecessary MCMC-reference rerun. Added
+    `docs/lumi_neural_hmsc_response_mean_production_eval_sbatch.sh` to reuse
+    the previously qualified production-shape external-monotone baseline from
+    LUMI job `19942240`:
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_hmsc_external_monotone_production_confirm_20260716`.
+    The script runs only `external_monotone + probit_response_affine` for the
+    same five seeds (`20260716` through `20260720`), reusing each seed's scalar
+    checkpoint, shape `40 x 75`, `sbc_datasets = 32`, `sbc_draws = 256`,
+    `external_monotone_datasets = 4`, and the same fixed OOD regimes. It then
+    compares fixed SBC/OOD gates against the existing qualified
+    `external_monotone` baseline and writes predictive-score comparisons for
+    baseline versus response candidate. Remote validation passed, and LUMI job
+    `20005059` completed on `dev-g`; run root:
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_hmsc_response_mean_production_eval_20005059`.
+    The aggregate is documented in
+    `docs/neural_hmsc_response_mean_production_eval_2026-07-19.md`. Wall time
+    was `205` seconds. Fixed coefficient/SBC/OOD metrics were identical between
+    baseline and response candidate, as intended: in-domain 95% coverage
+    `0.9442`, rare 95% coverage `0.9520`, mean OOD 95% coverage `0.9203`,
+    worst OOD/effect-size-shift 95% coverage `0.8214`, and combined-shift 95%
+    coverage `0.9684`. The response candidate passed all five fixed-comparison
+    acceptance rows under the zero-delta reuse comparison. Predictive proper
+    scores improved modestly on average: Brier `0.147620 -> 0.147153`
+    (`0.9968x`), log-loss `0.446577 -> 0.443869` (`0.9938x`), predictive RMSE
+    `0.384179 -> 0.383563` (`0.9984x`), prevalence MAE
+    `0.043553 -> 0.042621`, and richness MAE `3.023169 -> 2.982169`.
+    Four of five seeds improved Brier/log-loss/RMSE, while seed `20260718`
+    worsened slightly. Keep `probit_response_affine` as a viable
+    predictive-only competitor, but do not promote it as the default until it
+    is checked on real-data transfer.
+
+21. Run real-data transfer validation for the response-scale predictive-mean
+    competitor.
+    Status: complete; do not promote as default. Extended the Whittaker and Big Spatial real-data
+    qualification workflows so they can compare promoted `external_monotone`
+    against `external_monotone + probit_response_affine` while attaching the
+    existing Python-only/R-boundary parity metrics. The report must keep the
+    response layer labelled predictive-only and must not treat its predictive
+    mean improvement as evidence for coefficient-posterior calibration. Gate
+    the candidate on Whittaker and Big Spatial held-out Brier/log-loss/proper
+    scores, while requiring the existing Whittaker/Big-Spatial acceptance,
+    Python-only HMSC parity context, SBC/OOD, and rare-validation gates to
+    remain frozen. Implementation and submission details are documented in
+    `docs/neural_hmsc_response_mean_realdata_transfer_2026-07-19.md`. Local
+    py_compile, sbatch syntax checks, help checks, focused tests, Whittaker
+    response-mean smokes, and a Big Spatial transfer smoke passed. LUMI
+    Whittaker job `20006616` completed on `dev-g` with
+    `PREDICTIVE_MEAN_CALIBRATION=probit_response_affine`,
+    `PREDICTIVE_MEAN_CALIBRATION_VALIDATION_DATASETS=128`, and the qualified
+    Whittaker R/Python parity metrics attached. LUMI Big Spatial job `20006620`
+    completed with dependency `afterok:20006616`, using the Whittaker
+    response-mean run as its frozen source and the qualified Big Spatial
+    R/Python parity metrics attached. Both jobs exited `0:0`. Whittaker passed
+    coefficient SBC, held-out predictive, combined qualification, and reference
+    parity gates, but response-mean calibrated prediction slightly worsened
+    Brier/log-loss relative to scale-only predictive calibration: Brier ratio
+    `1.0030`, log-loss ratio `1.0005`. It improved macro AUC, prevalence MAE,
+    richness MAE, and rare-species metrics, but remained worse than the
+    qualified Python MCMC comparator on core proper scores: Brier ratio
+    `1.0461`, log-loss ratio `1.0454`. Big Spatial passed source, target
+    predictive, transfer, and reference parity gates. There the response-mean
+    layer improved scale-only transfer: Brier ratio `0.9962`, log-loss ratio
+    `0.9944`, macro AUC ratio `1.0050`, prevalence MAE ratio `0.9729`, and
+    richness MAE ratio `0.9823`, but it still trailed qualified Python MCMC:
+    Brier ratio `1.1083`, log-loss ratio `1.0971`. The candidate remains a
+    valid experimental predictive-only competitor but should not become the
+    default. Next action: return to predictive-mean competitor development with
+    an explicit cross-dataset no-degradation gate against the promoted
+    `external_monotone` scale-only predictive path on both Whittaker and Big
+    Spatial.
+
+22. Redesign predictive-mean competitor selection with cross-dataset
+    no-degradation gates.
+    Status: complete. Added an executable promotion gate in
+    `pyhmsc/neural/predictive_selection.py`, exposed by
+    `examples/evaluate_neural_hmsc_predictive_promotion.py`, with focused tests
+    in `tests/test_neural_hmsc_predictive_selection.py`. The gate compares
+    `neural_predictive_mean_calibrated` against
+    `neural_predictive_only_calibrated` across named held-out real-data metric
+    CSVs. By default, every dataset must have Brier and log-loss ratios
+    `<= 1.0`; optional simulated summary rows can also require positive
+    simulated Brier/log-loss gains, but simulated improvement cannot override a
+    real-data degradation. Running the gate on the completed Whittaker and Big
+    Spatial response-mean validation bundle wrote
+    `/private/tmp/neural_response_mean_realdata_20006616_20006620/promotion_gate`.
+    It rejected `probit_response_affine` for default promotion exactly because
+    Whittaker degraded: Brier ratio `1.0030`, log-loss ratio `1.0005`. Big
+    Spatial passed: Brier ratio `0.9962`, log-loss ratio `0.9944`. The gate
+    result is documented in
+    `docs/neural_hmsc_predictive_mean_promotion_gate_2026-07-19.md`. Keep
+    `probit_response_affine` available as an experimental predictive-only path,
+    but do not tune it into the default.
+
+23. Implement a domain-conditional predictive-mean selector.
+    Status: implemented locally; production validation pending. Added
+    `domain_conditional_predictive_mean_selector_metadata` and
+    `select_predictive_mean_calibration_for_context` in
+    `pyhmsc/neural/mean_calibration.py`. The Whittaker runner now accepts
+    `--predictive-mean-selection-policy {apply_selected,domain_conditional}`.
+    In `domain_conditional` mode, Whittaker/source-like contexts use identity
+    and write final predictive samples identical to scale-only while retaining
+    the response-affine candidate in `predictive_mean_selector` metadata.
+    Big Spatial reads that selector metadata from the frozen Whittaker artifact
+    and applies the candidate for `big_spatial_transfer` if active. The LUMI
+    Whittaker sbatch wrapper exposes `PREDICTIVE_MEAN_SELECTION_POLICY`.
+    Focused tests passed, and a local transfer-shape smoke confirmed the
+    intended behavior: Whittaker selector-final Brier/log-loss ratios versus
+    scale-only were exactly `1.0000/1.0000`, while Big Spatial selector-final
+    ratios were `0.9716/0.9584`. The smoke cross-dataset promotion gate passed.
+    Details are documented in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+24. Run production-shape real-data validation for the domain-conditional
+    predictive-mean selector.
+    Status: complete; promotion gate passed. Submitted Whittaker with
+    `PREDICTIVE_MEAN_CALIBRATION=probit_response_affine`,
+    `PREDICTIVE_MEAN_SELECTION_POLICY=domain_conditional`, the same validation
+    dataset count (`128`) and parity metrics as the previous response-mean
+    real-data run. Whittaker LUMI job `20008206` ran on `dev-g`; run
+    root:
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_whittaker_domain_selector_realdata_20260719`.
+    Submitted dependent Big Spatial transfer job `20008208` with
+    `afterok:20008206`, using that frozen Whittaker artifact and the Big
+    Spatial parity metrics; run root:
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_big_spatial_domain_selector_realdata_20260719`.
+    Remote syntax/import verification passed under the TensorFlow venv before
+    submission. Both jobs completed successfully: Whittaker `20008206` elapsed
+    `00:10:28`, Big Spatial `20008208` elapsed `00:01:50`, both exit `0:0`.
+    Downloaded results to
+    `/private/tmp/neural_domain_selector_realdata_20008206_20008208` and ran
+    the frozen cross-dataset promotion gate from step 22. The gate passed.
+    Whittaker selected identity/source fallback and was exactly unchanged
+    relative to scale-only: Brier ratio `1.0000`, log-loss ratio `1.0000`.
+    Big Spatial selected the response-affine candidate and retained the
+    transfer gain: Brier ratio `0.9962`, log-loss ratio `0.9944`, macro AUC
+    ratio `1.0050`, prevalence MAE ratio `0.9729`, and richness MAE ratio
+    `0.9823`. Whittaker and Big Spatial acceptance gates and reference parity
+    attachments passed. Qualified Python MCMC remains stronger on core
+    real-data proper scores, so this is a neural scale-only predictive-transfer
+    improvement, not an HMSC-comparator superiority claim. Detailed results are
+    documented in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+25. Decide promotion policy for the domain-conditional predictive-mean
+    selector.
+    Status: complete; require bounded sensitivity confirmation before default
+    promotion. The selector has passed the two-dataset production-shape
+    real-data gate, but only on one paired seed. Because the earlier raw
+    `probit_response_affine` evidence was mixed across Whittaker and Big
+    Spatial, do not change defaults from one paired context-rule result. Keep
+    `PREDICTIVE_MEAN_SELECTION_POLICY=apply_selected` as the sbatch default for
+    now. Run a bounded three-seed Whittaker plus dependent Big Spatial
+    sensitivity confirmation with
+    `PREDICTIVE_MEAN_SELECTION_POLICY=domain_conditional`,
+    `PREDICTIVE_MEAN_CALIBRATION=probit_response_affine`,
+    `PREDICTIVE_MEAN_CALIBRATION_VALIDATION_DATASETS=128`, and the same
+    Whittaker/Big Spatial parity attachments. Every seed pair must pass the
+    existing real-data gates and the frozen cross-dataset no-degradation gate.
+    If it passes, promote the domain-conditional selector policy, not raw
+    `probit_response_affine`, as the default predictive-mean deployment
+    policy. Decision details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+26. Submit bounded three-seed real-data sensitivity confirmation for the
+    domain-conditional selector.
+    Status: submitted/running on LUMI. Reused the existing bounded
+    real-data sensitivity harness and extended it to run
+    `PREDICTIVE_MEAN_CALIBRATION=probit_response_affine`,
+    `PREDICTIVE_MEAN_SELECTION_POLICY=domain_conditional`, per-seed
+    Whittaker plus dependent Big Spatial transfer, and the frozen
+    cross-dataset no-degradation promotion gate. The aggregator now records
+    selector decisions, per-dataset promotion ratios, per-seed gate pass
+    counts, and a final promotion-candidate decision without tuning
+    thresholds. Local and remote checks passed:
+    `bash -n`, `py_compile`, and focused pytest for
+    `tests/test_neural_hmsc_realdata_sensitivity.py` plus
+    `tests/test_neural_hmsc_predictive_selection.py`. Submitted job
+    `20010991` to `dev-g` with run root
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_domain_selector_realdata_sensitivity_20260719`
+    and seeds `20260721 20260722 20260723`. Initial state was running on
+    `nid007962`. Required output remains: per-seed Whittaker and Big Spatial
+    held-out metrics, acceptance JSON, selector decisions, promotion gate
+    JSON/CSV/Markdown, and aggregate `realdata_sensitivity.{csv,json,md}`.
+
+27. Monitor and aggregate bounded domain-conditional real-data sensitivity.
+    Status: complete; do not promote `domain_conditional` as default. LUMI job
+    `20010991` completed successfully in `00:34:09` with exit code `0:0`.
+    Downloaded the run root to
+    `/private/tmp/neural_domain_selector_realdata_sensitivity_20010991/neural_domain_selector_realdata_sensitivity_20260719`.
+    Inspected `realdata_sensitivity.{csv,json,md}` and all per-seed
+    `promotion_gate/` outputs. All six Whittaker and Big Spatial dataset
+    acceptance gates passed, and Whittaker used identity/source fallback in
+    all three seeds. The frozen cross-dataset predictive-mean promotion gate
+    passed for seeds `20260721` and `20260722`, but failed for seed
+    `20260723` because Big Spatial degraded relative to the scale-only
+    baseline: Brier ratio `1.004801`, log-loss ratio `1.004174`. Paired
+    promotion-gate pass count was therefore `2 / 3`, below the every-seed
+    no-degradation rule. Keep promoted scale-only `external_monotone` as the
+    default predictive path and keep `domain_conditional` experimental. Full
+    result details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+28. Add a conservative transfer-stability guard for predictive-mean
+    calibration.
+    Status: complete; implementation added. The bounded sensitivity failure shows source validation
+    proper-score gains are too small to justify unconditional transfer-side
+    response-affine movement: every seed selected a candidate, but one Big
+    Spatial transfer seed degraded. Implement a stricter selector guard that
+    keeps identity unless response-affine validation gains exceed a practical
+    margin and candidate movement stays within conservative amplitude
+    constraints. The first design should be simple and auditable: expose
+    configurable minimum Brier/log-loss gain margins and optional intercept or
+    slope caps in the selector metadata, preserve Whittaker identity fallback,
+    and only apply the candidate to transfer-like contexts when the guard
+    passes. Validate locally/fixed-sim first; only rerun the bounded
+    three-seed real-data sensitivity if those gates still hold.
+    The implementation is in `pyhmsc/neural/mean_calibration.py` and stores
+    `transfer_stability_guard` metadata with thresholds, measured validation
+    gains, candidate movement, pass/fail status, and failure reasons. Default
+    guard thresholds are Brier gain `>= 0.0001`, log-loss gain `>= 0.0005`,
+    slope delta `<= 0.05`, and absolute intercept `<= 0.025`. The Whittaker
+    runner exposes these as `--predictive-mean-transfer-*` flags, and both
+    Whittaker plus real-data sensitivity LUMI sbatch wrappers expose matching
+    environment variables. Focused validation passed:
+    `py_compile`, `bash -n`, `tests/test_neural_hmsc_mean_calibration.py`,
+    `tests/test_neural_hmsc_realdata_sensitivity.py`, and
+    `tests/test_neural_hmsc_predictive_selection.py`. Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+29. Run a fixed/local transfer-stability guard sanity check.
+    Status: complete. Before submitting another LUMI real-data sensitivity run,
+    run a small local or fixed-evaluation workflow that exercises
+    `PREDICTIVE_MEAN_SELECTION_POLICY=domain_conditional` with the new guard.
+    Confirm that near-zero source validation gains produce transfer identity
+    decisions, that strong synthetic validation gains can still apply the
+    candidate, and that coefficient-posterior calibration, SBC/OOD semantics,
+    Whittaker source identity, and scale-only predictive outputs remain
+    unchanged. If this passes, rerun the bounded three-seed real-data
+    sensitivity with the guarded selector.
+    The local fixed replay used the downloaded LUMI job `20010991` artifacts in
+    `/private/tmp/neural_domain_selector_realdata_sensitivity_20010991/neural_domain_selector_realdata_sensitivity_20260719`.
+    It reconstructed guarded selector metadata from each seed's saved
+    Whittaker response-affine candidate. All three prior source-selected
+    candidates were withheld from Big Spatial transfer because validation gains
+    were below the new practical margins; seed `20260723` was also blocked by
+    the intercept cap. Whittaker source decisions remained identity in all
+    three seeds, and guarded transfer fallback would produce Brier/log-loss
+    ratios of `1.0000/1.0000` for each seed instead of the previous
+    `20260723` degradation. A strong synthetic candidate with Brier/log-loss
+    gains of `0.0010/0.0010`, slope `1.025`, and intercept `0.020` still
+    selected `apply_candidate`. Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+30. Tighten guarded-selector promotion reporting before another LUMI
+    sensitivity submission.
+    Status: complete. The guard fixes no-degradation mechanically, but the fixed
+    replay shows the prior real-data candidates would all fall back to
+    identity. Before rerunning the bounded three-seed LUMI sensitivity, update
+    the sensitivity aggregator or promotion report to separate two outcomes:
+    safe identity fallback versus genuine transfer improvement. The promotion
+    decision should require the existing every-seed no-degradation gate plus a
+    practical nonzero transfer-improvement signal, for example at least two of
+    three Big Spatial transfer seeds applying the candidate with Brier and
+    log-loss ratios below `1.0`. Without this distinction, a guarded selector
+    could appear promotable only because it behaves identically to the current
+    scale-only default.
+    Implemented in `examples/aggregate_neural_hmsc_realdata_sensitivity.py`.
+    The aggregate rows now include `predictive_mean_transfer_outcome`,
+    `predictive_mean_genuine_transfer_improvement`,
+    `predictive_mean_safe_identity_fallback`, and direct predictive-mean versus
+    scale-only Brier/log-loss ratios. The summary now reports paired genuine
+    transfer-improvement and safe identity-fallback counts. The promotion
+    decision requires all paired dataset gates, all paired no-degradation gates,
+    and at least two Big Spatial transfer seeds with genuine transfer
+    improvement; an all-identity guarded run is classified as
+    `safe_identity_fallback_not_promotable`. Focused validation passed:
+    `py_compile`, `bash -n`, and
+    `tests/test_neural_hmsc_realdata_sensitivity.py` plus
+    `tests/test_neural_hmsc_predictive_selection.py`. Replaying the tightened
+    aggregator on downloaded LUMI job `20010991` produced
+    `inspect_seed_level_no_degradation`, with two genuine Big Spatial transfer
+    improvements and one applied degradation, matching the prior failure.
+    Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+31. Submit guarded bounded three-seed real-data sensitivity with tightened
+    reporting.
+    Status: complete. Sync the guarded selector implementation, tightened
+    aggregator, updated Whittaker runner, and LUMI sbatch wrappers to LUMI.
+    Run the same bounded Whittaker plus dependent Big Spatial sensitivity
+    workflow with `PREDICTIVE_MEAN_SELECTION_POLICY=domain_conditional` and the
+    default transfer-stability guard. Required decision outputs:
+    per-seed selector action, transfer outcome, no-degradation gate, genuine
+    transfer-improvement count, safe identity-fallback count, and final
+    aggregate decision. Promotion should occur only if the run clears both
+    no-degradation and genuine-transfer-improvement requirements; identity-only
+    fallback should remain non-promotable.
+    Local validation passed (`py_compile`, `bash -n`, focused pytest, and
+    `git diff --check`), then remote LUMI validation passed under the
+    TensorFlow venv with the same focused checks. Submitted LUMI job
+    `20020582` on `dev-g`, initial state running on `nid007956`, run root
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_domain_selector_guarded_realdata_sensitivity_20260720`,
+    seeds `20260721 20260722 20260723`, predictive mean calibration
+    `probit_response_affine`, selection policy `domain_conditional`, and
+    default transfer-stability guard. Submission details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+32. Monitor and aggregate guarded bounded real-data sensitivity.
+    Status: complete; do not promote guarded `domain_conditional`. Monitored
+    LUMI job `20020582`, which completed in `00:31:41` with exit code `0:0`.
+    Downloaded the result root to
+    `/private/tmp/neural_domain_selector_guarded_realdata_sensitivity_20020582/neural_domain_selector_guarded_realdata_sensitivity_20260720`.
+    Inspected `realdata_sensitivity.{csv,json,md}` and all per-seed
+    `promotion_gate/` outputs. All six dataset acceptance gates passed, and
+    all three paired no-degradation promotion gates passed. However, the
+    tightened reporting classified all three Big Spatial transfer rows as
+    `safe_identity_fallback`: paired genuine transfer-improvement count was
+    `0`, paired safe identity-fallback count was `3`, and the aggregate
+    decision was `safe_identity_fallback_not_promotable`. The guard failure
+    reasons matched the local replay: all three candidates had validation Brier
+    and log-loss gains below the practical margins; seed `20260723` also
+    exceeded the intercept cap. Keep `external_monotone` scale-only as the
+    default predictive path and keep `domain_conditional` experimental. Details
+    are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+33. Redesign the predictive-mean candidate around transfer-aware validation.
+    Status: complete; implementation added. The guarded selector family now has correct no-degradation
+    behavior, but it does not create a competing solution because it falls back
+    to identity on every real-data transfer seed. Stop tuning the current
+    source-only `probit_response_affine` selector. Implement a new
+    predictive-only response-mean candidate that is selected against
+    transfer-like or multi-domain validation rather than Whittaker-source
+    validation alone. A suitable first design is a conservative
+    transfer-aware response calibrator trained on simulated source plus
+    transfer-like OOD validation batches, with selection requiring
+    no-degradation on source-like contexts and a practical Brier/log-loss gain
+    on transfer-like contexts. The candidate must keep coefficient posterior
+    calibration, SBC/OOD/rare gates, and Python-only HMSC parity semantics
+    unchanged. Validate on compact/fixed simulations first; only submit another
+    real-data LUMI sensitivity run if the candidate clears both no-degradation
+    and genuine-transfer-improvement reporting gates.
+    Implemented `probit_transfer_response_affine`, a predictive-only
+    response-mean calibrator selected with separate source-like and
+    transfer-like response validation. `BetaResponseCalibrationBatch` carries
+    transfer-like validation batches, and
+    `fit_beta_transfer_response_mean_calibration` records source
+    `response_validation` separately from `transfer_response_validation` in
+    `BetaPredictiveMeanCalibration` metadata. The transfer-stability guard now
+    uses transfer-validation gains when available. The simulated benchmark
+    runner exposes the new candidate via
+    `--predictive-mean-calibration probit_transfer_response_affine`, generating
+    transfer-like validation batches from the configured OOD regimes. Focused
+    validation passed (`py_compile`, `tests/test_neural_hmsc_mean_calibration.py`,
+    CLI help), and a tiny local probit smoke at
+    `/private/tmp/neural_transfer_mean_candidate_smoke` selected the new method
+    with source Brier/log-loss ratios `0.9736/0.9714` and transfer ratios
+    `0.9214/0.9306` while keeping the artifact role predictive-only.
+    Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+34. Run compact fixed-evaluation comparison for the transfer-aware
+    predictive-mean candidate.
+    Status: complete; candidate remains experimental. Compare promoted
+    `external_monotone` scale-only against
+    `external_monotone + probit_transfer_response_affine` on shared compact
+    simulated probit seeds, with fixed SBC/OOD evaluation rows and no real-data
+    submission. Required outputs: coefficient calibration/SBC rows unchanged
+    relative to scale-only, predictive-only response metadata with separate
+    source and transfer validation scores, transfer-like predictive Brier and
+    log-loss ratios, and a decision on whether the candidate shows enough
+    no-degradation plus genuine transfer improvement to justify a bounded LUMI
+    five-seed or real-data sensitivity check.
+    Ran the candidate at
+    `/private/tmp/neural_transfer_mean_fixed_eval_20260720/external_monotone_transfer_response`
+    against the promoted compact baseline
+    `/private/tmp/neural_mean_fixed_eval_20260719/external_monotone`, then
+    wrote fixed-evaluation and predictive-score comparisons under
+    `/private/tmp/neural_transfer_mean_fixed_eval_20260720/{comparison,predictive_scores}`.
+    The predictive-only candidate selected `slope = 1.15` and
+    `intercept = 0.0`, with source validation Brier/log-loss ratios
+    `0.9924/0.9894` and transfer validation ratios `0.9874/0.9807` across
+    `covariate_shift`, `effect_size_shift`, and `combined_shift` batches.
+    Fixed coefficient/SBC/OOD rows were identical for both arms:
+    in-domain coverage `0.8750`, mean OOD `0.7731`, effect-size shift
+    `0.7222`, combined shift `0.7361`, and rare coverage `1.0000`.
+    Both arms therefore failed the compact fixed-evaluation acceptance gate on
+    in-domain coverage, so the result is not promotable and should not trigger
+    real-data LUMI sensitivity. Predictive scores improved versus scale-only
+    on Brier (`0.9849` ratio), log loss (`0.9784`), predictive RMSE
+    (`0.9924`), and prevalence MAE (`0.7302`), while richness MAE worsened
+    slightly (`1.0194`). Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+35. Run a larger fixed-evaluation simulated confirmation for the transfer-aware
+    predictive-mean candidate.
+    Status: complete; not promotable on this compact checkpoint. Re-run
+    `external_monotone` scale-only versus
+    `external_monotone + probit_transfer_response_affine` on shared simulated
+    probit seeds with enough SBC/OOD rows to re-qualify the in-domain gate
+    rather than inheriting the compact bundle failure. Keep coefficient
+    calibration/SBC/OOD/rare gates frozen and treat the response-affine layer
+    as predictive-only. Promotion criteria for this step: no coefficient-gate
+    degradation relative to scale-only, in-domain coverage within the frozen
+    acceptance interval for both arms, nonzero predictive improvement on Brier
+    and log loss, no material predictive RMSE or richness MAE degradation, and
+    retained transfer-validation metadata. Only if this larger simulated
+    confirmation passes should we consider a bounded five-seed LUMI or
+    real-data sensitivity run.
+    Ran the larger local confirmation under
+    `/private/tmp/neural_transfer_mean_larger_eval_20260720`, increasing fixed
+    SBC/OOD evaluation from `8 x 64` to `24 x 128` while reusing the same
+    frozen compact checkpoint and seed schedule. The transfer-aware candidate
+    again selected `slope = 1.15` and `intercept = 0.0`, with source
+    validation Brier/log-loss ratios `0.9924/0.9894` and transfer validation
+    ratios `0.9874/0.9807`. Coefficient/SBC/OOD rows were identical between
+    scale-only and the predictive candidate, but the shared fixed gate still
+    failed: in-domain coverage was `0.8519`, mean OOD `0.7701`, worst
+    OOD/effect-size shift `0.6898`, combined shift `0.7130`, and rare coverage
+    `1.0000`. Predictive scores again improved versus scale-only on Brier
+    (`0.9841` ratio), log loss (`0.9771`), predictive RMSE (`0.9920`), and
+    prevalence MAE (`0.7290`), while richness MAE worsened slightly (`1.0200`).
+    The result confirms a repeatable predictive-only gain, but it also confirms
+    that this compact checkpoint/coefficient calibration setup is
+    underqualified. Do not submit real-data sensitivity from this local
+    checkpoint. Details are recorded in
+    `docs/neural_hmsc_domain_conditional_predictive_mean_selector_2026-07-19.md`.
+
+36. Evaluate the transfer-aware predictive-mean candidate on a qualified
+    production-shape external-monotone baseline.
+    Status: complete; qualified for real-data transfer validation. Reused the
+    five-seed production-shape
+    `external_monotone` fixed-evaluation baseline and ran only
+    `external_monotone + probit_transfer_response_affine` on the same seed
+    schedule, scalar checkpoints, external-monotone settings, SBC/OOD rows, and
+    OOD regimes. Compare candidate coefficient/SBC/OOD rows against the frozen
+    qualified baseline and compute predictive Brier, log-loss, predictive RMSE,
+    prevalence MAE, and richness MAE against scale-only. Required decision:
+    the response-affine candidate must preserve the qualified coefficient gates,
+    improve Brier/log-loss on average, avoid material RMSE/richness
+    degradation, and keep transfer-validation metadata attached. If it passes,
+    then consider a bounded five-seed LUMI or real-data sensitivity check; if it
+    fails, keep `probit_transfer_response_affine` experimental and redesign
+    the predictive-mean candidate rather than tuning this compact checkpoint.
+    LUMI job `20023454` completed on `dev-g` using seeds `20260716` through
+    `20260720`, shape `40 x 75`, `32` SBC datasets, `256` SBC draws, and the
+    frozen qualified production baseline. The candidate passed the fixed
+    comparison in all five seeds and preserved identical in-domain (`0.9442`),
+    rare (`0.9520`), mean OOD (`0.9203`), effect-size (`0.8214`), and combined
+    shift (`0.9684`) coverage. Mean predictive ratios versus scale-only were
+    `0.9957` Brier, `0.9928` log-loss, and `0.9979` RMSE; prevalence MAE
+    improved from `0.04355` to `0.04237` and richness MAE from `3.0232` to
+    `2.9889`. Brier and RMSE worsened marginally in one seed, while log-loss
+    improved in all five. The candidate selected in all seeds and retained
+    source and three-regime transfer-validation metadata. Details are recorded
+    in `docs/neural_hmsc_transfer_response_mean_production_eval_2026-07-20.md`.
+
+37. Validate the qualified transfer-aware predictive mean on both real-data
+    domains.
+    Status: complete; rejected for global promotion. Extended the
+    Whittaker/Big Spatial real-data evaluation path to
+    accept `probit_transfer_response_affine`, then compare it against promoted
+    scale-only `external_monotone` on Whittaker and dependent Big Spatial runs.
+    Keep Python-only HMSC parity metrics attached, label the affine layer
+    predictive-only, and apply a frozen cross-dataset decision rule: no material
+    Brier/log-loss degradation on either dataset, no material RMSE/richness
+    degradation, and a genuine improvement rather than identity fallback. If
+    the paired run passes, submit a bounded three-seed real-data sensitivity
+    confirmation before considering promotion; otherwise keep the method as a
+    simulated-only experimental competitor.
+    LUMI job `20026496` completed the paired seed `20260721` workflow with
+    qualified Whittaker and Big Spatial R/Python parity metrics attached. The
+    candidate selected slope `1.025` and intercept `0.025`; independent source
+    validation ratios were `0.9997/0.9992` for Brier/log-loss and transfer
+    validation ratios were `0.9984/0.9980`. Big Spatial improved on Brier
+    (`0.9969` ratio), log-loss (`0.9948`), RMSE (`0.9984`), and richness MAE
+    (`0.9845`). Whittaker degraded on Brier (`1.0049`), log-loss (`1.0015`),
+    and RMSE (`1.0024`) while richness improved (`0.9915`). The frozen
+    simulated gate passed, but the strict cross-dataset gate failed and the
+    mean real-data Brier gain was negative. Do not launch a three-seed run.
+    Details are recorded in
+    `docs/neural_hmsc_transfer_response_realdata_pair_2026-07-20.md`.
+
+38. Split transfer-aware predictive mean calibration into independently gated
+    source and transfer branches.
+    Status: complete; passed the one-seed production replay. Replaced the
+    globally applied affine candidate with a
+    two-branch predictive-only calibration artifact. Fit and select the source
+    branch only on independent source-shaped simulations, requiring a material
+    validation margin before any nonidentity movement. Fit and select the
+    transfer branch on balanced covariate-shift, effect-size-shift, and
+    combined-shift simulations. Deployment chooses the branch from an explicit
+    predeclared context (`whittaker` source, `big_spatial_transfer` transfer),
+    never from real held-out outcomes. Preserve the qualified coefficient/SBC,
+    parity, simulated production, and cross-dataset no-degradation gates. First
+    run a compact serialization/context-selection test and replay the paired
+    real-data workflow for one seed; only a passing pair may advance to the
+    bounded three-seed sensitivity confirmation.
+    Implemented `probit_source_transfer_response_affine` with a source branch
+    fitted/selected on independent shape-matched simulations and a transfer
+    branch fitted/selected on separate balanced covariate-shift,
+    effect-size-shift, and combined-shift pools. The serialized selector maps
+    `whittaker` to the source branch and `big_spatial_transfer` to the transfer
+    branch. LUMI job `20029081` replayed seed `20260721` with all parity,
+    coefficient/SBC, simulated-production, and real-data gates frozen. The
+    source branch missed its `0.0005` margin and used identity, reproducing all
+    Whittaker scale-only metrics exactly. The transfer branch selected slope
+    `1.05` and intercept `0.05`; Big Spatial ratios were `0.9954` Brier,
+    `0.9911` log-loss, `0.9977` RMSE, and `0.9706` richness MAE. Both dataset
+    gates and the complete cross-dataset gate passed. Details are recorded in
+    `docs/neural_hmsc_source_transfer_branch_realdata_pair_2026-07-20.md`.
+
+39. Run bounded three-seed sensitivity for independent source/transfer branch
+    selection.
+    Status: complete; failed the frozen promotion gate. LUMI job `20029856`
+    ran seeds `20260721`, `20260722`, and `20260723` with
+    `PREDICTIVE_MEAN_CALIBRATION=probit_source_transfer_response_affine`, source
+    margin `0.0005`, transfer margin `0.0001`, and the same parity references,
+    simulated production summary, coefficient/SBC settings, and strict
+    cross-dataset gates. All source branches selected identity and Whittaker
+    reproduced scale-only metrics exactly. All transfer branches were applied.
+    Seeds `20260721` and `20260722` improved all four Big Spatial metrics, but
+    seed `20260723` degraded Brier (`1.0048` ratio), log loss (`1.0042`), RMSE
+    (`1.0024`), and richness MAE (`1.0147`). The run achieved the required two
+    genuine improvements but only two of three cross-dataset gate passes, so
+    the aggregate decision was `inspect_seed_level_no_degradation` and the
+    method remains experimental. The failed seed had the strongest independent
+    simulated validation ratios, showing target-context mismatch rather than a
+    weak scalar margin. Details are recorded in
+    `docs/neural_hmsc_source_transfer_branch_realdata_sensitivity_2026-07-20.md`.
+
+40. Add a target-context-conditioned independent simulation gate for transfer
+    branch application.
+    Status: complete; implemented but rejected by the frozen replay. Use the target dataset's unlabeled covariates, study design,
+    community size, and prevalence context to construct separate synthetic
+    calibration and validation responses. Preserve the existing generic OOD
+    gate and require agreement from both gates before applying a nonidentity
+    transfer branch. Never use target held-out responses during fitting or
+    selection. First replay the resulting selector against the three frozen
+    checkpoints from job `20029856`; only a three-of-three no-degradation result
+    with at least two genuine Big Spatial improvements may return to LUMI
+    training or promotion.
+    The implementation adds a reusable target-context response gate, a
+    dual-gated source/transfer selector, Big Spatial target-support simulation
+    wiring, diagnostics, scheduler controls, and a no-training frozen replay
+    harness. Held-out target `Y` is loaded only after selection. LUMI job
+    `20031969` evaluated `32` independent datasets per target calibration and
+    validation pool against all three frozen checkpoints. Every target gate
+    passed. Seeds `20260721` and `20260722` retained their real Big Spatial
+    gains, but seed `20260723` also passed both synthetic pools and retained its
+    real degradation. The replay therefore achieved only `2/3` no-degradation
+    passes and decided `target_context_gate_failed_no_degradation`. This shows
+    simulator-to-ecology misspecification rather than insufficient synthetic
+    sample size. Do not tune or promote this gate family. Details are recorded
+    in `docs/neural_hmsc_target_context_gate_replay_2026-07-20.md`.
+
+41. Evaluate a probability-level deep-ensemble predictive-mean competitor.
+    Status: complete; passed the frozen promotion gate. Stop trying to infer checkpoint-specific real transfer
+    direction from the current simulator. Average predictive probabilities
+    across the three frozen checkpoints, comparing the scale-only ensemble to
+    the affine-branch ensemble on Whittaker and Big Spatial. Repeat the frozen
+    comparison for all three leave-one-seed-out ensembles to expose dependence
+    on any checkpoint. Keep target outcomes unavailable until final scoring and
+    retain the existing coefficient/SBC/parity provenance. Advance only if the
+    full ensemble and every leave-one-out ensemble preserve Brier, log-loss,
+    RMSE, and richness-MAE no degradation, with genuine Big Spatial Brier and
+    log-loss improvement for the full ensemble; otherwise abandon this affine
+    branch family rather than add another selector gate.
+    Implemented a frozen evaluator that constructs scale-only and affine
+    probability ensembles over identical members, scores the full three-seed
+    set and every leave-one-out pair on Whittaker and Big Spatial, verifies
+    source parity/acceptance provenance, and keeps outcomes unavailable until
+    all member predictions are frozen. Focused validation passed (`25` tests,
+    Python compilation, shell syntax, and `git diff --check`). LUMI job
+    `20032201` completed in `35` seconds. All eight full/leave-one-out dataset
+    rows passed Brier, log-loss, RMSE, and richness-MAE no degradation.
+    Whittaker remained exactly identity. The full Big Spatial ensemble ratios
+    were `0.9975` Brier, `0.9949` log loss, `0.9988` RMSE, and `0.9857`
+    richness MAE; all three leave-one-out Big Spatial ensembles also improved
+    all four metrics. Provenance passed and the decision was
+    `probability_ensemble_promotion_candidate`. Details are recorded in
+    `docs/neural_hmsc_probability_ensemble_2026-07-20.md`.
+
+42. Package the probability ensemble as a reusable predictive deployment
+    artifact and API.
+    Status: complete. Added an ordered ensemble manifest containing member artifact
+    paths and hashes, seeds, predictive calibration roles, species/formula
+    compatibility, and qualified parity provenance. Provide a `predict_mean`
+    API that averages member response probabilities and rejects incompatible
+    members. Integrate the artifact into Whittaker/Big Spatial reporting, then
+    run one clean frozen requalification against both the matched scale-only
+    ensemble and qualified Python MCMC. Keep the ensemble explicitly
+    predictive-only and do not change the default deployment policy until this
+    API/provenance requalification passes. `PredictiveProbabilityEnsemble` is
+    now available from `pyhmsc`, supports ordered subsets, and validates neural
+    member, acceptance, run-metadata, parity-metrics, and MCMC-reference hashes.
+    LUMI job `20032745` completed in `79` seconds with decision
+    `predictive_ensemble_api_requalification_passed`. All full and leave-one-out
+    neural no-degradation gates reproduced; full Big Spatial affine-versus-scale
+    ratios were `0.9975` Brier and `0.9949` log loss, while Whittaker remained
+    identity. Qualified Python MCMC remained stronger: affine-versus-MCMC ratios
+    were `1.0213`/`1.0327` Brier/log loss on Whittaker and
+    `1.0790`/`1.0731` on Big Spatial. This is a neural predictive deployment
+    qualification, not an HMSC parity claim. Details are recorded in
+    `docs/neural_hmsc_probability_ensemble_api_requalification_2026-07-20.md`.
+
+43. Promote the manifest-backed affine probability ensemble within the neural
+    predictive deployment path.
+    Status: complete. Made the qualified `affine_branch` manifest the default
+    neural predictive-mean policy, retained the matched `scale_only` manifest
+    as an explicit fallback, and kept qualified Python MCMC as the statistical
+    reference. Wired deployment and scheduler entry points to load manifests
+    through `PredictiveProbabilityEnsemble.from_manifest`, add one clean default
+    wiring smoke, and state explicitly that this policy does not replace or
+    claim equivalence to Python-only/R-boundary HMSC inference. The public
+    `load_predictive_mean_ensemble` loader now applies the promoted default and
+    rejects manifests without compatible members, predictive-only semantics,
+    outcome-independent selection, qualified parity files, or an ordered MCMC
+    reference matching the neural seeds. `scale_only` requires an explicit
+    policy selection. LUMI `dev-g` smoke job `20032978` completed in `34`
+    seconds with decision `predictive_deployment_smoke_passed`. Whittaker
+    default/fallback predictions were identical; Big Spatial had maximum
+    response-probability movement `0.040348`. Both datasets validated parity
+    provenance, target outcomes were not opened, and MCMC was not used for
+    neural prediction. Details are in
+    `docs/neural_hmsc_predictive_deployment_promotion_2026-07-20.md`.
+
+44. Freeze the promoted ensemble as the neural deployment baseline and resume
+    competitor development against the remaining proper-score gap.
+    Status: complete. Gave the promoted manifest bundle the stable versioned
+    baseline identifier `neural_predictive_affine_v1`, preserved the qualified
+    `scale_only` fallback and Python MCMC comparator, and required future
+    simulated and real-data competitors to report deltas against this exact
+    ensemble. The atomic freeze rejects an existing destination and pins all
+    four deployment manifests plus API requalification and scheduler-smoke
+    evidence by SHA-256. The public `load_predictive_deployment_baseline` API
+    resolves the stable ID and revalidates its evidence and manifest hashes
+    before loading either ensemble. LUMI job `20033698` completed in `33`
+    seconds and its stable-ID Whittaker/Big Spatial smoke passed without opening
+    target outcomes or using MCMC for neural prediction. The bundle embeds seven
+    frozen competitor gates and the exact full-ensemble MCMC gaps, including
+    Big Spatial `1.0790` Brier and `1.0731` log loss. Details are recorded in
+    `docs/neural_hmsc_predictive_baseline_v1_2026-07-20.md`.
+
+45. Implement a simulation-trained MCMC-teacher residual competitor against
+    `neural_predictive_affine_v1`.
+    Status: complete; compact gate failed safely. Built an offline
+    response-scale teacher corpus from independent simulated communities with
+    qualified Python MCMC predictive probabilities.
+    Train a bounded neural logit-residual head on top of the frozen affine
+    ensemble using site, species, design-information, prevalence, and community
+    context, with identity regularization and no real-data outcomes. Keep the
+    coefficient posterior and scale calibration untouched. First run a compact
+    shared-seed fixed evaluation against the exact versioned baseline; advance
+    only if simulated Brier/log loss improve, all SBC/OOD/rare gates remain
+    unchanged, Whittaker is no worse, and the independent Big-Spatial-shaped
+    simulation gate improves before any real-data or five-seed LUMI run.
+    The retained run verified all three ordered Big Spatial transfer-affine
+    member artifact hashes against the frozen manifest, fitted each neural/MCMC
+    posterior on 40 simulated sites, and scored 20 disjoint holdout sites and
+    75 species across five regimes. It used independent training seed
+    `20260731`, validation seed `20260732`, and evaluation seeds `20260733`-
+    `20260735`. No nonzero shrinkage passed the strict validation gate;
+    shrinkage `0.25` missed only because covariate-shift Brier was `1.000145` of
+    baseline. The raw head improved aggregate Big-Spatial-shaped Brier/log loss
+    to `0.9835`/`0.9857`, with target improvement in all three evaluation
+    seeds, but degraded covariate-shift Brier in two seeds and rare-validation
+    scores in one seed. The selector therefore chose identity. Real-data and
+    five-seed LUMI evaluation remain blocked. Details are recorded in
+    `docs/neural_hmsc_mcmc_teacher_residual_compact_2026-07-20.md`.
+
+46. Stabilize the MCMC-teacher signal with cross-fitted simulated evidence.
+    Status: complete; compact gate passed. Built a larger teacher corpus with
+    multiple independent
+    training and validation communities per regime and out-of-fold MCMC
+    predictive targets. Measure residual direction and proper-score stability
+    by fold before fitting the shared head. Add a regime/context-conditioned
+    identity expert and allow nonzero movement only when every held-out fold
+    preserves outcome Brier/log loss and the target-shaped fold improves.
+    Rerun the compact fixed evaluation against
+    `neural_predictive_affine_v1`; do not open real-data outcomes or submit a
+    five-seed LUMI comparison unless the nonzero cross-fitted head passes all
+    frozen gates.
+    The retained exact-ensemble run used four leave-one-community-out
+    calibration communities and three untouched evaluation communities across
+    five regimes, 35 datasets, and 52,500 held-out response probabilities. A
+    nearest-prototype identity expert with label-specific support caps selected
+    shrinkage `0.5`, effect cap `3.0`, and Big-Spatial-shaped cap `2.5`.
+    In-domain, covariate-shift, and rare contexts remained identity. Independent
+    effect-size-shift Brier/log-loss ratios were `0.9917`/`0.9926`; target-shaped
+    ratios were `0.9861`/`0.9878`, with improvement in every evaluation seed.
+    All-regime and all-seed no-degradation gates passed. No real outcomes were
+    opened and no LUMI job was submitted. Details are recorded in
+    `docs/neural_hmsc_mcmc_teacher_crossfit_context_compact_2026-07-21.md`.
+
+47. Verify outcome-blind real-context routing before real-data scoring.
+    Status: complete; failed closed. Added a covariate-only harness that
+    verified the exact six frozen member hashes, computed ensemble
+    probabilities and context diagnostics, and did not open target responses,
+    MCMC predictions, or scoring inputs. Whittaker correctly selected the rare
+    fallback and remained numerical identity (`1.11e-16` maximum movement).
+    Big Spatial also remained identity: its nearest approved effect context was
+    at distance `11.9382`, outside the `3.0` cap, and its nearest fallback was
+    in distribution at `10.7183`. The dominant mismatch was normalized mean log
+    design information (`10.12` for Big Spatial versus `0.02` at the approved
+    effect prototype), caused by applying a corpus fitted only on 20-site
+    holdouts to 360 sites. Probability/prevalence summaries also remained
+    outside approved target support. Paired real-data scoring remains blocked.
+    Details are recorded in
+    `docs/neural_hmsc_mcmc_teacher_real_context_routing_2026-07-21.md`.
+
+48. Rebuild the teacher representation and simulation corpus for real-context
+    support.
+    Status: complete; both required gates failed closed. Added a versioned v3
+    representation using per-site Bernoulli information and bounded sample-size
+    context while retaining version 2 artifact compatibility. Rebuilt the
+    cross-fitted corpus with 12-, 20-, and 360-site profiles, low-prevalence
+    target/effect simulations, shared MCMC fits across nested holdouts, and
+    balanced per-batch residual targets. Aggregate effect and target proper
+    scores improved; both compact and 360-site target profiles improved, while
+    in-domain, covariate-shift, and rare profiles stayed identity. The compact
+    gate nevertheless failed because effect-shift evaluation seed `20260741`
+    degraded Brier/log loss to `1.001300/1.001508`. Outcome-blind routing then
+    kept Whittaker on identity but also routed Big Spatial to the rare fallback:
+    approved target distance `4.1895` exceeded its `2.5` cap and the rare
+    fallback distance was `3.6174`. The remaining support mismatch is
+    prevalence rather than raw sample size: frozen Big Spatial mean probability
+    is `0.1002`, versus about `0.185-0.210` in the new target simulations. No
+    ecological outcomes were opened. Details are recorded in
+    `docs/neural_hmsc_mcmc_teacher_sample_size_v3_2026-07-21.md`.
+
+## Active Roadmap Reset: Deliver A Supported Neural-HMSC
+
+Steps 1-48 above are retained as implementation and experiment history. They
+established a working fixed-effect neural posterior path, qualified Python-MCMC
+references, and a frozen predictive ensemble, but later work over-concentrated
+on post-hoc calibration, selector, and teacher/router variants. The active
+roadmap below supersedes the previous continuation into another teacher-head
+support experiment.
+
+The simulation-trained MCMC-teacher residual family is paused. Versions 2 and 3
+remain reproducible negative/diagnostic results, but no additional support cap,
+router, shrinkage, or target-specific simulator tuning should be undertaken by
+default. Resuming that family requires a new representation-level hypothesis
+and an explicit decision separate from this roadmap.
+
+49. Reset scope and close the teacher/router experiment family.
+    Status: complete. The supported deliverable is now defined as amortized
+    fixed-effect `Beta` inference plus the already frozen predictive ensemble,
+    with qualified Python MCMC retained as the statistical reference. Teacher
+    residual v2 passed compact simulation but failed real-context support;
+    sample-size-stable v3 failed an independent effect-shift seed and still
+    routed Big Spatial to identity. These are useful negative results, not the
+    next production path. No real-data outcome was used to fit or rescue them.
+
+50. Produce a Neural-HMSC v0.1 release-readiness audit.
+    Status: complete, not release-ready. Do not add a new calibration model. Exercise the public
+    `NeuralHmscInference` and frozen `neural_predictive_affine_v1` artifacts in
+    one clean workflow covering checkpoint load, compiled-artifact validation,
+    posterior emission, `HmscFit` summaries, prediction, and provenance. Record
+    a support matrix that distinguishes public fixed-effect functionality from
+    experimental variable-shape, trait, iid, and spatial prototypes.
+
+    The audit must report, without hiding failures:
+
+    - Gaussian, probit, and Poisson fixed-effect simulation results;
+    - coefficient SBC coverage, rank mean/variance, and posterior-mean error;
+    - Whittaker and Big Spatial frozen predictive scores against qualified MCMC;
+    - checkpoint training time, per-dataset inference time, MCMC time, and
+      amortization break-even count;
+    - exact artifact, manifest, parity, and report hashes;
+    - unsupported structures rejected by the public compatibility boundary.
+
+    v0.1 acceptance means the workflow is reproducible, inference-only speedup
+    is material, fixed-effect marginal calibration passes the existing frozen
+    in-domain gates, and real-data proper-score degradation versus MCMC remains
+    inside the declared bounded approximation envelope. It does not require or
+    claim joint-posterior equivalence or predictive superiority over MCMC.
+
+    The v0.1 bounded approximation envelope is deliberately weaker than the
+    future near-equivalence gate: at least `100x` inference-only speedup on the
+    declared ecological workflows, 95% SBC coverage in `[0.925, 0.975]`, rank
+    mean and variance errors no greater than `0.025`, and Brier/log-loss ratios
+    no greater than `1.10` versus qualified MCMC on both Whittaker and Big
+    Spatial. Passing this envelope qualifies a useful accelerated
+    approximation; it does not qualify MCMC posterior equivalence.
+
+    The 2026-07-21 audit validated the frozen bundle and all six affine member
+    hashes, exercised checkpoint load, compiled-artifact compatibility,
+    posterior emission, `HmscFit` summaries/prediction, and unsupported-trait
+    rejection. The narrowed probit envelope passed on all three production-shape
+    seeds. Whittaker Brier/log-loss ratios were `1.0213`/`1.0327`, Big Spatial
+    ratios were `1.0790`/`1.0731`, and mean inference-only speedups were `256x`
+    and `211x`, respectively.
+
+    The initial audit failed because the public checkpoint contained no
+    `external_monotone` coefficient-calibration artifact. That packaging defect
+    is resolved in checkpoint schema `0.4`; the unchanged re-audit now returns
+    `release_ready`. Gaussian and Poisson remain implemented without retained
+    production-shape release evidence, so the release scope is fixed-shape
+    fixed-effect probit and those likelihoods remain experimental. See
+    `docs/neural_hmsc_v0_1_release_readiness_audit_2026-07-21.md`.
+
+51. Freeze and document Neural-HMSC v0.1.
+    Status: complete.
+    Checkpoint schema `0.4` binds the retained `external_monotone` metadata in a
+    SHA-256-validated artifact. `NeuralHmscInference.load()` validates method,
+    `Beta` parameter, distribution, dimensions, coefficient names, canonical
+    metadata hash, and independent-simulation provenance, then applies the
+    frozen correction before posterior draws and `HmscFit` emission. Regression
+    tests prove direct/public application parity, unchanged weights, domain and
+    provenance rejection, and artifact-tamper rejection.
+
+    All three checkpoints were packaged without fitting or reselection; their
+    original weights and twelve predictive artifacts are byte-identical. The
+    unchanged audit returned `release_ready`, with all narrowed probit release
+    gates passing and no blockers. The complete bundle is now frozen atomically
+    under `neural_hmsc_v0_1`. Its hash-complete 36-file inventory contains the
+    calibrated checkpoints, affine and scale-only members for both named
+    datasets, original and release-local predictive manifests, qualification
+    evidence, audit, and support matrix. Release-local manifests preserve the
+    original member bytes and provenance while removing runtime dependence on
+    LUMI absolute paths. `load_neural_hmsc_release()` resolves the stable ID;
+    the end-to-end example exercises compiled input, calibrated posterior
+    emission, `HmscFit`, and predictive ensemble loading. The content digest is
+    `affcfe10d2f9586e97432ae07754ab829e929ffdb62f41fb71779ad5f3ed12c8`.
+    The same inventory was rehashed and atomically published in the durable
+    LUMI deployment registry at
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-deployments/neural_hmsc_v0_1`.
+    Checkpoint training can cost more than one compact MCMC fit, while repeated
+    inference is expected to be substantially faster. Gaussian and Poisson
+    remain unqualified. Details are in
+    `docs/neural_hmsc_v0_1_release.md`.
+
+52. Promote variable-shape fixed-effect inference to the public API.
+    Status: complete. Advanced the existing variable-shape prototype so
+    one distribution-specific checkpoint supports predeclared ranges of site
+    and species counts. Train across broad simulation priors and compare against
+    ridge/Laplace and MCMC baselines. No target-dataset-specific manifests,
+    routers, or outcome-conditioned deployment branches are allowed. This is
+    the next representation-level research milestone because it expands actual
+    usability instead of tuning a fixed checkpoint after inference.
+
+    The public `VariableShapeNeuralHmscInference` now supports fixed-effect
+    probit models with 12-48 sites, 2-10 species, and the fixed ordered
+    `Intercept`, `x1`, `x2` design. Its mask-aware IRLS/Laplace anchor excludes
+    padding from prevalence and information; a permutation-aware neural head
+    learns bounded mean/log-scale corrections. Checkpoint schema `0.1` records
+    the shape range, anchor, covariates, limitations, and hash-bound independent
+    simulation scale calibration. Compiled inputs outside the range or with
+    traits, random effects, changed formula/covariates, or another distribution
+    are rejected before inference.
+
+    Three independent production-shape local runs each used 64 training, 32
+    calibration, and 32 test simulations plus two Python-MCMC fits scored on
+    held-out sites. All runs passed boundary, checkpoint parity, coefficient
+    coverage, rank, IRLS/Laplace, and MCMC proper-score gates. Mean coverage was
+    `0.9512`; mean/worst neural-to-MCMC Brier ratios were `0.9997`/`1.0339`, and
+    log-loss ratios were `1.0013`/`1.0297`. Seed `20260730` was predeclared as
+    the release candidate; two later seeds were sensitivity-only. The candidate
+    and evidence are frozen under `neural_hmsc_variable_probit_v1`, content
+    digest `badaf8b8244cbd850693723147c6094bf196482237c52d2cc279ce42b286d2f9`,
+    at `/scratch/project_462000131/anisrahm/hmsc-hpc-deployments/neural_hmsc_variable_probit_v1`.
+    `neural_hmsc_v0_1` remains unchanged. See
+    `docs/neural_hmsc_variable_shape_probit_v1.md`.
+
+53. Qualify structural HMSC families one at a time.
+    Status: paused after a documented non-promotion result. The order is
+    trait-mediated `Gamma`, iid latent `Eta`/`Lambda` association summaries,
+    then full-spatial latent effects with blocked holdouts. Each family receives
+    its own simulation truth, MCMC, calibration, identifiability, real-data,
+    speed, and API-compatibility gate. Phylogeny, GPP, and NNGP remain deferred
+    until the preceding family is qualified. A prototype implementation is not
+    sufficient for promotion.
+
+    The first bounded trait-Gamma candidate matched the qualified Whittaker
+    shape and semantics: probit, 40 sites, 75 species, `~ TMG`, and one scaled
+    non-intercept trait from `~ CN`. It emits separate Beta and Gamma marginal
+    approximations through `HmscFit`; it does not claim a coupled joint
+    posterior. The initial two-stage Beta-to-Gamma anchor failed the simulated
+    MCMC Gamma gate. Its permitted representation redesign used a bounded joint
+    site-species probit IRLS/Laplace anchor over `X (x) T`, retained the
+    species-level Beta anchor, and added only bounded zero-initialized neural
+    corrections.
+
+    Predeclared seed `20260801` passed every gate: Gamma coverage `0.929688`,
+    rank mean `0.484436`, rank variance `0.082419`, simulated neural/MCMC Gamma
+    RMSE ratio `0.930566`, Whittaker Brier ratio `1.012636`, and Whittaker log
+    loss ratio `0.966303`. The intended sensitivity seed `20260802`
+    passed mean, rank, MCMC, and real-data predictive gates but failed the
+    predeclared Gamma coverage floor with coverage `0.882812` versus `0.90`.
+    Coverage was `0.890625` for the intercept coefficient and `0.875000` for
+    TMG with negligible signed bias, identifying cross-seed uncertainty
+    calibration transfer as the blocker.
+
+    A bounded decision review then found that the intended sensitivity run was
+    not independent: advancing the base seed by one overlapped 63/64 training,
+    31/32 calibration, and 63/64 test communities. It remains a failed result
+    and prevents promotion, but it cannot consume the fresh independent
+    evaluation allowed by the stop rule. The implementation remains
+    experimental under `pyhmsc.neural` and is not exported from the stable
+    top-level API. Both `neural_hmsc_v0_1` and
+    `neural_hmsc_variable_probit_v1` remain immutable. See
+    `docs/neural_hmsc_trait_gamma_m53_negative_result_2026-07-22.md`.
+
+53A. Requalify frozen trait-Gamma uncertainty with genuinely disjoint evidence.
+    Status: terminal failure; neural trait-Gamma v1 is closed and Python MCMC
+    remains the only qualified trait-Gamma path.
+    Freeze candidate weights at SHA-256
+    `bc869b8a92e7d9ea0bf11acb565e571816a68dcff220f0a003f22d2d753cdcac`.
+    Do not retrain the neural model or alter posterior means. Fit one
+    finite-sample split-conformal scalar from 384 new communities spanning six
+    disjoint seed blocks and a balanced 3 by 3 Gamma-scale/residual-scale
+    factorial. Evaluate only after calibration is frozen on three untouched
+    258-community blocks beginning at `41000001`, `42000001`, and `43000001`,
+    plus three Whittaker MCMC replays. Promotion requires every overall,
+    coefficient, regime, rank, mean, MCMC, predictive, and real-data gate to
+    pass in every block. Any failure permanently ends the v1 neural
+    trait-Gamma path and retains Python MCMC as the only qualified path. The
+    complete frozen protocol is in
+    `docs/neural_hmsc_trait_gamma_calibration_decision_2026-07-22.md`.
+
+    `examples/run_neural_hmsc_trait_gamma_m53a.py` now provides separate
+    `smoke`, `calibrate`, and sealed `evaluate` commands. Calibration packaging
+    copies the source weights byte-for-byte and binds a finite-sample conformal
+    artifact to their hash. The evaluation command validates the production
+    calibration manifest and requires the exact confirmation token before it
+    constructs any reserved simulation corpus. Focused tests cover the order
+    statistic, package round-trip, factorial balance, disposable/reserved seed
+    separation, and confirmation barrier. The disposable smoke used only
+    `51000001`/`52000001`, preserved the candidate weight hash, completed both
+    MCMC paths, and reported `reserved_seed_opened=false`. Its metric values are
+    not promotion evidence and did not alter the preregistered protocol.
+
+    The production calibration subsequently used all 384 preregistered
+    communities in the six `31000001` through `36000001` blocks. It froze a
+    finite-sample conformal multiplier of `1.3018141270106574`, with 42 or 43
+    communities in each factorial cell. Independent validation confirmed
+    calibration artifact SHA-256
+    `3ab539e117827a73718a03b19cee3e1c1191484038d2c67b3b58a5f7746f40a9`,
+    checkpoint manifest SHA-256
+    `aed26718e224fea37c29a8701249f7c149fc98eccb17a2fe1bbbf91ae8612554`,
+    and the unchanged frozen weight hash. The freeze records
+    `reserved_evaluation_opened=false` before the authorized evaluation.
+
+    The authorized one-shot evaluation opened all three reserved blocks and
+    all three Whittaker replays without changing any frozen component or gate.
+    Blocks `41000001` and `42000001` passed every gate. Block `43000001`
+    passed all gates except the preregistered MCMC Gamma-RMSE gate: the
+    neural-to-MCMC Gamma RMSE ratio was `1.426715144159916`, exceeding the
+    fixed `1.25` maximum. All three Whittaker replays passed. Evaluation
+    artifact SHA-256 is
+    `af55e54172465893b3dbfde4a04a392cbdb55a9f875646f0aacd7bb30b0a467b`.
+    The recorded decision is `trait_gamma_probit_terminal_failure`, so no
+    trait-Gamma v1 baseline may be frozen and no post-result tuning or rerun is
+    permitted. iid Eta/Lambda qualification remains blocked.
+
+    Next, make a bounded scope decision outside trait-Gamma v1: retain Python
+    MCMC as the trait-Gamma implementation and return to qualified fixed-effect
+    neural work, or preregister a genuinely representation-level structural
+    family milestone with fresh evidence. Do not reopen scalar Gamma
+    calibration or start iid Eta/Lambda from this failed prerequisite.
+
+54. Generalize qualified variable-shape fixed-effect probit inference to a
+    variable-design v2 representation.
+    Status: preregistered candidate failed its one-shot 103M production
+    evaluation; the single permitted `v2_1` representation redesign is now
+    preregistered with untouched seeds and has not been implemented or run.
+    Trait-Gamma v1 is terminally closed, Python MCMC remains the structural
+    reference, and iid Eta/Lambda work stays blocked. Development returns to
+    the already-qualified fixed-effect probit family. The purpose of this
+    milestone is usability expansion, not another post-hoc calibration search
+    or an MCMC-equivalence claim. The bounded scope decision is recorded in
+    `docs/neural_hmsc_post_m53a_scope_decision_2026-07-22.md`.
+
+    Implement a separate coefficient-wise, mask-aware representation with one
+    checkpoint covering 12-128 sites, 2-100 species, and 2-8 ordered design
+    columns including one leading intercept. Add a covariate mask and shared
+    coefficient head so output dimensionality is not baked into the network.
+    Preserve site-permutation invariance, species-permutation equivariance, and
+    non-intercept covariate-permutation equivariance. Keep the probit
+    IRLS/Laplace anchor and bounded residual correction, but compute
+    coefficient-local sufficient statistics and explicit design-support
+    diagnostics. Compiled covariate names and formula provenance must roundtrip
+    without being fixed to `x1` and `x2`.
+
+    This is a new checkpoint schema and baseline candidate. Do not modify or
+    repackage `neural_hmsc_v0_1` or `neural_hmsc_variable_probit_v1`. Do not add
+    traits, phylogeny, random effects, spatial effects, detection models,
+    Gaussian/Poisson qualification, target-outcome routing, or dataset-specific
+    calibration. Inputs with missing intercepts, unsupported dimensions,
+    rank-deficient or out-of-support designs, or structural HMSC terms must fail
+    compatibility checks before inference.
+
+    Qualification must use disjoint training, coefficient-posterior
+    calibration, and fixed-evaluation seed blocks with balanced boundary and
+    interior shapes, covariate counts, prevalence, coefficient magnitudes, and
+    design-conditioning strata. Predeclare one candidate and two independent
+    sensitivity runs. Every run must preserve checkpoint/API roundtrip, mask
+    parity, site/species/covariate permutation properties, overall 95% coverage
+    in `[0.925, 0.975]`, rank-mean and rank-variance errors no greater than
+    `0.025`, IRLS/Laplace posterior-mean no-degradation, and held-out MCMC
+    Brier/log-loss ratios no greater than `1.10`. Report coverage and rank
+    separately by covariate count, intercept/non-intercept role, shape boundary,
+    and design-information stratum; no failing stratum may be hidden by the
+    aggregate.
+
+    Only after all simulated gates pass, replay Whittaker and Big Spatial
+    through the same target-agnostic v2 checkpoint. Both real-data proper-score
+    ratios versus qualified MCMC must remain at or below `1.10`, and neither may
+    degrade by more than `0.02` relative to its applicable frozen neural
+    baseline. Real outcomes are evaluation-only. Promotion freezes a distinct
+    `neural_hmsc_variable_design_probit_v2` artifact and keeps v1 as fallback.
+    Failure after the permitted representation redesign and fresh evaluation
+    closes v2 and leaves v1 as the qualified endpoint; it does not trigger
+    another calibration family.
+
+    Immediate implementation step: introduce a separate variable-design
+    training tensor and model path with `covariate_mask`, coefficient-local
+    features, and a shared coefficient head. Add deterministic invariance,
+    padding, compatibility, and v1 hash-regression tests before any model
+    training or qualification corpus is generated.
+
+    The separate skeleton is now implemented in
+    `pyhmsc/neural/variable_design_inference.py` and checkpoint schema `0.1`.
+    `VariableDesignTrainingData` pads sites, species, and covariates with three
+    independent masks. `VariableDesignBetaPosteriorModel` retains the probit
+    IRLS/Laplace anchor and applies one shared two-value head to
+    coefficient/species-local features, so output dimensionality no longer
+    depends on a constructor-time covariate count. Its nonzero-head tests prove
+    site-padding invariance, site-order invariance, species equivariance, and
+    non-intercept covariate equivariance. The experimental facade validates
+    leading-intercept semantics, dimensional bounds, binary response, full
+    column rank, condition-number support, formula/name provenance, checkpoint
+    weight hashes, and unsupported compiled structures. It remains outside the
+    stable top-level `pyhmsc` API and contains no fitted calibration.
+
+    Focused validation passed 26 tests across the new skeleton, existing
+    variable-shape model/API, and compiler. Local hash-regression checks
+    revalidated `neural_hmsc_v0_1` at
+    `affcfe10d2f9586e97432ae07754ab829e929ffdb62f41fb71779ad5f3ed12c8`
+    and `neural_hmsc_variable_probit_v1` at
+    `badaf8b8244cbd850693723147c6094bf196482237c52d2cc279ce42b286d2f9`.
+    No training or qualification corpus was generated.
+
+    The fixed qualification harness is implemented in
+    `examples/qualify_neural_hmsc_variable_design.py` with separate `smoke`,
+    role-specific `train-calibrate`, sealed `evaluate`, and `aggregate`
+    operations. The initial protocol draft assigned 61M-69M production blocks,
+    but a balance unit test generated the candidate 61M training simulations in
+    memory without training or metric inspection. Those blocks are retired.
+    Protocol `neural_hmsc_variable_design_m54_v1_1` uses untouched 101M-109M
+    blocks, and tests now inspect the pure schedule without generating any
+    production corpus. Full details and exact gates are in
+    `docs/neural_hmsc_m54_qualification_preregistration_2026-07-22.md`.
+
+    The final `v1_1` disposable smoke used only 91M-93M blocks and returned
+    `smoke_passed`; all eight plumbing checks passed and
+    `production_seed_opened=false`. Aggregate coverage/rank diagnostics were
+    `0.952459`/`0.499613`/`0.077149`. The compact species-count stratum rank
+    diagnostic failed but is nonpromotional for smoke and remains an unchanged
+    production gate. The smoke report SHA-256 is
+    `4f4e6ef4cff276039a1ddd6f80af09066fd918cfbe407bbac63dc5d8de99e775`.
+    Seeded duplicate disposable runs produced identical weights, calibration,
+    training history, and evaluation metrics. Neither immutable baseline was
+    modified.
+
+    LUMI `dev-g` job `20129822` ran candidate `train-calibrate` with exact
+    confirmation `GENERATE_M54_CANDIDATE_TRAIN_CALIBRATION`. It completed in
+    `00:04:07` and froze 243 training communities from 101000001-101000243 and
+    243 independent calibration communities from 102000001-102000243. The
+    split-conformal coefficient-posterior scale is `0.9808582145420995` over
+    49,410 coefficients. The immutable fixed and variable baseline hashes
+    remained exact. Remote post-freeze validation and an independent local
+    checkpoint load both passed, with the 103000001-103000243 evaluation block
+    still unopened.
+
+    Candidate freeze SHA-256 is
+    `021488d1868b773232112bfa9199aad74602e26ef119bcd7a7f38bb2ea90728e`.
+    Checkpoint manifest, weights, and calibration SHA-256 values are
+    `d735ce55c95bddb9df56992d1b6be7f3d8f4f95ae602397e524485997b017df4`,
+    `d6f5923873e77c63e51f8b17a65a91e667b97d02fb4681457d7c08d57fbab52b`,
+    and `21041be868e38f4d1209f56a8e42336c6b61d54fd2243874f76d5cd1d82da88f`.
+    The run is frozen at
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_hmsc_m54_candidate_train_calibration_20129822`.
+
+    LUMI `dev-g` job `20134138` opened the authorized candidate 103M block with
+    exact confirmation `OPEN_M54_CANDIDATE_EVALUATION` and completed in
+    `00:03:27`. The frozen report decision is
+    `variable_design_role_failed`. Coverage (`0.950293`), rank mean
+    (`0.510994`), rank variance (`0.074783`), every calibration stratum,
+    checkpoint roundtrip, factorial balance, immutable hashes, coefficient
+    RMSE versus anchor, and six-context proper scores versus MCMC all passed.
+    Aggregate response-scale no-degradation versus the IRLS/Laplace anchor did
+    not: Brier ratio was `1.047000` and log-loss ratio was `1.036589`, above
+    the frozen `1.02` limits. The report SHA-256 is
+    `a0c2ef66365a9a8875ae123941fe8f08f5bcb2c84ababa5581844374a5d2bdbd`.
+
+    Degradation is concentrated in low-support contexts: 12-site Brier/log-loss
+    ratios were `1.100853`/`1.066665`, and 8-covariate ratios were
+    `1.092878`/`1.069380`; 128-site and 2-covariate strata remained within the
+    gate. The shared residual head improves Beta RMSE but moves predictive
+    probabilities too broadly when sites are scarce relative to active design
+    columns. This is not a coefficient-scale calibration failure. The full
+    negative result is recorded in
+    `docs/neural_hmsc_m54_candidate_negative_result_2026-07-22.md`.
+
+    Do not open sensitivity blocks 104M-109M: they cannot select or rescue a
+    failed candidate. The one permitted redesign is frozen as protocol
+    `neural_hmsc_variable_design_m54_v2_1` in
+    `docs/neural_hmsc_m54_v2_1_redesign_preregistration_2026-07-22.md`.
+    Production roles are coefficient training 111M, predictive auxiliary
+    contexts 112M, independent heldout partners 113M, coefficient calibration
+    114M, and sealed evaluation 115M. Disposable smoke uses 191M-195M. All
+    ranges were unused when preregistered and remain unopened. The frozen
+    preregistration SHA-256 is
+    `900af8719fc73947cd7addf3b7dc9fe2f233eadbbd2bf9f37bac1286fc15e54d`.
+
+    The frozen representation is a learned coefficient-local support gate over
+    a convex IRLS/Laplace-anchor/residual mean mixture. The gate is trained
+    jointly with the unchanged coefficient objective and an independent
+    heldout probit log-loss/Brier objective. Existing gates are unchanged;
+    additional guards require per-site and per-covariate proper-score ratios no
+    greater than `1.02`, aggregate Beta RMSE ratio no greater than `0.98` so
+    identity is not promotion, and ordered median support movement between the
+    12-site/8-covariate and 128-site/2-covariate corners. There is no threshold,
+    loss-weight, gate-cap, or post-fit selector search.
+
+    The frozen three-output gated shared head, paired predictive auxiliary
+    tensors/objective, separate checkpoint schema `0.2`, and sealed harness are
+    now implemented. Anchor-parity, gate-bound, invariance,
+    heldout-independence, exact-loss, roundtrip, compatibility-rejection, seed
+    barrier, and immutable-baseline regression tests pass. The implementation
+    remains separate from the immutable fixed-shape v0.1 and variable-design v1
+    inference paths.
+
+    The authorized 191M-195M disposable smoke returned `smoke_passed`; all
+    eleven operational smoke checks passed, and inspection confirmed that only
+    the disposable seed millions were opened. The production 111M-115M roles
+    remain sealed. The smoke is explicitly nonpromotional: its one-epoch
+    production-only genuine Beta-RMSE and ordered support-movement diagnostics
+    are not acceptance evidence and do not permit retuning. The result and
+    artifact hashes are recorded in
+    `docs/neural_hmsc_m54_v2_1_disposable_smoke_2026-07-22.md`.
+
+    Production train/auxiliary/calibration generation was explicitly
+    authorized with `GENERATE_M54_V2_1_TRAIN_AUX_CALIBRATION`. LUMI dev-g job
+    `20144482` completed in `00:08:08` and froze the 111M coefficient-training,
+    112M auxiliary-context, 113M independent-heldout, and 114M calibration
+    roles. Both the job-local validator and an independent downloaded replay
+    passed exact manifest/checkpoint/calibration hashes, seed-role and
+    disjointness checks, factorial and marginal balance, paired-heldout
+    independence, immutable baseline hashes, and the preregistration hash. The
+    freeze SHA-256 is
+    `bb32afd655db277064c5c6fcbdf53e2d89a9f42c24a0690c50a494967f46d816`.
+    The 115M evaluation block remains sealed. Full evidence is recorded in
+    `docs/neural_hmsc_m54_v2_1_production_freeze_2026-07-22.md`.
+
+    The one-shot 115M evaluation was separately authorized with
+    `OPEN_M54_V2_1_RESERVED_EVALUATION`. Its wrapper pinned the freeze SHA-256,
+    revalidated all artifacts before opening the block, and LUMI dev-g job
+    `20179655` completed in `00:04:31`. The exact 115M block, six
+    preregistered MCMC seeds, immutable baselines, and gate decision were
+    independently validated.
+
+    The immutable decision is `variable_design_v2_1_terminal_failure`.
+    Aggregate Brier and log-loss ratios were `1.041475` and `1.028093`, above
+    the frozen `1.02` limits. Per-site and per-covariate proper-score gates also
+    failed, concentrated at 12 sites and 8 covariates. Support ordering was
+    reversed: median gate movement was `0.988575` at 12 sites/8 covariates
+    versus `0.384689` at 128 sites/2 covariates. Coefficient coverage, ranks,
+    Beta RMSE, MCMC comparison, provenance, and operational gates passed, but
+    they cannot average away the predictive and ordering failures. Full
+    evidence is recorded in
+    `docs/neural_hmsc_m54_v2_1_terminal_result_2026-07-23.md`.
+
+    Milestone 54 is closed under its preregistered stop rule. There is no
+    retuning, rerun, real-data evaluation, or third variable-design
+    representation. `neural_hmsc_variable_probit_v1` remains the qualified
+    endpoint. Next, return to the already-qualified fixed-effect neural scope
+    and make a bounded, freshly preregistered capability decision outside the
+    failed variable-design family. Do not advance the deferred MCMC
+    near-equivalence claim from this result.
+
+55. Reassess summary-level MCMC near-equivalence.
+    Status: deferred. Structural near-equivalence cannot advance because no
+    neural structural family is qualified. After any future successful
+    representation-level structural milestone, publish an explicit evidence
+    table for interface, operational, marginal-posterior, predictive,
+    association/spatial, and joint-posterior equivalence. Claim
+    near-equivalence only for rows and model families that pass. The expected
+    mature outcome remains a fast neural approximation with automatic MCMC
+    fallback, not elimination of MCMC or unconditional full-HMSC equivalence.
+
+56. Qualify within-species fixed-effect Beta covariance without changing the
+    qualified marginal posterior.
+    Status: implementation and disposable smoke complete; production
+    train-validation and all reserved evaluation remain sealed. The bounded
+    post-Milestone 54 decision is recorded in
+    `docs/neural_hmsc_post_m54_capability_decision_2026-07-23.md`. The fixed
+    qualification protocol is
+    `docs/neural_hmsc_m56_covariance_preregistration_2026-07-23.md`, SHA-256
+    `d99b63da87103c3d8891cb2fab5bb7ffad30a188ed7be920950345581f8b2d4b`.
+    Its byte-level artifact and unused-seed audit is
+    `docs/neural_hmsc_m56_artifact_seed_audit_2026-07-23.json.md`, SHA-256
+    `5bb9236967afb5a2a1adc166781f4a34359a7469150aa2e19117752dd1fce29c`.
+
+    Keep the exact fixed-shape v0.1 probit boundary: 40 sites, 75 species, and
+    two ordered coefficients including the intercept. Bind one exact packaged
+    v0.1 checkpoint and coefficient-calibration artifact, preserve its
+    posterior means and calibrated marginal standard deviations, and add only
+    a per-species positive-definite `2 x 2` coefficient covariance. The
+    intended competitor exposes the full IRLS/Laplace covariance anchor and
+    learns a bounded context-conditioned residual correction to its
+    correlation before reconstructing `scale_tril`.
+
+    This milestone targets the remaining within-species joint-Beta uncertainty
+    gap. It does not add cross-species covariance, traits, random effects,
+    spatial effects, another likelihood, variable-design generalization, or
+    target-outcome routing. Existing full-covariance code is unqualified
+    scaffolding, not evidence.
+
+    The preregistration binds v0.1 member `20260721`, its manifest, unchanged
+    weights, and calibration hashes. It freezes a nine-feature shared
+    correlation head, Fisher-z residual bound, fixed NLL objective, exact
+    40-site/75-species/two-coefficient simulator, 100-epoch training, untouched
+    211M training, 212M go/no-go validation, 213M-215M one-shot evaluation, and
+    291M-292M disposable roles. Mandatory evidence includes exact v0.1
+    mean/marginal-scale parity, unchanged marginal SBC, positive-definite
+    roundtrip, multivariate coverage/ranks, covariance accuracy and joint
+    proper scores versus diagonal v0.1, raw Laplace, and qualified Python MCMC,
+    predictive no-degradation, and immutable baseline/provenance checks.
+    Identity correlation or merely reproducing the raw Laplace anchor is not
+    improvement.
+
+    If successful, freeze a separate covariance-aware fixed-shape artifact and
+    claim only bounded within-species coefficient-covariance qualification.
+    This is one additional row toward summary-level equivalence, not full-HMSC
+    or unconditional MCMC equivalence. Python MCMC remains the statistical
+    reference and fallback.
+
+    The implementation now exposes the full per-species IRLS/Laplace
+    covariance while preserving the legacy marginal-anchor return values. A
+    separate hash-bound overlay supplies the exact nine-feature shared head,
+    frozen feature normalization, bounded Fisher-z residual, unchanged v0.1
+    means and calibrated marginal scales, and reconstructed positive-definite
+    `scale_tril`. The sealed qualification driver implements distinct
+    `smoke`, `train-validate`, `evaluate`, and `realdata` confirmation
+    boundaries and computes the frozen aggregate and stratum diagnostics.
+
+    The covariance, initialization, loss, HDF5 sampling, artifact roundtrip,
+    compatibility, hash, and seed-barrier tests pass together with the
+    fixed-shape, calibration, storage, and release regressions: 51 tests
+    passed. The 291M-292M disposable smoke passed every operational check with
+    exact zero mean/scale deltas, zero overlay roundtrip deltas, minimum
+    covariance eigenvalue `0.000470678`, and maximum absolute correlation
+    `0.905283`. It opened no 211M-215M seed. Its statistical values are
+    explicitly non-promotional and are recorded in
+    `docs/neural_hmsc_m56_disposable_smoke_2026-07-24.md`.
+
+    Next, explicitly authorize production correlation-head training and fixed
+    validation with `GENERATE_M56_CORRELATION_TRAIN_VALIDATION`. Run the exact
+    211M training and 212M go/no-go validation once, freeze the resulting
+    overlay and report hashes, and independently verify every aggregate,
+    stratum, parity, and provenance gate. Do not open 213M-215M unless every
+    212M gate passes and a separate
+    `OPEN_M56_RESERVED_COVARIANCE_EVALUATION` authorization is given.
+
+    Production train-validation was explicitly authorized on 2026-07-24 with
+    `GENERATE_M56_CORRELATION_TRAIN_VALIDATION`. The sealed LUMI `dev-g`
+    wrapper is
+    `docs/lumi_neural_hmsc_covariance_m56_train_validation_sbatch.sh`.
+    Preflight revalidated both frozen protocol-document hashes and the exact
+    v0.1 release, checkpoint, weights, and calibration binding. Job `20192218`
+    was submitted with only the 211M training and 212M fixed-validation roles;
+    it entered running state on `nid007961`. The 213M-215M blocks remain
+    sealed. On completion, download `freeze.json`,
+    `postfreeze_validation.json`, the overlay manifest and weights, then
+    independently recompute hash, seed-role, gate-consistency, aggregate, and
+    stratum checks before making the reserved-evaluation decision.
+
+    Job `20192218` completed in `00:02:39` with exit code `0:0`. The complete
+    freeze bundle was downloaded and independently validated. All 20
+    operational/provenance checks passed, and local recomputation reproduced
+    all 123 gate decisions and the same 47 failures. Mean and marginal-scale
+    parity remained exact, covariance was positive definite, predictive
+    no-degradation passed, and the learned head improved substantially over
+    raw Laplace correlation. It nevertheless failed the fixed prerequisites:
+    marginal coverage was `0.826955`, joint coverage was `0.735021`,
+    candidate/diagonal joint NLL ratio was `1.169488`, and radial-rank mean was
+    `0.600648`. Failures were broad across effect, location, scale, and
+    prevalence strata.
+
+    Milestone 56 is terminally closed under its frozen 212M stop rule. The
+    213M-215M blocks were not opened and must remain sealed; do not run the
+    MCMC subsets or real-data replay. The result and all artifact hashes are
+    recorded in
+    `docs/neural_hmsc_m56_fixed_validation_terminal_result_2026-07-24.md`.
+    The next step is a bounded capability decision outside Milestone 56.
+    Retain `neural_hmsc_v0_1` as the qualified neural endpoint and qualified
+    Python MCMC as the statistical reference. Any future joint-posterior
+    attempt must use a genuinely different representation that can address
+    marginal calibration and covariance together, with a fresh
+    preregistration and unused seeds; do not retune this correlation-overlay
+    family.
+
+57. Attempt one joint heavy-tailed fixed-effect posterior.
+    Status: terminal fixed-validation failure; reserved evaluation and
+    real-data replay remain sealed. The decision is recorded in
+    `docs/neural_hmsc_post_m56_capability_decision_2026-07-24.md`, SHA-256
+    `a1a7bc4a54eca4c78f6b32537f1afff662a524557accbd99d7267a28bc2cb2ba`.
+
+    Milestone 56 established that correlation movement is learnable but a
+    fixed-marginal overlay is structurally incapable of repairing the broad
+    marginal undercoverage observed on its frozen factorial. Retuning
+    correlation, adding another scale calibrator, or reopening 213M-215M is
+    forbidden.
+
+    The single permitted next representation is a per-species conditional
+    bivariate Student-t posterior for the exact 40-site, 75-species,
+    two-coefficient fixed-effect probit scope. It must jointly own posterior
+    location, both marginal scales, within-species correlation, and degrees of
+    freedom. Immutable v0.1 outputs may be input anchors and comparators but
+    may not remain fixed candidate marginals. No separate mean, scale,
+    correlation, tail, selector, or target-outcome calibration is allowed.
+
+    This is one final bounded joint-posterior attempt, not another iterative
+    model family. It receives one preregistered representation and one
+    production train-validation opening, with no redesign or calibration-only
+    retry. Any fixed-validation failure closes neural joint-posterior
+    development for this scope and returns the project to applicability
+    detection and automatic Python-MCMC fallback.
+
+    The exact v0.1 and variable-v1 inventories were validated byte-for-byte
+    locally and on LUMI, with no extra files. Candidate seed searches covered
+    6,215 local repository files, 1,673 retained local evidence files, 977
+    LUMI repository files, and 5,016 retained LUMI run files, with zero
+    candidate-token collisions. The frozen machine-readable audit is
+    `docs/neural_hmsc_m57_artifact_seed_audit_2026-07-24.json.md`, SHA-256
+    `1e1150a04cd17643db37988bfc010b611f8f49d638dbd40ead49cd5329b9b25c`.
+
+    The qualification protocol is frozen in
+    `docs/neural_hmsc_m57_student_t_preregistration_2026-07-24.md`, SHA-256
+    `10878c65bb16746a4a9c57fa91d6a4fd3cbcc753739a816f6cc8b9b738f1a388`.
+    It binds a 15-feature shared head that jointly predicts bounded location
+    movement, both marginal scales, correlation, and degrees of freedom for a
+    bivariate Student-t posterior. It freezes a proper multivariate NLL
+    objective, paired response realizations, exact 321M-325M production roles,
+    391M-392M disposable roles, aggregate and stratum gates, MCMC subsets,
+    real-data boundaries, and a no-redesign terminal stop rule.
+
+    The frozen Student-t posterior math, exact density and sampling, 15-feature
+    extractor, 64-64-32 shared six-output head, immutable overlay schema,
+    HDF5 semantics, sealed command harness, full non-MCMC aggregate/stratum
+    gate calculator, and regression tests are implemented. The targeted M57
+    and fixed-effect regression pass contains 62 passing tests.
+
+    The final disposable run used 54 paired training realizations from
+    391000001-391000027 and 27 evaluation realizations from
+    392000001-392000027. Every operational check passed, all checkpoint
+    roundtrip deltas were zero, and no production seed was opened. The result
+    is recorded in
+    `docs/neural_hmsc_m57_disposable_smoke_2026-07-24.md`. Its one-epoch,
+    32-draw calibration diagnostics are explicitly non-promotional.
+
+    The one permitted production train/fixed-validation opening ran as LUMI
+    job `20272020` on `dev-g` and completed in `00:06:27` with exit code
+    `0:0`. It generated only paired 321M training and 322M validation data.
+    Independent local validation reproduced all 176 gate booleans exactly,
+    validated the freeze and overlay hashes, and confirmed that no reserved
+    evaluation artifact exists.
+
+    The candidate passed 173 gates but failed three frozen requirements:
+    geometric width ratio `0.771923` below the allowed `0.80`, degrees-of-
+    freedom bound fraction `0.141399` above `0.10`, and strong-effect radial-
+    rank mean `0.565492`, whose error from `0.5` exceeds `0.05`. Aggregate
+    marginal and joint 95% coverage passed, and location/proper scores improved
+    materially, but the frozen stop rule does not permit those gains to
+    override interval-width, tail-saturation, or stratum-rank failures.
+
+    The complete result and immutable hashes are recorded in
+    `docs/neural_hmsc_m57_fixed_validation_terminal_result_2026-07-26.md`.
+    Keep 323M-325M, MCMC subsets, and real-data replay permanently sealed. Do
+    not retune, recalibrate, clip, or redesign this Student-t family.
+
+    Next, move outside neural joint-posterior development and implement an
+    explicit applicability decision plus automatic qualified Python-MCMC
+    fallback at the public inference boundary. Retain `neural_hmsc_v0_1` for
+    its qualified fixed-shape neural claim and preserve the failed M57
+    artifact only as immutable negative evidence.
+
+58. Close the current neural-model branch and reset the research claim.
+    Status: complete. The branch-level outcome is audited in
+    `docs/neural_hmsc_branch_closure_audit_2026-07-27.md`, SHA-256
+    `e17701174b51ff8714b83bb6935e55b48bb00854e004bbef0c64724f16e1707e`.
+
+    The branch did not produce a neural replacement or summary-level
+    near-equivalent of HMSC/MCMC. It produced two qualified fixed-effect probit
+    approximations: exact fixed-shape `neural_hmsc_v0_1` and bounded
+    variable-shape `neural_hmsc_variable_probit_v1`. It also produced a
+    qualified predictive-only affine ensemble for the frozen Whittaker and Big
+    Spatial workflows. Qualified Python MCMC remains stronger on the retained
+    real-data proper scores and remains the statistical reference.
+
+    Structural and joint-posterior development did not qualify. Trait-Gamma,
+    variable design, covariance-only, and joint Student-t families ended under
+    terminal preregistered stop rules. iid Eta/Lambda, spatial latent effects,
+    cross-species association, traits/phylogeny, detection, and full MCMC
+    equivalence remain unsupported. More calibration or selector tuning on the
+    current amortized fixed-effect model cannot close those representation
+    gaps.
+
+    Retain the simulation/SBC/OOD diagnostics, deterministic seed ledgers,
+    HDF5/API adapters, immutable artifact framework, R/Python parity fixtures,
+    real-data workflows, LUMI harnesses, qualified baselines, and terminal
+    negative evidence. Retire further tuning of M53, M54, M56, M57, failed
+    OOD/effect heads, and failed MCMC-teacher residual families.
+
+    Reframe the current branch as `neural fixed-effect JSDM approximation and
+    validation infrastructure`. Applicability detection and automatic
+    qualified Python-MCMC fallback are maintenance/safety work; they do not
+    complete the original Neural-HMSC claim.
+
+    If the original structural research goal continues, start it on a new
+    `feature/generative-neural-hmsc` branch only after a fresh design
+    preregistration. The first bounded family should combine fixed effects with
+    iid latent site factors and species loadings under an explicit generative
+    probit likelihood and an end-to-end structured posterior. It must support
+    variable site/species dimensions by construction and may not use v0.1
+    posterior means/scales or post-hoc scalar calibration as its primary
+    uncertainty representation.
+
+    Next, write and review the new-branch design preregistration before
+    creating the branch or allocating any simulation seed. The preregistration
+    must freeze the generative model, posterior factorization, identifiability
+    constraints, first structural scope, fresh seed ledger, joint and
+    association recovery gates, MCMC comparator, runtime budget, real-data
+    boundary, and one-redesign stop rule.
+
+59. Preregister the first generative Neural-HMSC structural family.
+    Status: complete. The frozen design is
+    `docs/generative_neural_hmsc_iid_v1_preregistration_2026-07-27.md`,
+    SHA-256
+    `09c6a195ca139bdf168816b4f50db321c789bfdd061628e4f99a28cca81cea3f`.
+    Its independent design review is
+    `docs/generative_neural_hmsc_iid_v1_design_review_2026-07-27.md`,
+    SHA-256
+    `d271caed64dc1346b1f8d9e192534949adedd3122c1e311638e912ca868990cc`.
+    The machine-readable unused-seed ledger is
+    `docs/generative_neural_hmsc_iid_v1_seed_audit_2026-07-27.json.md`,
+    SHA-256
+    `39e8763bf8a4fd525dc624570cd2f2b3392dbd1f62d7fa2e3c326f9340194cd6`.
+
+    The first family is a two-coefficient Bernoulli-probit model with one iid
+    site random level, exactly two latent site factors, species loadings, a
+    shared community intercept hyperparameter, and inferred loading scale. A
+    three-round permutation-equivariant site/species message-passing encoder
+    emits a rank-16 joint Normal posterior over alpha, Beta, Eta, Lambda, and
+    log(tau). Training uses an eight-sample importance-weighted variational
+    objective from raw X, masked Y, and masks only. No v0.1/variable-v1
+    posterior, IRLS/Laplace output, MCMC teacher, calibration, or ecological
+    target outcome may enter the candidate.
+
+    Raw Eta/Lambda recovery is not a gate because the factors are rotationally
+    non-identifiable. Qualification instead uses random-effect contribution
+    `R = Eta @ Lambda`, association covariance `A = Lambda.T @ Lambda`, its
+    correlation form C, invariant SBC projections, energy scores, masked-cell
+    prediction, PPCs, and exact-model MCMC comparisons. Qualified Python
+    HMSC-HPC remains a separate behavioral comparator because its native
+    loading prior differs from the candidate prior.
+
+    Production blocks contain 324 balanced contexts over site count, species
+    count, covariate shape, latent strength, prevalence, and replicate. The
+    candidate ledger is 501M training, 502M fixed validation, and sealed
+    503M-505M evaluation; 591M-592M are disposable only. One separately
+    preregistered representation redesign may use sealed 511M-515M after a
+    candidate failure. A second fresh production failure closes the iid
+    family. Whittaker no-trait iid-site scoring remains sealed until every
+    simulation and comparator gate passes.
+
+    The review corrected two design issues before freezing: exact-model MCMC
+    and native HMSC are now distinct references, and a shared alpha parameter
+    makes rare/common community-prevalence strata generatable from the
+    declared prior. The remaining primary risk is whether one low-rank
+    Gaussian can approximate the invariant latent posterior geometry. That is
+    the hypothesis to test; it may not be hidden by predictive gains or
+    repaired by post-hoc calibration.
+
+    Next, create and switch to `feature/generative-neural-hmsc` without opening
+    any seed, then implement the frozen simulator, variable-shape tensor
+    contract, bipartite encoder, rank-16 joint posterior,
+    importance-weighted objective, exact-model MCMC reference, immutable
+    artifact schema, sealed harness, and preregistered tests. After tests pass,
+    run only the 591M-592M disposable smoke and keep 501M-515M sealed.
+
+60. Implement the frozen generative iid structural candidate and sealed
+    disposable harness.
+    Status: complete on `feature/generative-neural-hmsc`. The implementation
+    report is
+    `docs/generative_neural_hmsc_iid_v1_implementation_2026-07-27.md`,
+    SHA-256
+    `533f92cad0eb85bad85ae34a317c6dcc3cc53d88347518aff1f7ae20d582fe0c`.
+
+    New isolated modules implement the prior-faithful structural simulator,
+    outcome-blind response masks, padded variable site/species tensors, the
+    three-round bipartite encoder, one rank-16 joint Normal over alpha/Beta/
+    Eta/Lambda/log(tau), masked Woodbury density, eight-sample IWAE objective,
+    frozen optimizer schedule, deterministic gauge fixing, float64 exact-model
+    NUTS reference, invariant chain diagnostics, and immutable checkpoint
+    schema. Public lazy imports expose the generative API without modifying the
+    qualified legacy model paths.
+
+    The sealed harness validates all frozen document hashes before seed access,
+    has no production/reserved mode, and requires exact confirmation before
+    opening the 18-cell 591M/592M disposable factorial. Its no-seed seal check
+    reports `production_seed_ranges_opened = false`.
+
+    The new suite covers prior/log-density agreement, all 18 factorial cells
+    using ordinary non-ledger seeds, masking, padding, site/species
+    permutations, low-rank dense-reference parity, finite gradients and one
+    optimizer step, gauge invariants, exact-target parity, MCMC execution,
+    checkpoint roundtrip/tamper rejection, legacy incompatibility, and seal
+    refusal. Together with legacy iid and fixed/variable public API
+    regressions, 52 tests passed. Bytecode compilation, public imports, frozen
+    hashes, and `git diff --check` also passed.
+
+    No 501M-515M, 591M, or 592M simulation dataset was generated. This is
+    implementation evidence only and does not qualify calibration,
+    association recovery, prediction, MCMC agreement, or real-data transfer.
+
+    Next, explicitly authorize and run only the 591M-592M disposable smoke
+    with
+    `OPEN_GENERATIVE_IID_DISPOSABLE_SMOKE=GENERATE_591M_592M_DISPOSABLE_ONLY`.
+    Validate its freeze, checkpoint hashes, finite optimization, exact-target
+    check, and seal booleans. Keep 501M-515M unopened.
+
+61. Run and independently validate the frozen generative iid disposable smoke.
+    Status: complete. The result report is
+    `docs/generative_neural_hmsc_iid_v1_disposable_smoke_2026-07-27.md`,
+    SHA-256
+    `1513407aa02d78f456d89c315dfd919c3e303abaec217a6960c2420054195963`.
+
+    The exact disposable confirmation opened only the 18-cell 591M training
+    and 18-cell 592M validation blocks for two epochs. The accepted artifact
+    passed checkpoint roundtrip, freeze/report hash checks, finite objective
+    checks, independent validation-IWELBO and exact-target recomputation, and
+    a nonzero optimizer-movement check. Its checkpoint content SHA-256 is
+    `e827df53e27b239f082166c5760f7e39625ce464bdd9d94961ec499737ce5609`;
+    its weight SHA-256 is
+    `13cde23b67528567bb7207754ae0d2b27833293cb2bc60abe535ba33ff762939`.
+    Both `production_seed_ranges_opened` and
+    `reserved_seed_ranges_opened` are false, so 501M-515M remain sealed.
+
+    The first disposable artifact was superseded after review found that it
+    recorded only the base commit for a dirty worktree. The accepted retry
+    requires and validates exact source-file hashes, branch and worktree
+    state, and runtime versions. Its independently recomputed validation loss
+    is 5716.5771484375, exact truth log joint is -175.4917007215717, and
+    maximum weight movement from seeded initialization is
+    0.0017552822828292847.
+
+    This is plumbing and optimization evidence only. It does not qualify
+    posterior calibration, latent association recovery, MCMC agreement,
+    prediction, or real-data transfer.
+
+    Next, freeze the implementation and disposable evidence in a clean source
+    commit. Then implement and review a separate production authorization path
+    pinned to that commit for 501M training and 502M fixed validation, while
+    keeping 503M-515M sealed. Do not open a production seed during the
+    implementation or authorization review.
+
+### Active Stop Rules
+
+- A failed candidate family may receive one representation-level redesign and
+  one fresh independent evaluation. A second failure pauses the family.
+- Identity fallback counts as safety, not improvement.
+- Real ecological outcomes may evaluate a frozen candidate but may not train or
+  select target-specific movement.
+- No new five-seed LUMI comparison follows a failed local or compact gate.
+- Post-hoc scale, cap, router, and selector changes cannot substitute for a
+  representation change after repeated failures.
+- Every active step must end in a frozen artifact, a qualified capability, or a
+  documented negative result; experiment plumbing alone is not a milestone.
+
 ## Testing Strategy
 
 Unit tests:
@@ -2614,6 +4510,52 @@ parameters were updated. Coefficient-posterior agreement remained incomplete:
 95% interval overlap with MCMC was `0.1648`. The result qualifies predictive
 transfer only; target coefficient calibration remains not assessable without
 coefficient truth.
+
+The direct Whittaker Python-only HMSC parity workflow is recorded in
+`docs/whittaker_r_python_hmsc_parity_2026-07-17.md`. Initial LUMI job
+`19967782` showed that response `Y` and phylogeny `C` matched the R-created
+`Hmsc` object, but native preprocessing did not match R/Hmsc `XScaled` and
+`TrScaled` semantics. Python-native compile now centers and scales
+non-intercept covariates with sample standard deviation, drops trait intercepts,
+scales trait values, stores scale parameters, and applies fixed-effect scaling
+during prediction. LUMI requalification job `19983202` passed the direct
+Whittaker parity gate: all boundary arrays matched, `Beta` mean correlation was
+`0.999832`, `Gamma` mean correlation was `1.000000`, and held-out Brier/log-loss
+deltas were effectively zero. This supports Python-only HMSC equivalence to the
+original R+Python HMSC-HPC boundary for the fixed-effect Whittaker
+trait/phylogeny model. The next parity step is to extend the same direct
+R/Python protocol to simpler fixed-effect no-trait cases and then iid
+random-effect fixtures. That implementation is now present in
+`examples/run_direct_r_python_parity.py` and
+`docs/lumi_direct_r_python_parity_sbatch.sh`. LUMI job `19984923` completed the
+corrected fixture run successfully. Spatial random-level semantics were then
+inspected explicitly in
+`docs/spatial_r_python_hmsc_boundary_inspection_2026-07-18.md`. The inspection
+confirmed exact Full/GPP distance-array boundary equality, identified NNGP's
+ragged R list versus padded Python tensor representation, and corrected the
+Python-native spatial default `alphapw` to match R/Hmsc's 101-point alpha grid.
+Corrected LUMI inspection job `19995051` passed the spatial boundary checks.
+Direct spatial parity is now complete for compact Full, GPP, and NNGP fixtures:
+Full passed in retry job `19995352`, and GPP/NNGP passed in job `19999784`.
+The parity decision is recorded in
+`docs/python_only_hmsc_parity_decision_2026-07-19.md`: compact fixtures are
+adequate for controlled boundary/parity coverage, but the broader Python-only
+HMSC equivalence claim needed one larger real-data spatial requalification.
+That requalification is now complete: LUMI job `20000066` ran Big Spatial Plant
+full-spatial direct R/Python parity with the R-created HMSC boundary retained as
+the comparator. The final report was regenerated from completed posteriors with
+`--reuse-existing-posteriors`; boundary arrays passed, Python-native predictive
+MAE improved over the R-boundary comparator (`0.099725` vs `0.113449`), and
+posterior summaries were retained as diagnostics. The next roadmap step is to
+return to neural work rather than extend parity again by default. That neural
+return path is now wired into the real-data runners: pass
+`--reference-parity-metrics` to attach a passed direct R/Python parity metrics
+JSON, relabel the MCMC comparator as `qualified_python_mcmc_fixed`, and record
+the parity provenance in the neural report/metadata. Qualified-comparator
+real-data reruns are now complete for Whittaker (`20000918`) and Big Spatial
+transfer (`20001432`). Both passed their neural acceptance gates, and both
+continue to show that qualified Python MCMC is the stronger real-data predictor
+on core proper scores.
 
 Risk: latent factor targets are non-identifiable.
 

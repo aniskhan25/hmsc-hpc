@@ -66,7 +66,11 @@ def test_r_script_contains_trait_phylo_and_random_level_sections(tmp_path):
     script = parity._r_script(config_path, config, tmp_path / "r")
 
     assert "model.matrix(as.formula(\"~ env\"), data = X)" in script
+    assert "X_design <- scale_hmsc(X_design)" in script
+    assert "if (all(unique(mat[, j]) %in% c(0, 1))) next" in script
     assert "model.matrix(as.formula(\"~ body\"), data = Tr)" in script
+    assert "!(colnames(T_design) %in% c('(Intercept)', 'Intercept'))" in script
+    assert "T_design <- scale_hmsc(T_design)" in script
     assert "C[colnames(Y), colnames(Y), drop = FALSE]" in script
     assert "factor(study[[\"plot\"]])" in script
     assert "write.csv(pi, file.path(out, \"Pi_0.csv\"))" in script

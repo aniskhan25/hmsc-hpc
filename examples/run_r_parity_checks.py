@@ -169,8 +169,18 @@ def _r_script(config_path: Path, config: dict[str, Any], output: Path) -> str:
         f"base <- {_r_string(str(base))}",
         f"out <- {_r_string(str(output.resolve()))}",
         "dir.create(out, recursive = TRUE, showWarnings = FALSE)",
+        "scale_hmsc <- function(mat) {",
+        "  mat <- as.matrix(mat)",
+        "  for (j in seq_len(ncol(mat))) {",
+        "    if (colnames(mat)[j] %in% c('(Intercept)', 'Intercept') || length(unique(mat[, j])) <= 1L) next",
+        "    if (all(unique(mat[, j]) %in% c(0, 1))) next",
+        "    mat[, j] <- as.numeric(scale(mat[, j]))",
+        "  }",
+        "  mat",
+        "}",
         f"X <- read.csv(file.path(base, {_r_string(config['covariates'])}), row.names = 1, check.names = FALSE)",
         f"X_design <- model.matrix(as.formula({_r_string(formula)}), data = X)",
+        "X_design <- scale_hmsc(X_design)",
         'write.csv(X_design, file.path(out, "X_design.csv"))',
     ]
     if config.get("traits"):
@@ -181,6 +191,8 @@ def _r_script(config_path: Path, config: dict[str, Any], output: Path) -> str:
                 f"Tr <- read.csv(file.path(base, {_r_string(config['traits'])}), row.names = 1, check.names = FALSE)",
                 "Tr <- Tr[colnames(Y), , drop = FALSE]",
                 f"T_design <- model.matrix(as.formula({_r_string(trait_formula)}), data = Tr)",
+                "T_design <- T_design[, !(colnames(T_design) %in% c('(Intercept)', 'Intercept')), drop = FALSE]",
+                "T_design <- scale_hmsc(T_design)",
                 'write.csv(T_design, file.path(out, "T_design.csv"))',
             ]
         )

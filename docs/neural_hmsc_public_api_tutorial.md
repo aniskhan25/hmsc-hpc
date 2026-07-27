@@ -9,10 +9,33 @@ prototype. The supported surface is intentionally narrow:
 - outputs readable by `pyhmsc.posterior.HmscFit`
 - distribution-aware `Beta` posterior families by default
 
+The Neural-HMSC v0.1 release qualification applies only to fixed-shape probit
+checkpoints carrying the packaged `external_monotone` calibration. Normal and
+Poisson remain implemented experimental paths.
+
 The API does not yet support trait-mediated `Gamma`, phylogeny, iid latent
 factors, spatial latent factors, random effects, random slopes, detection
 models, or variable-shape checkpoints. Those pieces remain experimental
 modules until their semantics and validation are stable.
+
+## Use The Frozen v0.1 Release
+
+The qualified fixed-shape probit release is resolved by the immutable
+`neural_hmsc_v0_1` identifier:
+
+```python
+from pyhmsc import load_neural_hmsc_release
+
+release = load_neural_hmsc_release("/path/to/neural-hmsc-registry")
+engine = release.load_checkpoint(seed=20260721)
+ensemble = release.load_predictive_ensemble(dataset="whittaker")
+```
+
+`engine` applies the packaged coefficient calibration during inference.
+`ensemble` is the manifest-backed predictive-only deployment; pass
+`policy="scale_only"` for its explicit fallback. See
+`examples/run_neural_hmsc_v0_1_release.py` for a complete compiled-model,
+posterior, `HmscFit`, and probability-ensemble workflow.
 
 ## Train, Save, Load, Infer
 
@@ -63,6 +86,25 @@ prediction = fit.predict_mean(test.X)
 helpers, diagnostics that apply to `Beta`, and HDF5 storage inspection continue
 to work.
 
+## Variable-Shape Probit Baseline
+
+Milestone 52 promotes a separate probit checkpoint for 12-48 sites and 2-10
+species with the fixed ordered covariates `Intercept`, `x1`, and `x2`:
+
+```python
+from pyhmsc import load_variable_shape_baseline
+
+engine = load_variable_shape_baseline("/path/to/hmsc-hpc-deployments")
+compatibility = engine.check_compatibility("compiled/init.json")
+fit = engine.infer("compiled/init.json", draws=1000, chains=2)
+```
+
+The stable identifier is `neural_hmsc_variable_probit_v1`. It is independent of
+the fixed-shape `neural_hmsc_v0_1` release. Range, formula, distribution, and
+unsupported-structure checks run before inference. The checkpoint uses a
+mask-aware probit IRLS/Laplace anchor and an independently simulated
+coefficient-scale calibration.
+
 ## Infer From A Compiled Artifact
 
 The same checkpoint can infer from a Python-native compiled `init.json` or its
@@ -91,6 +133,7 @@ Each checkpoint directory contains:
 ```text
 neural_checkpoint.json
 weights.weights.h5
+coefficient_calibration.json  # present in calibrated version 0.4 checkpoints
 ```
 
 The manifest records:
@@ -102,10 +145,11 @@ The manifest records:
 - probit anchor type and numerical settings
 - distribution, formula, dimensions, and names
 - public limitations for the checkpoint family
+- an optional hash-bound coefficient-calibration artifact record
 
-The IRLS/Laplace-aware encoder uses checkpoint version `0.3`; training corpus
-version remains `0.1`. Version `0.2` checkpoints remain loadable with their
-legacy ridge anchor.
+Packaged calibrated checkpoints use checkpoint version `0.4`; training corpus
+version remains `0.1`. Versions `0.2` and `0.3` remain loadable as uncalibrated
+legacy checkpoints. Version `0.2` retains its legacy ridge anchor.
 Future incompatible checkpoint formats must bump `checkpoint_version`. Changes
 to generated training-data semantics must bump `training_corpus_version`.
 
@@ -157,12 +201,13 @@ use the separately fitted `BetaScaleCalibration` with
 `apply_beta_predictive_calibration` for predictive-only scoring.
 
 For cross-dataset transfer, load the existing checkpoint with
-`NeuralHmscInference.load(...)` and reconstruct calibration from the stored
-coefficient-posterior metadata with `BetaScaleCalibration.from_metadata(...)`
-or `ConditionalBetaScaleCalibration.from_metadata(...)`, according to its
-method. Do not fit either calibrator on the target dataset. Record content
-hashes for both frozen artifacts and keep target holdout responses out of all
-projection and species-selection decisions.
+`NeuralHmscInference.load(...)`. A version `0.4` packaged checkpoint validates
+the calibration artifact hash, canonical metadata hash, method, parameter,
+distribution, dimensions, coefficient names, and independent-simulation
+provenance, then applies it before posterior draws and `HmscFit` emission.
+`predict_beta_posterior(..., calibrated=False)` exposes the raw amortizer only
+for diagnostics. Do not fit a calibrator on the target dataset, and keep target
+holdout responses out of projection and species-selection decisions.
 
 ## SBC and OOD Diagnostics
 

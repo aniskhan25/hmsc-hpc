@@ -4,6 +4,8 @@ import pytest
 import tensorflow as tf
 
 import hmsc.run_gibbs_sampler as runner
+from hmsc.utils.export_hdf5_utils import save_chains_postList_to_hdf5
+from hmsc.utils.import_utils import load_random_level_hyperparams
 from hmsc.utils.export_rds_utils import (
     _extract_json_string,
     load_model_from_rds,
@@ -190,6 +192,81 @@ def test_rds_saver_writes_legacy_json_payload(tmp_path):
     assert payload["0"]["0"]["Beta"] == [[0.0]]
     assert payload["0"]["0"]["rhoInd"] == [1]
     assert payload["0"]["0"]["Alpha"]["0"] == [1]
+
+
+def test_hdf5_saver_pads_variable_random_level_factor_shapes(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    output_path = tmp_path / "posterior.h5"
+    first = _fake_snapshot()
+    first["Psi"] = [tf.ones((1, 1), dtype=tf.float64)]
+    first["Delta"] = [tf.ones((1, 1), dtype=tf.float64)]
+    second = _fake_snapshot()
+    second["Eta"] = [tf.ones((2, 2), dtype=tf.float64)]
+    second["Lambda"] = [tf.ones((2, 1), dtype=tf.float64)]
+    second["Psi"] = [tf.ones((2, 1), dtype=tf.float64)]
+    second["Delta"] = [tf.ones((2, 1), dtype=tf.float64)]
+    second["AlphaInd"] = [tf.ones((2,), dtype=tf.int32)]
+
+    save_chains_postList_to_hdf5([[first, second]], str(output_path), nChains=1)
+
+    with h5py.File(output_path, "r") as handle:
+        eta = handle["random_levels/0/Eta"][:]
+        alpha = handle["random_levels/0/Alpha"][:]
+
+    assert eta.shape == (1, 2, 2, 2)
+    np.testing.assert_allclose(eta[0, 0], [[0.0, 0.0], [0.0, 0.0]])
+    np.testing.assert_allclose(eta[0, 1], [[1.0, 1.0], [1.0, 1.0]])
+    assert alpha.shape == (1, 2, 2)
+    np.testing.assert_array_equal(alpha[0, 0], [1, 1])
+    np.testing.assert_array_equal(alpha[0, 1], [2, 2])
+
+
+def test_legacy_gpp_random_level_hyperparams_are_jitter_stabilized():
+    coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    knots = coords[[0, 3]]
+    dist12 = np.sqrt(((coords[:, None, :] - knots[None, :, :]) ** 2).sum(axis=-1))
+    dist22 = np.sqrt(((knots[:, None, :] - knots[None, :, :]) ** 2).sum(axis=-1))
+    alpha_grid = np.column_stack(
+        [
+            np.sqrt(2.0) * np.arange(101, dtype=float) / 100.0,
+            np.concatenate([[0.5], np.repeat(0.005, 100)]),
+        ]
+    )
+    hmsc_model = {
+        "nr": [1],
+        "np": [4],
+        "rL": {
+            "plot": {
+                "nu": [3.0],
+                "a1": [2.0],
+                "b1": [1.0],
+                "a2": [3.0],
+                "b2": [1.0],
+                "nfMin": [1],
+                "nfMax": [4],
+                "sDim": [2],
+                "xDim": [0],
+                "spatialMethod": ["GPP"],
+                "alphapw": alpha_grid.tolist(),
+            }
+        },
+    }
+    data_par = {
+        "rLPar": [
+            {
+                "nKnots": [2],
+                "distMat12": dist12.reshape(-1).tolist(),
+                "distMat22": dist22.reshape(-1).tolist(),
+            }
+        ]
+    }
+
+    random_hyper = load_random_level_hyperparams(hmsc_model, data_par)
+
+    assert random_hyper[0]["idDg"].shape == (101, 4)
+    assert random_hyper[0]["Fg"].shape == (101, 2, 2)
+    assert np.isfinite(random_hyper[0]["idDg"].numpy()).all()
+    assert np.isfinite(random_hyper[0]["detDg"].numpy()).all()
 
 
 def _fake_samples(n_samples):

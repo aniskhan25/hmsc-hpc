@@ -367,7 +367,7 @@ class HmscFit:
             raise ValueError(f"Prediction data is missing covariates: {missing_non_intercept}")
         for column in missing:
             design[column] = 1.0
-        design = design.loc[:, beta_frame.index].to_numpy(dtype=float)
+        design = self._scale_prediction_design(design.loc[:, beta_frame.index]).to_numpy(dtype=float)
         linear = np.einsum("nk,cdks->cdns", design, self.beta_samples())
         if random_effects not in {"none", "known", "marginal"}:
             raise ValueError("random_effects must be 'none', 'known', or 'marginal'")
@@ -985,6 +985,7 @@ class HmscFit:
         traits = None
         if self.model is not None:
             covariates = getattr(self.model, "covariate_names", None)
+            traits = getattr(self.model, "trait_names", None)
         names = self._metadata_names()
         if covariates is None or len(covariates) != gamma.shape[0]:
             covariates = names.get("covariates")
@@ -1584,6 +1585,37 @@ class HmscFit:
             return str(self.metadata.get("distribution", "normal"))
         return "normal"
 
+    def _scale_prediction_design(self, design: pd.DataFrame) -> pd.DataFrame:
+        scale = self._x_scale_parameters()
+        if scale is None:
+            return design.astype(float)
+        scaled = design.astype(float).copy()
+        for column in scaled.columns:
+            if column not in scale:
+                continue
+            mean, sd = scale[column]
+            if _is_intercept_column(column):
+                continue
+            if not np.isfinite(sd) or sd <= 0.0:
+                sd = 1.0
+            scaled[column] = (scaled[column].to_numpy(dtype=float) - mean) / sd
+        return scaled
+
+    def _x_scale_parameters(self) -> dict[str, tuple[float, float]] | None:
+        if isinstance(self.metadata, dict):
+            preprocessing = self.metadata.get("preprocessing", {})
+            if isinstance(preprocessing, dict):
+                scale = _scale_parameters_from_metadata(preprocessing.get("XScalePar"))
+                if scale is not None:
+                    return scale
+        if self.model is None or getattr(self.model, "X", None) is None:
+            return None
+        try:
+            design = build_design_matrix(self._x_formula(), self.model.X)
+        except Exception:
+            return None
+        return _scale_parameters_from_design(design)
+
 
 def _names_or_default(names: list[str] | None, size: int, prefix: str) -> list[str]:
     if names and len(names) == size:
@@ -1593,6 +1625,48 @@ def _names_or_default(names: list[str] | None, size: int, prefix: str) -> list[s
 
 def _factor_names(size: int) -> list[str]:
     return [f"factor_{idx}" for idx in range(size)]
+
+
+def _is_intercept_column(column: object) -> bool:
+    return str(column) in {"Intercept", "(Intercept)"}
+
+
+def _is_indicator_column(values: np.ndarray) -> bool:
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return False
+    unique = np.unique(finite)
+    return bool(unique.size <= 2 and np.all(np.isin(unique, [0.0, 1.0])))
+
+
+def _scale_parameters_from_metadata(value: Any) -> dict[str, tuple[float, float]] | None:
+    if not isinstance(value, dict):
+        return None
+    columns = value.get("columns")
+    means = value.get("mean")
+    sds = value.get("sd")
+    if not isinstance(columns, list) or not isinstance(means, list) or not isinstance(sds, list):
+        return None
+    if not (len(columns) == len(means) == len(sds)):
+        return None
+    return {
+        str(column): (float(mean), float(sd))
+        for column, mean, sd in zip(columns, means, sds)
+    }
+
+
+def _scale_parameters_from_design(design: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    scale = {}
+    for column in design.columns:
+        values = design[column].to_numpy(dtype=float)
+        if _is_intercept_column(column) or _is_indicator_column(values) or np.allclose(values, values[0]):
+            scale[str(column)] = (0.0, 1.0)
+        else:
+            sd = float(np.std(values, ddof=1))
+            if not np.isfinite(sd) or sd <= 0.0:
+                sd = 1.0
+            scale[str(column)] = (float(np.mean(values)), sd)
+    return scale
 
 
 def _read_hdf5_posterior(path: Path) -> dict[str, Any]:

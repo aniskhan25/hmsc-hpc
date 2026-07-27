@@ -8,7 +8,7 @@ from pyhmsc.posterior import HmscFit
 def test_beta_mean_and_prediction_for_poisson():
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1, 2], "sp2": [3, 4]}),
-        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 2.0]}),
         x_formula="~ x",
         distr="poisson",
     )
@@ -27,19 +27,20 @@ def test_beta_mean_and_prediction_for_poisson():
     assert list(beta.columns) == ["sp1", "sp2"]
     np.testing.assert_allclose(beta.to_numpy(), [[1.0, 2.0], [1.0, 1.0]])
 
-    pred = fit.predict(pd.DataFrame({"x": [1.0]}))
+    pred = fit.predict(pd.DataFrame({"x": [2.0]}))
+    scaled_x = np.sqrt(0.5)
     np.testing.assert_allclose(
         pred.to_numpy(),
-        np.mean(np.exp([[[1.0, 1.0]], [[3.0, 5.0]]]), axis=0),
+        np.mean(np.exp([[[scaled_x, 1.0]], [[2.0 + scaled_x, 3.0 + 2.0 * scaled_x]]]), axis=0),
     )
 
-    samples = fit.predict_samples(pd.DataFrame({"x": [1.0]}))
+    samples = fit.predict_samples(pd.DataFrame({"x": [2.0]}))
     assert samples.shape == (1, 2, 1, 2)
-    ci = fit.predict_ci(pd.DataFrame({"x": [1.0]}))
+    ci = fit.predict_ci(pd.DataFrame({"x": [2.0]}))
     assert ci["lower"].shape == (1, 2)
     assert ci["upper"].shape == (1, 2)
 
-    yrep = fit.posterior_predictive(pd.DataFrame({"x": [1.0]}), rng_seed=7)
+    yrep = fit.posterior_predictive(pd.DataFrame({"x": [2.0]}), rng_seed=7)
     assert yrep.shape == (1, 2, 1, 2)
     assert np.all(yrep >= 0)
     assert np.all(yrep == np.floor(yrep))
@@ -63,7 +64,7 @@ def test_beta_mean_and_prediction_for_poisson():
 def test_gaussian_posterior_predictive_uses_sigma():
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [1.0, 2.0]}),
-        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 2.0]}),
         x_formula="~ x",
         distr="normal",
     )
@@ -84,7 +85,7 @@ def test_gaussian_posterior_predictive_uses_sigma():
 def test_probit_prediction_returns_probability_on_response_scale():
     model = HmscModel(
         Y=pd.DataFrame({"sp1": [0, 1]}),
-        X=pd.DataFrame({"x": [0.0, 1.0]}),
+        X=pd.DataFrame({"x": [0.0, 2.0]}),
         x_formula="~ x",
         distr="probit",
     )
@@ -96,12 +97,13 @@ def test_probit_prediction_returns_probability_on_response_scale():
     }
     fit = HmscFit(posterior, model=model)
 
-    linear = fit.predict_samples(pd.DataFrame({"x": [1.0]}), response=False)
-    probability = fit.predict_samples(pd.DataFrame({"x": [1.0]}), response=True)
+    linear = fit.predict_samples(pd.DataFrame({"x": [2.0]}), response=False)
+    probability = fit.predict_samples(pd.DataFrame({"x": [2.0]}), response=True)
 
-    np.testing.assert_allclose(linear.reshape(-1), [1.0, -1.0])
-    np.testing.assert_allclose(probability.reshape(-1), [0.84134475, 0.15865525])
-    np.testing.assert_allclose(fit.predict_mean(pd.DataFrame({"x": [1.0]})).to_numpy(), [[0.5]])
+    scaled_x = np.sqrt(0.5)
+    np.testing.assert_allclose(linear.reshape(-1), [scaled_x, -scaled_x])
+    np.testing.assert_allclose(probability.reshape(-1), [0.76024994, 0.23975006])
+    np.testing.assert_allclose(fit.predict_mean(pd.DataFrame({"x": [2.0]})).to_numpy(), [[0.5]])
 
 
 def test_gradient_helpers_summarize_response_scale_predictions():
@@ -211,6 +213,44 @@ def test_known_random_effect_prediction_from_hdf5(tmp_path):
     np.testing.assert_allclose(marginal[:, :, 0, :], expected_groups[:, :, 0, :])
     np.testing.assert_allclose(marginal[:, :, 1, :], expected_groups[:, :, 0, :])
     np.testing.assert_allclose(marginal[:, :, 2, :], expected_groups[:, :, 1, :])
+
+
+def test_prediction_applies_metadata_x_scaling(tmp_path):
+    import h5py
+
+    path = tmp_path / "posterior.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("Beta", data=np.array([[[[0.0], [1.0]]]]))
+        handle.attrs["pyhmsc_metadata"] = (
+            '{"names":{"covariates":["Intercept","x"],"species":["sp1"]},'
+            '"formula":{"X":"~ x"},"distribution":"normal",'
+            '"preprocessing":{"XScalePar":{"columns":["Intercept","x"],'
+            '"mean":[0.0,10.0],"sd":[1.0,2.0]}}}'
+        )
+
+    fit = HmscFit.from_file(path)
+    prediction = fit.predict_mean(pd.DataFrame({"x": [12.0]}, index=["new"]))
+
+    assert prediction.loc["new", "sp1"] == 1.0
+
+
+def test_prediction_applies_model_training_x_scaling_without_metadata(tmp_path):
+    import h5py
+
+    path = tmp_path / "posterior.h5"
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("Beta", data=np.array([[[[0.0], [1.0]]]]))
+    model = HmscModel(
+        Y=pd.DataFrame({"sp1": [0.0, 1.0]}, index=["a", "b"]),
+        X=pd.DataFrame({"x": [10.0, 12.0]}, index=["a", "b"]),
+        x_formula="~ x",
+        distr="normal",
+    )
+
+    fit = HmscFit.from_file(path, model=model)
+    prediction = fit.predict_mean(pd.DataFrame({"x": [13.0]}, index=["new"]))
+
+    np.testing.assert_allclose(prediction.loc["new", "sp1"], np.sqrt(2.0))
 
 
 def test_known_random_effect_prediction_accepts_separate_study_design():

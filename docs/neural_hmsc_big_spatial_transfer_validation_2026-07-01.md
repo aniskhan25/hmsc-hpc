@@ -59,3 +59,84 @@ assessable rather than passed.
 
 Frozen neural inference took 0.160 seconds and MCMC sampling took 31.8 seconds,
 for a 198.7x inference-only speedup.
+
+## Qualified Comparator Rerun
+
+Date: 2026-07-19
+
+Final LUMI job: `20001432`
+
+Remote run root:
+`/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_big_spatial_transfer_qualified_retry2_20260719`
+
+This rerun used the newly completed Whittaker `external_monotone` artifact as
+the frozen source:
+
+```text
+/scratch/project_462000131/anisrahm/hmsc-hpc-runs/neural_whittaker_extmono_qualified_20260719
+```
+
+It attached the passed Big Spatial direct R/Python parity metrics:
+
+```text
+/scratch/project_462000131/anisrahm/hmsc-hpc-runs/direct_r_python_big_spatial_full_parity_20260719/big_spatial_plants_validation_model_spatial_full/direct_r_python_parity_metrics.json
+```
+
+The first dependent submission, job `20000925`, failed because the transfer
+runner still assumed that the frozen coefficient posterior carried the scalar
+predictive-only multiplier. The promoted Whittaker run stores coefficient
+calibration in `neural_posterior.h5` and predictive calibration in
+`neural_predictive_distribution.h5`. Retry job `20001335` exposed one stale
+variable name in the posterior writer. Job `20001432` completed successfully
+after the transfer runner was corrected to load the two calibration artifacts
+separately.
+
+Acceptance:
+
+| gate | result |
+| --- | --- |
+| inherited source SBC acceptance | pass |
+| target predictive acceptance | pass |
+| frozen predictive transfer acceptance | pass |
+| reference parity qualification | pass |
+| target coefficient calibration assessable | false |
+
+Held-out metrics:
+
+| model | Brier | log loss | macro AUC | prevalence MAE | richness MAE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| neural uncalibrated | `0.051242` | `0.203917` | `0.640447` | `0.051664` | `4.566353` |
+| neural coefficient-calibrated | `0.052362` | `0.211971` | `0.640800` | `0.064194` | `5.288344` |
+| neural predictive-only | `0.052811` | `0.211215` | `0.632069` | `0.059852` | `5.148121` |
+| qualified Python MCMC fixed | `0.047494` | `0.191519` | `0.647862` | `0.039840` | `3.545930` |
+
+Reference parity diagnostics from the attached Big Spatial direct parity run:
+
+| diagnostic | value |
+| --- | ---: |
+| `Beta` mean correlation | `0.984128` |
+| `Gamma` mean correlation | `0.999570` |
+| random-level association correlation | `0.749967` |
+
+Frozen neural inference took `0.132` seconds, and qualified Python MCMC sampling
+took `36.349` seconds, for a `274.442x` inference-only speedup.
+
+This confirms the frozen Big Spatial transfer gate with the comparator now
+explicitly qualified against the original R+Python HMSC-HPC boundary. It still
+does not establish target-domain coefficient posterior calibration because the
+real Big Spatial target has no coefficient truth.
+
+## Next Decision
+
+The bounded three-seed real-data sensitivity check completed as LUMI job
+`20001710`; see
+`docs/neural_hmsc_realdata_sensitivity_2026-07-19.md`. Big Spatial
+frozen-transfer passed in all three seeds with the Big Spatial direct parity
+metrics attached. The qualified Python MCMC comparator retained the proper-score
+advantage in all three Big Spatial seeds: mean Brier ratio versus MCMC was
+`1.0945`, mean log-loss ratio was `1.0866`, and mean macro AUC delta was
+`-0.0167`.
+
+The next roadmap step is to resume simulated neural competitor development,
+using Big Spatial transfer as a frozen real-data gate rather than adding another
+dataset-specific calibration adjustment.

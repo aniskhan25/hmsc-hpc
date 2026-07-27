@@ -207,6 +207,15 @@ predictive-only artifacts may use a different multiplier for response-scale
 scoring, but must be labelled `predictive_only` and must not be interpreted as
 posterior uncertainty. Probit scale selection uses the exact Gaussian-probit
 expectation and is fitted only on independent simulated calibration data.
+Predictive-only mean calibration, if enabled, must be stored as separate
+`predictive_mean_calibration` metadata on the predictive-only artifact. It may
+adjust response-scale scoring through the Beta mean used by
+`neural_predictive_distribution.h5`, but it must not replace coefficient
+posterior means, coefficient uncertainty calibration, or SBC rank semantics.
+Response-scale mean calibration must be selected on independent simulated
+response heldouts, not coefficient RMSE alone; for probit benchmarks this means
+reporting validation Brier and log-loss before and after the candidate, plus
+the corresponding validation ratios and identity-fallback decision.
 Conditional coefficient calibration may replace the global coefficient scale,
 but it must retain this separation: anchored conditional version 5 metadata belongs to
 the coefficient artifact, while the predictive-only artifact retains its
@@ -267,6 +276,87 @@ gate. Reports must use the explicit key
 `predictive_transfer_acceptance_passed`; a generic transfer-qualification label
 is not permitted. Coefficient-posterior calibration cannot be claimed for a
 real target dataset without simulated coefficient truth.
+
+### Predictive deployment policy
+
+The promoted neural predictive-mean deployment policy is the manifest-backed
+`affine_branch` probability ensemble. `scale_only` remains an explicit
+conservative fallback; implicit fallback or silent role substitution is not
+permitted. Deployment must use `load_predictive_mean_ensemble`, which validates
+ordered member hashes, species/formula compatibility, predictive-only
+semantics, outcome-independent selection, and qualified parity provenance.
+
+Qualified Python MCMC remains a separately hashed statistical reference. It is
+not a neural ensemble member and must not be used to generate neural deployment
+predictions. Promotion therefore denotes improvement over the matched neural
+scale-only baseline and does not imply HMSC posterior or predictive parity.
+
+The frozen deployment baseline identifier is `neural_predictive_affine_v1`.
+Future competitors must resolve that identifier through
+`load_predictive_deployment_baseline` and report the exact baseline manifest
+hashes. They must retain coefficient SBC, named OOD, rare-validation,
+Whittaker, Big Spatial, full/leave-one-out stability, and manifest/parity
+provenance gates. A new baseline identifier is required for any manifest or
+gate change; an existing identifier must never be overwritten.
+
+### Simulated MCMC-teacher competitors
+
+An MCMC-teacher predictive head may train only on response probabilities from
+Python-native HMSC posteriors fitted to independent simulated communities.
+Neural and teacher posteriors must be fitted on simulation training sites;
+teacher targets, outcome proper scores, and selection gates must use disjoint
+simulation holdout sites. Real ecological outcomes must not enter head
+training, shrinkage selection, or context-gate fitting.
+
+The teacher artifact is predictive-only. It must not alter coefficient draws,
+coefficient uncertainty scales, SBC semantics, or the frozen deployment
+manifest. Its metadata must record baseline and teacher-posterior hashes,
+simulation seeds, fitting/holdout dimensions, MCMC settings, identity penalty,
+candidate shrinkages, and whether outcomes entered the gradient. An identity
+fallback is safe but does not constitute improvement.
+
+Before real-data scoring or a five-seed LUMI comparison, a nonzero candidate
+must pass independent simulated validation and evaluation. Every named regime
+must preserve outcome Brier and log loss, the target-shaped regime must improve
+both, and the same decision must hold across evaluation seeds or cross-fit
+folds. Better agreement with MCMC teacher probabilities alone is insufficient
+when realized outcome proper scores degrade.
+
+Cross-fitted teacher selection must group all regimes from the same simulated
+community into one fold. Each fold trains on the remaining communities and may
+use its held-out simulated outcomes only for selection and no-degradation
+gates, never in the residual gradient or context features. Final evaluation
+communities must remain untouched until shrinkage, context margin, support
+caps, and approved/fallback labels are frozen.
+
+A context-conditioned teacher head must have an exact identity fallback and
+must compute its decision without response outcomes. Prototype features,
+normalization, approved labels, distance margins, and support caps are part of
+the predictive-only artifact. Covariate-shift and rare contexts whose fold
+direction is unstable must remain identity in every fold. Numerical identity
+comparisons may use an absolute ratio tolerance no larger than `1e-10`; this is
+not a substantive no-degradation allowance.
+
+Before opening real-data outcomes, the frozen context gate must pass an
+outcome-blind routing check on each target dataset. This check may inspect
+baseline probabilities, design covariates, context summaries, artifact hashes,
+and gate decisions only. A dataset outside every approved support cap must
+remain identity.
+
+Simulation support must cover deployment community dimensions used by both the
+router and residual head. Total design-information or raw site-count features
+must not be extrapolated beyond fitted support merely because the router can be
+forced active. If a target fails outcome-blind support, real-data scoring stays
+blocked until the representation and independent simulation corpus are revised
+and the full simulated and routing gates are rerun.
+
+For target-shaped teacher corpora, support must be checked before teacher MCMC
+or residual fitting. The check may use frozen neural baseline probabilities and
+unlabeled target covariates, but not ecological responses or MCMC target
+predictions. Generated profiles must bracket declared probability/prevalence,
+covariate, and bounded community-size summaries for the target while separate
+identity controls cover source/rare contexts. Fitting an unsupported corpus and
+then widening a prototype cap is not an admissible support correction.
 
 Initial simulation hyperparameters:
 
