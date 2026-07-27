@@ -4466,6 +4466,40 @@ and an explicit decision separate from this roadmap.
     candidate-plus-ablation training. Keep 502M-515M sealed until the resulting
     501M freeze and both checkpoint hashes are independently validated.
 
+64. Freeze the evaluator and decide the 501M production-training boundary.
+    Status: complete without opening a ledger seed. The evaluator,
+    comparators, production harnesses, tests, review, and source-freeze
+    manifest are committed at
+    `773ee4846c6d35851ff6a75d7ceb9debee7b9fad`. The source-freeze manifest
+    remains
+    `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
+    SHA-256
+    `f40421ef0bd0315f02121288cc0e091abecf8fe0e3597baac749e8b86cd43694`.
+
+    From that exact clean commit, `check-seal` reported candidate training,
+    fixed validation, reserved evaluation, and redesign ranges unopened.
+    The read-only `preflight-training` command passed with both opening tokens
+    unset. It revalidated the 13-file production source inventory, frozen
+    protocol documents, 324-context/648-realization training contract,
+    candidate and no-latent schedules, and the complete 502M evaluator
+    component list without creating output or reading a production seed.
+
+    Decision: authorize the one-shot 501M candidate-plus-ablation training
+    only. This decision does not authorize 502M fixed validation or any
+    503M-515M block. The 501M run must pin the reviewed clean source commit,
+    use a new output root, retain final-epoch candidate and ablation artifacts,
+    and complete independent freeze, checkpoint-content, weight-hash,
+    optimization, corpus-role, and unopened-seed validation before 502M can be
+    considered.
+
+    Next, submit the one-shot 501M candidate-plus-ablation training with
+    `OPEN_GENERATIVE_IID_501M_TRAINING=GENERATE_501M_CANDIDATE_TRAINING_ONLY`
+    and `EXPECTED_SOURCE_COMMIT` pinned to the final clean roadmap commit.
+    After completion, download and independently validate `freeze.json`, both
+    checkpoint manifests and weight hashes, `training_corpus_manifest.json`,
+    `training_report.json`, and `postfreeze_validation.json`. Keep
+    502M-515M sealed.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
