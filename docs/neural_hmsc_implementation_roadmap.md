@@ -4382,6 +4382,44 @@ and an explicit decision separate from this roadmap.
     keeping 503M-515M sealed. Do not open a production seed during the
     implementation or authorization review.
 
+62. Freeze the branch baseline and implement the separated production
+    authorization boundary.
+    Status: complete without opening a production seed. The branch baseline is
+    clean commit `c90aab13806248d9bc339ba921b30201ba870d81`. The production
+    authorization review is
+    `docs/generative_neural_hmsc_iid_v1_production_authorization_review_2026-07-27.md`,
+    SHA-256
+    `9de5e72edc34e7dbc16fe5b51254db74bd31c6cd07bffe6bc749bba4c8c57bd2`.
+
+    The new production harness and `dev-g` scheduler wrapper make 501M
+    candidate training conditional on an exact confirmation, a full pinned
+    source commit, a clean worktree, unchanged frozen protocol hashes, and a
+    new output root. The generated corpus is fixed to 324 owning contexts,
+    two independently sampled responses per owner, 200 epochs, batch size
+    four, eight IWAE samples, model seed 501900001, and final-epoch weights.
+    Its immutable freeze records exact source, corpus, checkpoint, weight,
+    optimization, and unopened-seed provenance.
+
+    Review showed that 502M cannot honestly be implemented as a simple
+    validation-loss mode. The frozen gates require candidate posterior
+    diagnostics, a separately trained no-latent ablation, exact-model MCMC,
+    qualified Python HMSC-HPC, immutable v0.1, invariance, masked-cell and
+    new-site prediction, posterior-predictive checks, runtime measurements,
+    and all aggregate/stratum decisions. The harness therefore supplies a
+    read-only 502M preflight but deliberately refuses to generate 502M even
+    when its token is present until those components are reviewed.
+
+    Focused verification reports 19 passed and one optional exact-MCMC test
+    skipped. The scheduler passes Bash syntax validation. A correctly tokened
+    501M dry run from the uncommitted production implementation was rejected
+    before output creation by the clean-worktree barrier. The seal reports
+    501M, 502M, 503M-505M, and 511M-515M unopened.
+
+    Next, commit this production authorization implementation. Then implement
+    and test the complete 502M comparator evaluator using only ordinary
+    non-ledger fixtures. Do not authorize 501M until the evaluator and exact
+    gate report are executable and reviewed; keep 501M-515M sealed.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and

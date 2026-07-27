@@ -8,6 +8,9 @@ from scipy.stats import multivariate_normal, norm
 import tensorflow as tf
 
 from examples import run_generative_neural_hmsc_iid_v1 as sealed_harness
+from examples import (
+    run_generative_neural_hmsc_iid_v1_production as production_harness,
+)
 from pyhmsc.neural.generative_iid import (
     GenerativeIidPosteriorModel,
     JointLowRankPosterior,
@@ -544,3 +547,74 @@ def test_sealed_harness_checks_hashes_and_refuses_unconfirmed_smoke(
     with pytest.raises(RuntimeError, match=sealed_harness.CONFIRMATION_ENV):
         sealed_harness.main()
     assert not (tmp_path / "run").exists()
+
+
+def test_production_factorial_and_seed_roles_are_frozen():
+    cells = production_harness._factorial_cells()
+    assert len(cells) == 324
+    assert len(
+        {
+            (
+                cell["n_sites"],
+                cell["n_species"],
+                cell["covariate_shape"],
+                cell["loading_stratum"],
+                cell["prevalence_stratum"],
+                cell["replicate"],
+            )
+            for cell in cells
+        }
+    ) == 324
+    assert production_harness.TRAINING_SEEDS == tuple(
+        range(501_000_001, 501_000_325)
+    )
+    assert production_harness.FIXED_VALIDATION_SEEDS == tuple(
+        range(502_000_001, 502_000_325)
+    )
+    assert production_harness.TRAINING_RESPONSES_PER_CONTEXT == 2
+    assert production_harness.TRAINING_EPOCHS == 200
+    assert production_harness.TRAINING_BATCH_SIZE == 4
+    assert production_harness.MODEL_SEED == 501_900_001
+
+
+def test_production_training_refuses_before_seed_generation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_generate_production_block",
+        lambda *args, **kwargs: pytest.fail("production seeds were generated"),
+    )
+    with pytest.raises(RuntimeError, match="OPEN_GENERATIVE_IID_501M"):
+        production_harness.train_candidate(
+            tmp_path / "blocked",
+            expected_source_commit="not-opened",
+        )
+    assert not (tmp_path / "blocked").exists()
+
+
+def test_fixed_validation_remains_inaccessible_even_with_confirmation(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        production_harness.VALIDATION_CONFIRMATION,
+    )
+    with pytest.raises(RuntimeError, match="complete comparator evaluator"):
+        production_harness._generate_production_block(
+            production_harness.FIXED_VALIDATION_SEEDS,
+            masked=True,
+        )
+
+
+def test_production_seal_status_keeps_all_nontraining_blocks_closed():
+    status = production_harness.production_seal_status()
+    assert status["candidate_training_opened"] is False
+    assert status["fixed_validation_opened"] is False
+    assert status["fixed_validation_executable"] is False
+    assert status["reserved_seed_ranges_opened"] is False
+    assert status["redesign_seed_ranges_opened"] is False
