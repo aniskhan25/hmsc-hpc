@@ -4503,13 +4503,20 @@ and an explicit decision separate from this roadmap.
     training schedule, comparator, gate, threshold, and seed roles are
     unchanged.
 
-    Next, submit the one-shot 501M candidate-plus-ablation training with
-    `OPEN_GENERATIVE_IID_501M_TRAINING=GENERATE_501M_CANDIDATE_TRAINING_ONLY`
-    and `EXPECTED_SOURCE_COMMIT` pinned to the final clean roadmap commit.
-    After completion, download and independently validate `freeze.json`, both
-    checkpoint manifests and weight hashes, `training_corpus_manifest.json`,
-    `training_report.json`, and `postfreeze_validation.json`. Keep
-    502M-515M sealed.
+    The corrected in-container no-seed preflight passed at clean source commit
+    `fc2ac5aff84f2fbed2c3604f3001f3647618fdc0`. The one-shot 501M
+    candidate-plus-ablation training was then submitted as LUMI job
+    `20301852` on `standard-g`, using an isolated detached worktree pinned to
+    that commit and exact confirmation
+    `OPEN_GENERATIVE_IID_501M_TRAINING=GENERATE_501M_CANDIDATE_TRAINING_ONLY`.
+    The scheduler reported the job pending for priority. No 502M-515M token
+    was set.
+
+    Next, monitor job `20301852`. After completion, download and independently
+    validate `freeze.json`, both checkpoint manifests and weight hashes,
+    `training_corpus_manifest.json`, `training_report.json`, and
+    `postfreeze_validation.json`. Open 502M only if the complete 501M freeze
+    validation passes; keep 503M-515M sealed.
 
 ### Active Stop Rules
 
