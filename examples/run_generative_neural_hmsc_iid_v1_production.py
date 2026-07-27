@@ -9,7 +9,6 @@ import itertools
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import time
@@ -51,6 +50,7 @@ from pyhmsc.neural.generative_iid import (  # noqa: E402
     posterior_mean_invariants,
 )
 from examples.run_generative_neural_hmsc_iid_v1 import (  # noqa: E402
+    _source_control_state,
     _source_provenance,
     _validate_frozen_documents,
 )
@@ -1317,25 +1317,12 @@ def _require_confirmation(name: str, value: str, *, action: str) -> None:
 
 
 def _require_clean_pinned_source(expected_source_commit: str) -> str:
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    head, _, worktree_dirty = _source_control_state()
     if head != expected_source_commit:
         raise RuntimeError(
             f"source HEAD {head} differs from pinned {expected_source_commit}"
         )
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    if status.strip():
+    if worktree_dirty:
         raise RuntimeError("production training requires a clean worktree")
     for path in PRODUCTION_SOURCE_PATHS:
         if not (ROOT / path).is_file():

@@ -41,6 +41,9 @@ from pyhmsc.neural.generative_iid_mcmc import exact_model_log_joint
 
 CONFIRMATION_ENV = "OPEN_GENERATIVE_IID_DISPOSABLE_SMOKE"
 CONFIRMATION_VALUE = "GENERATE_591M_592M_DISPOSABLE_ONLY"
+HOST_SOURCE_COMMIT_ENV = "GENERATIVE_IID_HOST_SOURCE_COMMIT"
+HOST_SOURCE_BRANCH_ENV = "GENERATIVE_IID_HOST_SOURCE_BRANCH"
+HOST_WORKTREE_CLEAN_ENV = "GENERATIVE_IID_HOST_WORKTREE_CLEAN"
 TRAINING_SEEDS = tuple(range(591000001, 591000019))
 VALIDATION_SEEDS = tuple(range(592000001, 592000019))
 PREREGISTRATION = (
@@ -417,14 +420,8 @@ def _validate_frozen_documents() -> None:
 
 
 def _source_commit() -> str:
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
+    commit, _, _ = _source_control_state()
+    return commit
 
 
 def _source_provenance(source_commit: str) -> dict[str, object]:
@@ -438,20 +435,9 @@ def _source_provenance(source_commit: str) -> dict[str, object]:
         "docs/generative_neural_hmsc_iid_v1_seed_audit_2026-07-27.json.md",
         "docs/generative_neural_hmsc_iid_v1_design_review_2026-07-27.md",
     )
-    branch = subprocess.run(
-        ["git", "branch", "--show-current"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
+    observed_commit, branch, worktree_dirty = _source_control_state()
+    if observed_commit != source_commit:
+        raise RuntimeError("source provenance commit changed during execution")
     try:
         import tensorflow_probability as tfp
 
@@ -461,7 +447,7 @@ def _source_provenance(source_commit: str) -> dict[str, object]:
     return {
         "commit": source_commit,
         "branch": branch,
-        "worktree_dirty": bool(status.strip()),
+        "worktree_dirty": worktree_dirty,
         "source_files": [
             {"path": path, "sha256": file_sha256(ROOT / path)}
             for path in source_paths
@@ -474,6 +460,47 @@ def _source_provenance(source_commit: str) -> dict[str, object]:
             "platform": platform.platform(),
         },
     }
+
+
+def _source_control_state() -> tuple[str, str, bool]:
+    """Read Git state, or consume a strict host attestation in a container."""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        return commit, branch, bool(status.strip())
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        commit = os.environ.get(HOST_SOURCE_COMMIT_ENV, "")
+        branch = os.environ.get(HOST_SOURCE_BRANCH_ENV, "")
+        clean = os.environ.get(HOST_WORKTREE_CLEAN_ENV)
+        if (
+            len(commit) != 40
+            or any(character not in "0123456789abcdef" for character in commit)
+            or clean != "1"
+        ):
+            raise RuntimeError(
+                "Git is unavailable and the clean host-source attestation "
+                "is absent or invalid"
+            ) from error
+        return commit, branch, False
 
 
 if __name__ == "__main__":

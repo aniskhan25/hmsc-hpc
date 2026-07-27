@@ -606,6 +606,53 @@ def test_production_seal_status_keeps_all_nontraining_blocks_closed():
     assert status["redesign_seed_ranges_opened"] is False
 
 
+def test_source_control_state_accepts_strict_clean_host_attestation(
+    monkeypatch,
+):
+    def unavailable(*args, **kwargs):
+        raise FileNotFoundError("container has no git")
+
+    commit = "1" * 40
+    monkeypatch.setattr(sealed_harness.subprocess, "run", unavailable)
+    monkeypatch.setenv(sealed_harness.HOST_SOURCE_COMMIT_ENV, commit)
+    monkeypatch.setenv(
+        sealed_harness.HOST_SOURCE_BRANCH_ENV,
+        "detached",
+    )
+    monkeypatch.setenv(sealed_harness.HOST_WORKTREE_CLEAN_ENV, "1")
+
+    assert sealed_harness._source_control_state() == (
+        commit,
+        "detached",
+        False,
+    )
+    assert production_harness._require_clean_pinned_source(commit) == commit
+
+
+@pytest.mark.parametrize(
+    ("commit", "clean"),
+    [
+        ("", "1"),
+        ("not-a-full-commit", "1"),
+        ("1" * 40, "0"),
+        ("1" * 40, ""),
+    ],
+)
+def test_source_control_state_rejects_invalid_host_attestation(
+    monkeypatch,
+    commit,
+    clean,
+):
+    def unavailable(*args, **kwargs):
+        raise FileNotFoundError("container has no git")
+
+    monkeypatch.setattr(sealed_harness.subprocess, "run", unavailable)
+    monkeypatch.setenv(sealed_harness.HOST_SOURCE_COMMIT_ENV, commit)
+    monkeypatch.setenv(sealed_harness.HOST_WORKTREE_CLEAN_ENV, clean)
+    with pytest.raises(RuntimeError, match="host-source attestation"):
+        sealed_harness._source_control_state()
+
+
 def test_training_preflight_is_read_only_and_keeps_every_block_closed(
     monkeypatch,
 ):

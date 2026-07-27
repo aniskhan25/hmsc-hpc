@@ -4424,11 +4424,11 @@ and an explicit decision separate from this roadmap.
     Status: complete without opening a ledger seed. The evaluator review is
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md`,
     SHA-256
-    `b533654c0e0fa7d3ddc4a8aa9046df2ce2fa98d1581d1355035a072dfb854591`.
+    `a5d7958b5ee1ba557f4c4eb1ddfed241a25607530acfe47862a0741ec11ddbc1`.
     The exact evaluator source boundary is frozen in
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
     SHA-256
-    `f40421ef0bd0315f02121288cc0e091abecf8fe0e3597baac749e8b86cd43694`.
+    `eee2f323831b962d6e7adb107fde43178eb62fd76741adc8f34ead030d0b313c`.
 
     Production training now freezes both the generative candidate and a
     separately trained same-architecture R=0 likelihood ablation from the
@@ -4452,11 +4452,11 @@ and an explicit decision separate from this roadmap.
     evidence cannot become an implicit pass. The report decision is derived
     only from the conjunction of all gates and never opens 503M-515M.
 
-    Ordinary-seed validation reports 26 passed and one optional test skipped.
+    Ordinary-seed validation reports 31 passed and one optional test skipped.
     The complete synthetic 324-cell gate fixture, exact-MCMC continuation
     adapter, Python-native HMSC-HPC adapter, immutable v0.1 adapter, Python
-    compilation, scheduler syntax, read-only 501M preflight, and missing-token
-    seed refusals passed.
+    compilation, scheduler syntax, read-only 501M preflight, container
+    host-source attestation, and missing-token seed refusals passed.
     No production scheduler job was submitted. The long 501M and 502M
     schedulers use `standard-g`; these workflows are not short `dev-g` jobs.
 
@@ -4469,12 +4469,13 @@ and an explicit decision separate from this roadmap.
 64. Freeze the evaluator and decide the 501M production-training boundary.
     Status: complete without opening a ledger seed. The evaluator,
     comparators, production harnesses, tests, review, and source-freeze
-    manifest are committed at
+    manifest were initially committed at
     `773ee4846c6d35851ff6a75d7ceb9debee7b9fad`. The source-freeze manifest
-    remains
+    was subsequently refreshed for the fail-closed CSC TensorFlow-container
+    source-attestation path and is now
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
     SHA-256
-    `f40421ef0bd0315f02121288cc0e091abecf8fe0e3597baac749e8b86cd43694`.
+    `eee2f323831b962d6e7adb107fde43178eb62fd76741adc8f34ead030d0b313c`.
 
     From that exact clean commit, `check-seal` reported candidate training,
     fixed validation, reserved evaluation, and redesign ranges unopened.
@@ -4491,6 +4492,16 @@ and an explicit decision separate from this roadmap.
     and complete independent freeze, checkpoint-content, weight-hash,
     optimization, corpus-role, and unopened-seed validation before 502M can be
     considered.
+
+    The first LUMI submission preflight found that CSC's TensorFlow container
+    does not include Git. It stopped before seed access and before scheduler
+    submission. The wrappers now verify commit and clean status with host Git,
+    pass a strict source attestation into the container, and retain all
+    in-container frozen-document and production-file hash checks. Missing,
+    malformed, or non-clean attestations fail closed. This is an operational
+    portability correction only; simulator, representation, objective,
+    training schedule, comparator, gate, threshold, and seed roles are
+    unchanged.
 
     Next, submit the one-shot 501M candidate-plus-ablation training with
     `OPEN_GENERATIVE_IID_501M_TRAINING=GENERATE_501M_CANDIDATE_TRAINING_ONLY`

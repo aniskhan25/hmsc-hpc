@@ -57,6 +57,19 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo "Production training requires a clean repository worktree." >&2
   exit 2
 fi
+HOST_SOURCE_BRANCH="$(git branch --show-current)"
+if [[ -z "${HOST_SOURCE_BRANCH}" ]]; then
+  HOST_SOURCE_BRANCH="detached"
+fi
+export GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
+export GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
+export SINGULARITYENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export SINGULARITYENV_GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
+export SINGULARITYENV_GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
+export APPTAINERENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export APPTAINERENV_GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
+export APPTAINERENV_GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
 if [[ "$(sha256sum docs/generative_neural_hmsc_iid_v1_preregistration_2026-07-27.md | awk '{print $1}')" != "${EXPECTED_PREREGISTRATION_SHA256}" ]]; then
   echo "Generative iid preregistration hash differs." >&2
   exit 2

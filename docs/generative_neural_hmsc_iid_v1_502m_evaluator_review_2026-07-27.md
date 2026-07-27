@@ -153,18 +153,28 @@ It uses `standard-g`, requires exact source, training-freeze, candidate, and
 ablation hashes, runs preflight with the 502M token unset, restores the token
 only for the one-shot evaluator, and leaves 503M-515M sealed.
 
+Both production wrappers verify the Git commit and clean worktree in the host
+shell before entering CSC's TensorFlow container. They pass a strict commit,
+branch, and clean-status attestation into the container because that image
+does not provide Git. Python accepts this fallback only when Git execution is
+unavailable, the commit is a full lowercase SHA-1, and the host clean flag is
+exactly one. Frozen document and production source-file hashes are still
+validated inside the container.
+
 No scheduler job was submitted.
 
 ## Verification
 
 Local ordinary-seed verification reports:
 
-- focused tests: `26 passed, 1 skipped`;
+- focused tests: `31 passed, 1 skipped`;
 - complete synthetic 324-cell gate fixture: pass;
 - exact-MCMC adapter with tiny chains/draws and continuation: pass;
 - Python-native HMSC-HPC adapter with tiny chains/draws: pass;
 - immutable v0.1 adapter against a validated local release: pass;
 - read-only 501M preflight and opening-token refusal paths: pass;
+- container host-source attestation acceptance and fail-closed rejection:
+  pass;
 - missing-token 501M and 502M refusal before output creation: pass;
 - Python bytecode compilation: pass;
 - both scheduler Bash syntax checks: pass;

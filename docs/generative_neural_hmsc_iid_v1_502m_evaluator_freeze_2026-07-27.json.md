@@ -21,7 +21,7 @@
     },
     "evaluator_review": {
       "path": "docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md",
-      "sha256": "b533654c0e0fa7d3ddc4a8aa9046df2ce2fa98d1581d1355035a072dfb854591"
+      "sha256": "a5d7958b5ee1ba557f4c4eb1ddfed241a25607530acfe47862a0741ec11ddbc1"
     }
   },
   "source_files": [
@@ -51,23 +51,23 @@
     },
     {
       "path": "examples/run_generative_neural_hmsc_iid_v1.py",
-      "sha256": "4c3203aa0dc1f57392ec87dce669024438b5ee07f898c710adb1b3e7e4717bb9"
+      "sha256": "0caa930b220ace7f036d03c924fdabf3a038be74d21d7e97e3ad99bccf6ef199"
     },
     {
       "path": "examples/run_generative_neural_hmsc_iid_v1_production.py",
-      "sha256": "7826140fa5abcaad18c1d9b8b3268ba4e9bbca4294837aa0ea11fa6a203197a5"
+      "sha256": "ff4b30c5c8cdd817162d601970da555ebb9f689bbec0f9e0156d36b7d0246fb7"
     },
     {
       "path": "docs/lumi_generative_neural_hmsc_iid_v1_training_sbatch.sh",
-      "sha256": "d10f6f29b05ee899ef287275cbb33c2aae6c237a687c4f351273ee76e3d67abd"
+      "sha256": "f7d77a354c8b5c60a3f02628ce93f9e990572ddf2d2c80e30c172c6e39703757"
     },
     {
       "path": "docs/lumi_generative_neural_hmsc_iid_v1_fixed_validation_sbatch.sh",
-      "sha256": "12c861c23f422e682b7e15e4fe195b90608808f066ed88cbdf79850606e17fa0"
+      "sha256": "8ac1dca460f2b466d1762238b5e058c20ee1bbbcf453283acb9b7d87bffca072"
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1.py",
-      "sha256": "18f3b6fb3b12d219c662843f3bf7353ad9e9d397be44c76cab0422b1cf0229a3"
+      "sha256": "688f46c70c28fe4282f7d4a7c2d8ee21e703136ab7a452c8d45ec90309c58229"
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1_evaluation.py",
@@ -76,7 +76,7 @@
   ],
   "verification": {
     "focused_tests": {
-      "passed": 26,
+      "passed": 31,
       "skipped": 1,
       "failed": 0
     },
