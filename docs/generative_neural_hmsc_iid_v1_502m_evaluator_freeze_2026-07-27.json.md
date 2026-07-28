@@ -21,7 +21,7 @@
     },
     "evaluator_review": {
       "path": "docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md",
-      "sha256": "cff63ee4ae41a2dc56c1aa426df188b197ff9661ea6167dae8404b78dcb7eb5f"
+      "sha256": "f8e016f020fdd65a8a5cfd1d1847747daab931ebefffdfb594580a930db4926a"
     }
   },
   "source_files": [
@@ -55,7 +55,7 @@
     },
     {
       "path": "examples/run_generative_neural_hmsc_iid_v1_production.py",
-      "sha256": "bf2658addd6184c4da9e012c9b5b89d7f285caac178a71ed7e914f4a65dbfd19"
+      "sha256": "96712cad00ff68f78126139301be6bfd3a2ff70649f45f50435b32e6ff2cd50a"
     },
     {
       "path": "docs/lumi_generative_neural_hmsc_iid_v1_training_sbatch.sh",
@@ -63,11 +63,11 @@
     },
     {
       "path": "docs/lumi_generative_neural_hmsc_iid_v1_fixed_validation_sbatch.sh",
-      "sha256": "8ac1dca460f2b466d1762238b5e058c20ee1bbbcf453283acb9b7d87bffca072"
+      "sha256": "f3d9200e31ef47255eda7f042e0880ab7aa05f1c33237fe91f0b7d386929ad1c"
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1.py",
-      "sha256": "cee4190bc61a5073a08f430c8b0cd3e0b07e4fafef0a08e3a686a3071182d9f2"
+      "sha256": "adbfbddcac8aac34903a401e027b09e39de9062e414cabce0d452b0ef6689d84"
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1_evaluation.py",
@@ -76,7 +76,7 @@
   ],
   "verification": {
     "focused_tests": {
-      "passed": 36,
+      "passed": 37,
       "skipped": 1,
       "failed": 0
     },

@@ -4424,11 +4424,11 @@ and an explicit decision separate from this roadmap.
     Status: complete without opening a ledger seed. The evaluator review is
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md`,
     SHA-256
-    `a5d7958b5ee1ba557f4c4eb1ddfed241a25607530acfe47862a0741ec11ddbc1`.
+    `f8e016f020fdd65a8a5cfd1d1847747daab931ebefffdfb594580a930db4926a`.
     The exact evaluator source boundary is frozen in
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
     SHA-256
-    `eee2f323831b962d6e7adb107fde43178eb62fd76741adc8f34ead030d0b313c`.
+    `1bd2a8c50ba3f4cb03c47a92ec371f10100636aae9bfa059d1c69925cc160253`.
 
     Production training now freezes both the generative candidate and a
     separately trained same-architecture R=0 likelihood ablation from the
@@ -4475,7 +4475,7 @@ and an explicit decision separate from this roadmap.
     source-attestation path and is now
     `docs/generative_neural_hmsc_iid_v1_502m_evaluator_freeze_2026-07-27.json.md`,
     SHA-256
-    `eee2f323831b962d6e7adb107fde43178eb62fd76741adc8f34ead030d0b313c`.
+    `1bd2a8c50ba3f4cb03c47a92ec371f10100636aae9bfa059d1c69925cc160253`.
 
     From that exact clean commit, `check-seal` reported candidate training,
     fixed validation, reserved evaluation, and redesign ranges unopened.
@@ -4520,11 +4520,11 @@ and an explicit decision separate from this roadmap.
     validation report is
     `docs/generative_neural_hmsc_iid_v1_501m_validation_2026-07-28.md`,
     SHA-256
-    `c7eda1149a3f276b6440c2daf30927f40d13c734465492238704cddb60ee5ae1`.
+    `929fd0dbf3e6b92f60acde33ef92bea2097765f39eb0784bd2929a101bad2250`.
     The machine-readable evidence is
     `docs/generative_neural_hmsc_iid_v1_501m_validation_2026-07-28.json.md`,
     SHA-256
-    `d3122332d977048456e6f5fcce0be2ec31985badbf46884f2e5c34bfbec37e3d`.
+    `fe10e6fc76f029cb8fc4d6dd135bbc3e4e49718d27c1fc7c93663c9cf0b6d107`.
 
     Slurm job `20301852` reported `FAILED` after 11:03:29, but both frozen
     200-epoch models and every planned training artifact had already been
@@ -4552,7 +4552,7 @@ and an explicit decision separate from this roadmap.
     posterior parameters with positive diagonal scales on an ordinary
     non-ledger fixture. Corpus ownership is exactly 324 contexts and 648
     realizations. All optimization metrics are finite. Candidate and ablation
-    clean-source inventories match. The corrected focused suite reports 36
+    clean-source inventories match. The corrected focused suite reports 37
     passed and one optional skip. The independent
     `postfreeze_validation.json` SHA-256 is
     `0f6ac100df4497d7df8636962cf5c67a76dbefcb4915dcd77a4df6446c3c87c6`.
@@ -4560,13 +4560,20 @@ and an explicit decision separate from this roadmap.
     Decision: accept the immutable 501M artifacts and do not retrain or reopen
     501M. This is not a candidate-quality decision; quality remains reserved
     for 502M. The refreshed evaluator source-freeze manifest SHA-256 is
-    `e9e87ca3def285cb2cd49d46a1f0d69236fd29a953508d314b245a8ba2ece5a4`.
+    `1bd2a8c50ba3f4cb03c47a92ec371f10100636aae9bfa059d1c69925cc160253`.
+
+    The read-only 502M preflight initially validated the accepted hashes but
+    also exposed that the scheduler conflated training-source and
+    evaluator-source commits. The boundary now requires distinct immutable
+    pins: `fc2ac5aff84f2fbed2c3604f3001f3647618fdc0` owns the 501M
+    checkpoint provenance, while the clean post-correction commit owns the
+    executable 502M evaluator. The preflight and fixed report retain both.
 
     Next, commit the validator correction and evidence. From that clean
-    commit, run the read-only 502M preflight pinned to the accepted freeze,
-    candidate, and ablation hashes. Then explicitly decide whether to
-    authorize the one-shot 502M fixed-validation block. Keep 502M-515M sealed
-    until that decision.
+    evaluator commit, rerun the read-only 502M preflight pinned separately to
+    that evaluator and the accepted training source, freeze, candidate, and
+    ablation hashes. Then explicitly decide whether to authorize the one-shot
+    502M fixed-validation block. Keep 502M-515M sealed until that decision.
 
 ### Active Stop Rules
 

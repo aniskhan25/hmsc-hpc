@@ -131,14 +131,16 @@ def parse_args() -> argparse.Namespace:
 
     preflight = subparsers.add_parser("preflight-fixed-validation")
     preflight.add_argument("--freeze-root", type=Path, required=True)
-    preflight.add_argument("--expected-source-commit", required=True)
+    preflight.add_argument("--expected-training-source-commit", required=True)
+    preflight.add_argument("--expected-evaluator-source-commit", required=True)
     preflight.add_argument("--expected-checkpoint-content-sha256", required=True)
     preflight.add_argument("--expected-ablation-content-sha256", required=True)
 
     fixed = subparsers.add_parser("fixed-validation")
     fixed.add_argument("--freeze-root", type=Path, required=True)
     fixed.add_argument("--output", type=Path, required=True)
-    fixed.add_argument("--expected-source-commit", required=True)
+    fixed.add_argument("--expected-training-source-commit", required=True)
+    fixed.add_argument("--expected-evaluator-source-commit", required=True)
     fixed.add_argument("--expected-checkpoint-content-sha256", required=True)
     fixed.add_argument("--expected-ablation-content-sha256", required=True)
     fixed.add_argument("--release-registry", type=Path, required=True)
@@ -146,7 +148,14 @@ def parse_args() -> argparse.Namespace:
 
     validate_fixed = subparsers.add_parser("validate-fixed-validation")
     validate_fixed.add_argument("--root", type=Path, required=True)
-    validate_fixed.add_argument("--expected-source-commit", required=True)
+    validate_fixed.add_argument(
+        "--expected-training-source-commit",
+        required=True,
+    )
+    validate_fixed.add_argument(
+        "--expected-evaluator-source-commit",
+        required=True,
+    )
     validate_fixed.add_argument(
         "--expected-training-freeze-sha256",
         required=True,
@@ -177,7 +186,12 @@ def main() -> None:
     elif args.command == "preflight-fixed-validation":
         result = preflight_fixed_validation(
             args.freeze_root,
-            expected_source_commit=args.expected_source_commit,
+            expected_training_source_commit=(
+                args.expected_training_source_commit
+            ),
+            expected_evaluator_source_commit=(
+                args.expected_evaluator_source_commit
+            ),
             expected_checkpoint_content_sha256=(
                 args.expected_checkpoint_content_sha256
             ),
@@ -189,7 +203,12 @@ def main() -> None:
         result = run_fixed_validation(
             args.freeze_root,
             args.output,
-            expected_source_commit=args.expected_source_commit,
+            expected_training_source_commit=(
+                args.expected_training_source_commit
+            ),
+            expected_evaluator_source_commit=(
+                args.expected_evaluator_source_commit
+            ),
             expected_checkpoint_content_sha256=(
                 args.expected_checkpoint_content_sha256
             ),
@@ -202,7 +221,12 @@ def main() -> None:
     else:
         result = validate_fixed_validation_freeze(
             args.root,
-            expected_source_commit=args.expected_source_commit,
+            expected_training_source_commit=(
+                args.expected_training_source_commit
+            ),
+            expected_evaluator_source_commit=(
+                args.expected_evaluator_source_commit
+            ),
             expected_training_freeze_sha256=(
                 args.expected_training_freeze_sha256
             ),
@@ -752,14 +776,18 @@ def validate_training_freeze(
 def preflight_fixed_validation(
     freeze_root: Path,
     *,
-    expected_source_commit: str,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
     expected_checkpoint_content_sha256: str,
     expected_ablation_content_sha256: str,
 ) -> dict[str, Any]:
     """Validate the 502M boundary while leaving its seeds inaccessible."""
+    evaluator_source_commit = _require_clean_pinned_source(
+        expected_evaluator_source_commit
+    )
     training = validate_training_freeze(
         freeze_root,
-        expected_source_commit=expected_source_commit,
+        expected_source_commit=expected_training_source_commit,
         write_validation=False,
     )
     if training["checkpoint_content_sha256"] != (
@@ -776,6 +804,8 @@ def preflight_fixed_validation(
         )
     return {
         "status": "fixed_validation_preflight_sealed",
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_source_commit,
         "training_freeze_sha256": training["freeze_sha256"],
         "checkpoint_content_sha256": training["checkpoint_content_sha256"],
         "no_latent_ablation_content_sha256": training[
@@ -802,7 +832,8 @@ def run_fixed_validation(
     freeze_root: Path,
     output: Path,
     *,
-    expected_source_commit: str,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
     expected_checkpoint_content_sha256: str,
     expected_ablation_content_sha256: str,
     release_registry: Path,
@@ -827,10 +858,12 @@ def run_fixed_validation(
         VALIDATION_CONFIRMATION,
         action="502M fixed validation",
     )
-    source_commit = _require_clean_pinned_source(expected_source_commit)
+    evaluator_source_commit = _require_clean_pinned_source(
+        expected_evaluator_source_commit
+    )
     training = validate_training_freeze(
         freeze_root,
-        expected_source_commit=source_commit,
+        expected_source_commit=expected_training_source_commit,
         write_validation=False,
     )
     if training["checkpoint_content_sha256"] != (
@@ -982,7 +1015,8 @@ def run_fixed_validation(
         gates=gates,
         freeze_binding={
             "training_freeze_sha256": file_sha256(training_freeze_path),
-            "source_commit": source_commit,
+            "training_source_commit": expected_training_source_commit,
+            "evaluator_source_commit": evaluator_source_commit,
             "candidate_checkpoint_content_sha256": (
                 expected_checkpoint_content_sha256
             ),
@@ -1026,7 +1060,8 @@ def run_fixed_validation(
     freeze = {
         "protocol": PROTOCOL,
         "kind": "generative_iid_v1_502m_fixed_validation_freeze",
-        "source_commit": source_commit,
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_source_commit,
         "training_freeze_sha256": file_sha256(training_freeze_path),
         "report": {
             "path": report_path.name,
@@ -1044,7 +1079,8 @@ def run_fixed_validation(
     _write_json(freeze_path, freeze)
     return validate_fixed_validation_freeze(
         output,
-        expected_source_commit=source_commit,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_source_commit,
         expected_training_freeze_sha256=file_sha256(training_freeze_path),
     )
 
@@ -1052,7 +1088,8 @@ def run_fixed_validation(
 def validate_fixed_validation_freeze(
     root: Path,
     *,
-    expected_source_commit: str,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
     expected_training_freeze_sha256: str,
 ) -> dict[str, Any]:
     """Validate a completed 502M report without regenerating any simulation."""
@@ -1065,8 +1102,14 @@ def validate_fixed_validation_freeze(
         "generative_iid_v1_502m_fixed_validation_freeze"
     ):
         raise ValueError("502M freeze kind differs")
-    if freeze.get("source_commit") != expected_source_commit:
-        raise ValueError("502M source commit differs")
+    if freeze.get("training_source_commit") != (
+        expected_training_source_commit
+    ):
+        raise ValueError("502M training source commit differs")
+    if freeze.get("evaluator_source_commit") != (
+        expected_evaluator_source_commit
+    ):
+        raise ValueError("502M evaluator source commit differs")
     if freeze.get("training_freeze_sha256") != (
         expected_training_freeze_sha256
     ):

@@ -21,7 +21,8 @@ TRAINING_ROOT="${TRAINING_ROOT:?Set TRAINING_ROOT to the frozen 501M run}"
 RUN_NAME="${RUN_NAME:-generative_neural_hmsc_iid_v1_502m_${SLURM_JOB_ID:-manual}}"
 RUN_ROOT="${RUN_ROOT:-${USER_WORK}/hmsc-hpc-runs/${RUN_NAME}}"
 RELEASE_REGISTRY="${RELEASE_REGISTRY:-${USER_WORK}/hmsc-hpc-deployments}"
-EXPECTED_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT:?Pin the reviewed evaluator commit}"
+EXPECTED_TRAINING_SOURCE_COMMIT="${EXPECTED_TRAINING_SOURCE_COMMIT:?Pin the frozen 501M source commit}"
+EXPECTED_EVALUATOR_SOURCE_COMMIT="${EXPECTED_EVALUATOR_SOURCE_COMMIT:?Pin the reviewed evaluator commit}"
 EXPECTED_TRAINING_FREEZE_SHA256="${EXPECTED_TRAINING_FREEZE_SHA256:?Pin freeze.json}"
 EXPECTED_CHECKPOINT_CONTENT_SHA256="${EXPECTED_CHECKPOINT_CONTENT_SHA256:?Pin candidate content}"
 EXPECTED_ABLATION_CONTENT_SHA256="${EXPECTED_ABLATION_CONTENT_SHA256:?Pin ablation content}"
@@ -57,8 +58,8 @@ export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
 export SINGULARITYENV_PYTHONPATH="${PYTHONPATH}"
 export APPTAINERENV_PYTHONPATH="${PYTHONPATH}"
 
-if [[ "$(git rev-parse HEAD)" != "${EXPECTED_SOURCE_COMMIT}" ]]; then
-  echo "Repository HEAD differs from EXPECTED_SOURCE_COMMIT." >&2
+if [[ "$(git rev-parse HEAD)" != "${EXPECTED_EVALUATOR_SOURCE_COMMIT}" ]]; then
+  echo "Repository HEAD differs from EXPECTED_EVALUATOR_SOURCE_COMMIT." >&2
   exit 2
 fi
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -69,13 +70,13 @@ HOST_SOURCE_BRANCH="$(git branch --show-current)"
 if [[ -z "${HOST_SOURCE_BRANCH}" ]]; then
   HOST_SOURCE_BRANCH="detached"
 fi
-export GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_EVALUATOR_SOURCE_COMMIT}"
 export GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
 export GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
-export SINGULARITYENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export SINGULARITYENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_EVALUATOR_SOURCE_COMMIT}"
 export SINGULARITYENV_GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
 export SINGULARITYENV_GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
-export APPTAINERENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_SOURCE_COMMIT}"
+export APPTAINERENV_GENERATIVE_IID_HOST_SOURCE_COMMIT="${EXPECTED_EVALUATOR_SOURCE_COMMIT}"
 export APPTAINERENV_GENERATIVE_IID_HOST_SOURCE_BRANCH="${HOST_SOURCE_BRANCH}"
 export APPTAINERENV_GENERATIVE_IID_HOST_WORKTREE_CLEAN="1"
 if [[ "$(sha256sum "${TRAINING_ROOT}/freeze.json" | awk '{print $1}')" != "${EXPECTED_TRAINING_FREEZE_SHA256}" ]]; then
@@ -96,6 +97,8 @@ if [[ "$(sha256sum docs/generative_neural_hmsc_iid_v1_design_review_2026-07-27.m
 fi
 
 echo "Repository: ${REPO_DIR}"
+echo "Training source commit: ${EXPECTED_TRAINING_SOURCE_COMMIT}"
+echo "Evaluator source commit: ${EXPECTED_EVALUATOR_SOURCE_COMMIT}"
 echo "Training root: ${TRAINING_ROOT}"
 echo "Run root: ${RUN_ROOT}"
 echo "Authorized block: 502000001-502000324"
@@ -108,7 +111,8 @@ unset OPEN_GENERATIVE_IID_502M_FIXED_VALIDATION
 "${PYTHON}" examples/run_generative_neural_hmsc_iid_v1_production.py \
   preflight-fixed-validation \
   --freeze-root "${TRAINING_ROOT}" \
-  --expected-source-commit "${EXPECTED_SOURCE_COMMIT}" \
+  --expected-training-source-commit "${EXPECTED_TRAINING_SOURCE_COMMIT}" \
+  --expected-evaluator-source-commit "${EXPECTED_EVALUATOR_SOURCE_COMMIT}" \
   --expected-checkpoint-content-sha256 "${EXPECTED_CHECKPOINT_CONTENT_SHA256}" \
   --expected-ablation-content-sha256 "${EXPECTED_ABLATION_CONTENT_SHA256}" \
   > "${RUN_ROOT}.preflight.json"
@@ -119,7 +123,8 @@ SECONDS=0
   fixed-validation \
   --freeze-root "${TRAINING_ROOT}" \
   --output "${RUN_ROOT}" \
-  --expected-source-commit "${EXPECTED_SOURCE_COMMIT}" \
+  --expected-training-source-commit "${EXPECTED_TRAINING_SOURCE_COMMIT}" \
+  --expected-evaluator-source-commit "${EXPECTED_EVALUATOR_SOURCE_COMMIT}" \
   --expected-checkpoint-content-sha256 "${EXPECTED_CHECKPOINT_CONTENT_SHA256}" \
   --expected-ablation-content-sha256 "${EXPECTED_ABLATION_CONTENT_SHA256}" \
   --release-registry "${RELEASE_REGISTRY}" \
@@ -129,7 +134,8 @@ SECONDS=0
 "${PYTHON}" examples/run_generative_neural_hmsc_iid_v1_production.py \
   validate-fixed-validation \
   --root "${RUN_ROOT}" \
-  --expected-source-commit "${EXPECTED_SOURCE_COMMIT}" \
+  --expected-training-source-commit "${EXPECTED_TRAINING_SOURCE_COMMIT}" \
+  --expected-evaluator-source-commit "${EXPECTED_EVALUATOR_SOURCE_COMMIT}" \
   --expected-training-freeze-sha256 "${EXPECTED_TRAINING_FREEZE_SHA256}" \
   > "${RUN_ROOT}/read_only_validation.json"
 

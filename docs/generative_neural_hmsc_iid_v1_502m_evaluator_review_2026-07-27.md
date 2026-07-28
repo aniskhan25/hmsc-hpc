@@ -149,9 +149,10 @@ The new LUMI wrapper is:
 
 `docs/lumi_generative_neural_hmsc_iid_v1_fixed_validation_sbatch.sh`
 
-It uses `standard-g`, requires exact source, training-freeze, candidate, and
-ablation hashes, runs preflight with the 502M token unset, restores the token
-only for the one-shot evaluator, and leaves 503M-515M sealed.
+It uses `standard-g`, requires distinct exact training-source and
+evaluator-source commits plus training-freeze, candidate, and ablation hashes,
+runs preflight with the 502M token unset, restores the token only for the
+one-shot evaluator, and leaves 503M-515M sealed.
 
 Both production wrappers verify the Git commit and clean worktree in the host
 shell before entering CSC's TensorFlow container. They pass a strict commit,
@@ -168,7 +169,7 @@ The later 501M scheduler submission is documented separately in
 
 Local ordinary-seed verification reports:
 
-- focused tests: `36 passed, 1 skipped`;
+- focused tests: `37 passed, 1 skipped`;
 - complete synthetic 324-cell gate fixture: pass;
 - exact-MCMC adapter with tiny chains/draws and continuation: pass;
 - Python-native HMSC-HPC adapter with tiny chains/draws: pass;
@@ -201,6 +202,11 @@ corpus manifests use the canonical key. Independent validation accepted the
 immutable candidate and ablation checkpoints without retraining and retained
 502M-515M as unopened. This correction changes no model, objective,
 checkpoint, comparator, gate, threshold, or seed role.
+
+The 502M boundary separately pins the accepted 501M training source and the
+clean corrected evaluator source. The evaluator cannot conflate those commits:
+the former owns checkpoint provenance, while the latter owns executable
+validation semantics.
 
 ## Next Barrier
 

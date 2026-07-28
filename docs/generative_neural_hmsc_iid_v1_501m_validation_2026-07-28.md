@@ -53,7 +53,7 @@ Both checkpoints loaded successfully. On ordinary non-ledger seed `881501001`,
 all 90 weight tensors per model were finite, posterior means and low-rank
 factors were finite, and all diagonal posterior scales were positive.
 
-The corrected focused suite reported `36 passed, 1 skipped`. The generated
+The corrected focused suite reported `37 passed, 1 skipped`. The generated
 `postfreeze_validation.json` has SHA-256
 `0f6ac100df4497d7df8636962cf5c67a76dbefcb4915dcd77a4df6446c3c87c6`.
 
@@ -80,6 +80,8 @@ Training evidence:
 ## Next Barrier
 
 Commit the validator correction and this independent evidence. Then run the
-read-only 502M preflight pinned to the hashes above and explicitly decide
-whether to authorize the one-shot 502M fixed-validation block. Do not open
-502M during this correction or validation step; keep 503M-515M sealed.
+read-only 502M preflight with distinct immutable pins for the accepted 501M
+training source and the clean corrected evaluator source. Explicitly decide
+whether to authorize the one-shot 502M fixed-validation block only after that
+preflight. Do not open 502M during this correction or validation step; keep
+503M-515M sealed.

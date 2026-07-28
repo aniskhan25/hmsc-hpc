@@ -699,6 +699,57 @@ def test_seed_seal_validation_rejects_missing_or_open_fixed_validation(
         production_harness._require_false_seed_flags(payload)
 
 
+def test_fixed_validation_preflight_binds_distinct_training_and_evaluator_commits(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.delenv(
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        raising=False,
+    )
+    observed = {}
+
+    def require_evaluator(commit):
+        observed["evaluator"] = commit
+        return commit
+
+    def validate_training(root, *, expected_source_commit, write_validation):
+        observed["training"] = expected_source_commit
+        assert root == tmp_path / "training"
+        assert write_validation is False
+        return {
+            "freeze_sha256": "f" * 64,
+            "checkpoint_content_sha256": "a" * 64,
+            "no_latent_ablation_content_sha256": "b" * 64,
+        }
+
+    monkeypatch.setattr(
+        production_harness,
+        "_require_clean_pinned_source",
+        require_evaluator,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "validate_training_freeze",
+        validate_training,
+    )
+    result = production_harness.preflight_fixed_validation(
+        tmp_path / "training",
+        expected_training_source_commit="training-commit",
+        expected_evaluator_source_commit="evaluator-commit",
+        expected_checkpoint_content_sha256="a" * 64,
+        expected_ablation_content_sha256="b" * 64,
+    )
+
+    assert observed == {
+        "training": "training-commit",
+        "evaluator": "evaluator-commit",
+    }
+    assert result["training_source_commit"] == "training-commit"
+    assert result["evaluator_source_commit"] == "evaluator-commit"
+    assert result["fixed_validation_seed_ranges_opened"] is False
+
+
 def test_training_preflight_is_read_only_and_keeps_every_block_closed(
     monkeypatch,
 ):
@@ -778,7 +829,8 @@ def test_fixed_validation_refuses_before_any_502m_generation(
         production_harness.run_fixed_validation(
             tmp_path / "training",
             tmp_path / "evaluation",
-            expected_source_commit="not-opened",
+            expected_training_source_commit="training-not-opened",
+            expected_evaluator_source_commit="evaluator-not-opened",
             expected_checkpoint_content_sha256="a" * 64,
             expected_ablation_content_sha256="b" * 64,
             release_registry=tmp_path / "release",

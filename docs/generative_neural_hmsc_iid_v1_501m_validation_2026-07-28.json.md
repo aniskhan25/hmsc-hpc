@@ -76,7 +76,7 @@
   "independent_validation": {
     "postfreeze_validation_sha256": "0f6ac100df4497d7df8636962cf5c67a76dbefcb4915dcd77a4df6446c3c87c6",
     "focused_tests": {
-      "passed": 36,
+      "passed": 37,
       "skipped": 1,
       "failed": 0
     },
