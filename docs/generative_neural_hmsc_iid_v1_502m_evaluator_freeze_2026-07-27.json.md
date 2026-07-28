@@ -21,7 +21,7 @@
     },
     "evaluator_review": {
       "path": "docs/generative_neural_hmsc_iid_v1_502m_evaluator_review_2026-07-27.md",
-      "sha256": "a5d7958b5ee1ba557f4c4eb1ddfed241a25607530acfe47862a0741ec11ddbc1"
+      "sha256": "cff63ee4ae41a2dc56c1aa426df188b197ff9661ea6167dae8404b78dcb7eb5f"
     }
   },
   "source_files": [
@@ -55,7 +55,7 @@
     },
     {
       "path": "examples/run_generative_neural_hmsc_iid_v1_production.py",
-      "sha256": "ff4b30c5c8cdd817162d601970da555ebb9f689bbec0f9e0156d36b7d0246fb7"
+      "sha256": "bf2658addd6184c4da9e012c9b5b89d7f285caac178a71ed7e914f4a65dbfd19"
     },
     {
       "path": "docs/lumi_generative_neural_hmsc_iid_v1_training_sbatch.sh",
@@ -67,7 +67,7 @@
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1.py",
-      "sha256": "688f46c70c28fe4282f7d4a7c2d8ee21e703136ab7a452c8d45ec90309c58229"
+      "sha256": "cee4190bc61a5073a08f430c8b0cd3e0b07e4fafef0a08e3a686a3071182d9f2"
     },
     {
       "path": "tests/test_neural_hmsc_generative_iid_v1_evaluation.py",
@@ -76,7 +76,7 @@
   ],
   "verification": {
     "focused_tests": {
-      "passed": 31,
+      "passed": 36,
       "skipped": 1,
       "failed": 0
     },

@@ -4512,11 +4512,61 @@ and an explicit decision separate from this roadmap.
     The scheduler reported the job pending for priority. No 502M-515M token
     was set.
 
-    Next, monitor job `20301852`. After completion, download and independently
-    validate `freeze.json`, both checkpoint manifests and weight hashes,
-    `training_corpus_manifest.json`, `training_report.json`, and
-    `postfreeze_validation.json`. Open 502M only if the complete 501M freeze
-    validation passes; keep 503M-515M sealed.
+    Job `20301852` later exited during its first read-only validation call.
+    The failure and artifact disposition are recorded in Milestone 65.
+
+65. Independently validate and disposition the 501M training artifacts.
+    Status: complete without reopening 501M or opening a later seed. The
+    validation report is
+    `docs/generative_neural_hmsc_iid_v1_501m_validation_2026-07-28.md`,
+    SHA-256
+    `c7eda1149a3f276b6440c2daf30927f40d13c734465492238704cddb60ee5ae1`.
+    The machine-readable evidence is
+    `docs/generative_neural_hmsc_iid_v1_501m_validation_2026-07-28.json.md`,
+    SHA-256
+    `d3122332d977048456e6f5fcce0be2ec31985badbf46884f2e5c34bfbec37e3d`.
+
+    Slurm job `20301852` reported `FAILED` after 11:03:29, but both frozen
+    200-epoch models and every planned training artifact had already been
+    written. The failure occurred only in read-only validation: the corpus
+    manifest used the false seal key `fixed_validation_opened`, while the
+    validator required `fixed_validation_seed_ranges_opened`. The validator
+    now accepts either exact key, requires every present alias to be false,
+    and rejects missing, true, or conflicting values. Future generated corpus
+    manifests use the canonical key.
+
+    The complete run root was downloaded and independently validated. The
+    freeze and sidecar SHA-256 both resolve to
+    `93f11221c9bbbd3b8ced541888397541ab61f0b88ae23eebc3431e969512ae39`.
+    Candidate content/weights are
+    `d36dd3b23ccdba36041792716b9fb2cb21a437265870e686cdef1f01b9d05e30`
+    and
+    `43b4eded085b0213f53ffa795e5bf91f367a2dc86cd17a2915da7e404f8043c7`.
+    Ablation content/weights are
+    `691f8c992ec709ac241af32ea0fd7e94e43c3ed9d79c768e01a23a4a1e8193bc`
+    and
+    `1ab01e332b7b23609fb0bdb7a41e978a29c3f237c94eb02c0ab0276bb541232d`.
+
+    Both checkpoints pass schema, content, file-set, size, and weight-hash
+    checks; load successfully; contain only finite weights; and emit finite
+    posterior parameters with positive diagonal scales on an ordinary
+    non-ledger fixture. Corpus ownership is exactly 324 contexts and 648
+    realizations. All optimization metrics are finite. Candidate and ablation
+    clean-source inventories match. The corrected focused suite reports 36
+    passed and one optional skip. The independent
+    `postfreeze_validation.json` SHA-256 is
+    `0f6ac100df4497d7df8636962cf5c67a76dbefcb4915dcd77a4df6446c3c87c6`.
+
+    Decision: accept the immutable 501M artifacts and do not retrain or reopen
+    501M. This is not a candidate-quality decision; quality remains reserved
+    for 502M. The refreshed evaluator source-freeze manifest SHA-256 is
+    `e9e87ca3def285cb2cd49d46a1f0d69236fd29a953508d314b245a8ba2ece5a4`.
+
+    Next, commit the validator correction and evidence. From that clean
+    commit, run the read-only 502M preflight pinned to the accepted freeze,
+    candidate, and ablation hashes. Then explicitly decide whether to
+    authorize the one-shot 502M fixed-validation block. Keep 502M-515M sealed
+    until that decision.
 
 ### Active Stop Rules
 

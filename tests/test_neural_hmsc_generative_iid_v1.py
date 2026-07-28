@@ -653,6 +653,52 @@ def test_source_control_state_rejects_invalid_host_attestation(
         sealed_harness._source_control_state()
 
 
+@pytest.mark.parametrize(
+    "fixed_validation_key",
+    [
+        "fixed_validation_seed_ranges_opened",
+        "fixed_validation_opened",
+    ],
+)
+def test_seed_seal_validation_accepts_canonical_and_frozen_corpus_keys(
+    fixed_validation_key,
+):
+    production_harness._require_false_seed_flags(
+        {
+            fixed_validation_key: False,
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        },
+        {
+            "fixed_validation_opened": True,
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        },
+        {
+            "fixed_validation_opened": False,
+            "fixed_validation_seed_ranges_opened": True,
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        },
+    ],
+)
+def test_seed_seal_validation_rejects_missing_or_open_fixed_validation(
+    payload,
+):
+    with pytest.raises(ValueError, match="fixed_validation"):
+        production_harness._require_false_seed_flags(payload)
+
+
 def test_training_preflight_is_read_only_and_keeps_every_block_closed(
     monkeypatch,
 ):

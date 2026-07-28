@@ -422,7 +422,7 @@ def train_candidate(
         "training_realization_count": len(training),
         "metadata_sha256": _metadata_sha256(owners),
         "response_metadata_sha256": _metadata_sha256(training),
-        "fixed_validation_opened": False,
+        "fixed_validation_seed_ranges_opened": False,
         "reserved_seed_ranges_opened": False,
         "redesign_seed_ranges_opened": False,
     }
@@ -531,6 +531,20 @@ def validate_training_freeze(
     if freeze.get("source_commit") != expected_source_commit:
         raise ValueError("501M freeze source commit differs")
     _require_false_seed_flags(freeze)
+    freeze_sha256 = file_sha256(freeze_path)
+    recorded_freeze_sha256 = (
+        root / "freeze.sha256"
+    ).read_text(encoding="utf-8").strip()
+    if recorded_freeze_sha256 != freeze_sha256:
+        raise ValueError("501M freeze sidecar hash differs")
+    expected_document_hashes = {
+        "preregistration_sha256": GENERATIVE_IID_PREREGISTRATION_SHA256,
+        "seed_audit_sha256": GENERATIVE_IID_SEED_AUDIT_SHA256,
+        "design_review_sha256": GENERATIVE_IID_DESIGN_REVIEW_SHA256,
+    }
+    for key, expected in expected_document_hashes.items():
+        if freeze.get(key) != expected:
+            raise ValueError(f"501M frozen document binding differs: {key}")
 
     checkpoint = root / str(freeze["checkpoint"]["path"])
     manifest_path = checkpoint / "generative_iid_checkpoint.json"
@@ -598,12 +612,25 @@ def validate_training_freeze(
         raise ValueError("501M source-provenance commit differs")
     if provenance.get("worktree_dirty") is not False:
         raise ValueError("501M checkpoint was not produced from clean source")
+    ablation_provenance = ablation_manifest["source_provenance"]
+    if ablation_provenance.get("commit") != expected_source_commit:
+        raise ValueError("501M ablation source-provenance commit differs")
+    if ablation_provenance.get("worktree_dirty") is not False:
+        raise ValueError(
+            "501M ablation checkpoint was not produced from clean source"
+        )
     source_inventory = {
         record["path"]: record["sha256"]
         for record in provenance["source_files"]
     }
     if set(source_inventory) != set(PRODUCTION_SOURCE_PATHS):
         raise ValueError("501M source inventory differs")
+    ablation_source_inventory = {
+        record["path"]: record["sha256"]
+        for record in ablation_provenance["source_files"]
+    }
+    if ablation_source_inventory != source_inventory:
+        raise ValueError("501M candidate and ablation source inventories differ")
 
     for key in ("training_corpus_manifest", "training_report"):
         record = freeze[key]
@@ -621,16 +648,35 @@ def validate_training_freeze(
     ]:
         raise ValueError("501M corpus seed range differs")
     _require_false_seed_flags(corpus)
+    expected_corpus = {
+        "protocol": PROTOCOL,
+        "role": "candidate_production_training_501m",
+        "factorial": _factorial_summary(),
+        "owning_context_count": len(TRAINING_SEEDS),
+        "responses_per_context": TRAINING_RESPONSES_PER_CONTEXT,
+        "training_realization_count": (
+            len(TRAINING_SEEDS) * TRAINING_RESPONSES_PER_CONTEXT
+        ),
+    }
+    for key, expected in expected_corpus.items():
+        if corpus.get(key) != expected:
+            raise ValueError(f"501M corpus contract differs: {key}")
+    for key in ("metadata_sha256", "response_metadata_sha256"):
+        digest = corpus.get(key)
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(f"501M corpus digest differs: {key}")
     report = json.loads(
         (root / freeze["training_report"]["path"]).read_text(encoding="utf-8")
     )
     _require_false_seed_flags(report)
-    if report.get("checkpoint_content_sha256") != manifest["content_sha256"]:
-        raise ValueError("501M report checkpoint binding differs")
-
-    result = {
-        "status": "candidate_501m_training_freeze_valid",
-        "freeze_sha256": file_sha256(freeze_path),
+    expected_report = {
+        "protocol": PROTOCOL,
+        "status": "candidate_501m_training_complete",
+        "promotion_evidence": False,
         "source_commit": expected_source_commit,
         "checkpoint_content_sha256": manifest["content_sha256"],
         "checkpoint_manifest_sha256": file_sha256(manifest_path),
@@ -644,6 +690,55 @@ def validate_training_freeze(
         "no_latent_ablation_weights_sha256": ablation_manifest["artifacts"][
             "weights"
         ]["sha256"],
+        "training_corpus_manifest_sha256": file_sha256(
+            root / freeze["training_corpus_manifest"]["path"]
+        ),
+        "training": expected_training,
+    }
+    for key, expected in expected_report.items():
+        if report.get(key) != expected:
+            raise ValueError(f"501M training report binding differs: {key}")
+    metric_keys = (
+        "final_training_loss",
+        "final_training_iwelbo",
+        "final_gradient_norm",
+        "no_latent_ablation_final_loss",
+        "no_latent_ablation_final_iwelbo",
+        "no_latent_ablation_final_gradient_norm",
+        "wall_time_seconds",
+    )
+    for key in metric_keys:
+        value = report.get(key)
+        if not isinstance(value, (int, float)) or not np.isfinite(value):
+            raise ValueError(f"501M training report metric differs: {key}")
+    if float(report["wall_time_seconds"]) <= 0.0:
+        raise ValueError("501M training wall time must be positive")
+
+    result = {
+        "status": "candidate_501m_training_freeze_valid",
+        "freeze_sha256": freeze_sha256,
+        "freeze_sidecar_sha256": recorded_freeze_sha256,
+        "source_commit": expected_source_commit,
+        "checkpoint_content_sha256": manifest["content_sha256"],
+        "checkpoint_manifest_sha256": file_sha256(manifest_path),
+        "weights_sha256": manifest["artifacts"]["weights"]["sha256"],
+        "no_latent_ablation_content_sha256": ablation_manifest[
+            "content_sha256"
+        ],
+        "no_latent_ablation_manifest_sha256": file_sha256(
+            ablation_manifest_path
+        ),
+        "no_latent_ablation_weights_sha256": ablation_manifest["artifacts"][
+            "weights"
+        ]["sha256"],
+        "training_corpus_manifest_sha256": file_sha256(
+            root / freeze["training_corpus_manifest"]["path"]
+        ),
+        "training_report_sha256": file_sha256(
+            root / freeze["training_report"]["path"]
+        ),
+        "training_metrics_finite": True,
+        "candidate_and_ablation_source_inventory_match": True,
         "training_seed_range": [TRAINING_SEEDS[0], TRAINING_SEEDS[-1]],
         "fixed_validation_seed_ranges_opened": False,
         "reserved_seed_ranges_opened": False,
@@ -1331,8 +1426,21 @@ def _require_clean_pinned_source(expected_source_commit: str) -> str:
 
 
 def _require_false_seed_flags(payload: dict[str, Any]) -> None:
-    for key in (
+    fixed_validation_keys = (
         "fixed_validation_seed_ranges_opened",
+        "fixed_validation_opened",
+    )
+    fixed_validation_values = [
+        payload[key] for key in fixed_validation_keys if key in payload
+    ]
+    if not fixed_validation_values or any(
+        value is not False for value in fixed_validation_values
+    ):
+        raise ValueError(
+            "production seed-seal flag differs: "
+            "fixed_validation_seed_ranges_opened"
+        )
+    for key in (
         "reserved_seed_ranges_opened",
         "redesign_seed_ranges_opened",
     ):

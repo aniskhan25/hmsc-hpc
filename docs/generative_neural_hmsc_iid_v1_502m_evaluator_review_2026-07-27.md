@@ -161,13 +161,14 @@ unavailable, the commit is a full lowercase SHA-1, and the host clean flag is
 exactly one. Frozen document and production source-file hashes are still
 validated inside the container.
 
-No scheduler job was submitted.
+The later 501M scheduler submission is documented separately in
+`docs/generative_neural_hmsc_iid_v1_501m_validation_2026-07-28.md`.
 
 ## Verification
 
 Local ordinary-seed verification reports:
 
-- focused tests: `31 passed, 1 skipped`;
+- focused tests: `36 passed, 1 skipped`;
 - complete synthetic 324-cell gate fixture: pass;
 - exact-MCMC adapter with tiny chains/draws and continuation: pass;
 - Python-native HMSC-HPC adapter with tiny chains/draws: pass;
@@ -187,10 +188,23 @@ ordinary-seed exact adapter smoke passed in the current environment.
 These checks establish evaluator completeness and API wiring, not candidate
 quality or qualification.
 
+## 501M Post-Training Validation Correction
+
+Job `20301852` completed both frozen 200-epoch training paths and wrote the
+full artifact bundle, then exited during read-only validation because the
+corpus manifest used the earlier false seal key `fixed_validation_opened`
+while the validator expected `fixed_validation_seed_ranges_opened`.
+
+The validator now accepts either exact key, requires every present alias to be
+false, and rejects missing, true, or conflicting values. Future generated
+corpus manifests use the canonical key. Independent validation accepted the
+immutable candidate and ablation checkpoints without retraining and retained
+502M-515M as unopened. This correction changes no model, objective,
+checkpoint, comparator, gate, threshold, or seed role.
+
 ## Next Barrier
 
-Commit the evaluator implementation and this review. From that clean commit,
-run `check-seal` and `preflight-training` with both opening tokens unset. Then
-explicitly decide whether to authorize the one-shot 501M
-candidate-plus-ablation training. Keep 502M-515M sealed until the resulting
-501M freeze and both checkpoint hashes are independently validated.
+Commit the validator correction and independent 501M evidence. Then run the
+read-only 502M preflight pinned to the accepted candidate, ablation, and
+training-freeze hashes and explicitly decide whether to authorize 502M. Keep
+502M-515M sealed until that decision.
