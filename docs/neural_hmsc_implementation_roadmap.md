@@ -4583,11 +4583,21 @@ and an explicit decision separate from this roadmap.
     Decision: 502M is technically eligible for explicit one-shot
     authorization, but is not authorized by this validation record.
 
-    Next, explicitly authorize and submit the one-shot 502M fixed-validation
-    block with
-    `OPEN_GENERATIVE_IID_502M_FIXED_VALIDATION=EVALUATE_502M_FIXED_VALIDATION_ONCE`,
-    the exact training/evaluator commits and artifact hashes above, and a new
-    output root. Keep 503M-515M sealed.
+    The one-shot 502M fixed-validation block was explicitly authorized with
+    `OPEN_GENERATIVE_IID_502M_FIXED_VALIDATION=EVALUATE_502M_FIXED_VALIDATION_ONCE`
+    and submitted as LUMI job `20351142` on `standard-g`. It uses an isolated
+    clean detached worktree at evaluator commit
+    `b3d6cd10b045dd52d5513b80519b04220d614f07`, the accepted 501M run root,
+    and the exact training source, freeze, candidate, and ablation hashes
+    above. The scheduler reported the job pending for priority. No
+    503M-515M token was set.
+
+    Next, monitor job `20351142`. On completion, download and independently
+    validate `freeze.json`, `fixed_validation_report.json`,
+    `context_metrics.json.gz`, every exact-MCMC and Python-HMSC artifact
+    inventory, immutable v0.1 provenance, all named gate booleans, and the
+    read-only validation output. Open 503M-505M only if every fixed 502M gate
+    passes; keep 511M-515M sealed.
 
 ### Active Stop Rules
 
