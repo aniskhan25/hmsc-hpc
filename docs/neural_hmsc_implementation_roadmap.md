@@ -4569,11 +4569,25 @@ and an explicit decision separate from this roadmap.
     checkpoint provenance, while the clean post-correction commit owns the
     executable 502M evaluator. The preflight and fixed report retain both.
 
-    Next, commit the validator correction and evidence. From that clean
-    evaluator commit, rerun the read-only 502M preflight pinned separately to
-    that evaluator and the accepted training source, freeze, candidate, and
-    ablation hashes. Then explicitly decide whether to authorize the one-shot
-    502M fixed-validation block. Keep 502M-515M sealed until that decision.
+    The final read-only preflight passed from clean evaluator commit
+    `b3d6cd10b045dd52d5513b80519b04220d614f07`, separately bound to
+    training source `fc2ac5aff84f2fbed2c3604f3001f3647618fdc0`, training
+    freeze
+    `93f11221c9bbbd3b8ced541888397541ab61f0b88ae23eebc3431e969512ae39`,
+    candidate content
+    `d36dd3b23ccdba36041792716b9fb2cb21a437265870e686cdef1f01b9d05e30`,
+    and ablation content
+    `691f8c992ec709ac241af32ea0fd7e94e43c3ed9d79c768e01a23a4a1e8193bc`.
+    The preflight retained every 502M-515M seal flag as false.
+
+    Decision: 502M is technically eligible for explicit one-shot
+    authorization, but is not authorized by this validation record.
+
+    Next, explicitly authorize and submit the one-shot 502M fixed-validation
+    block with
+    `OPEN_GENERATIVE_IID_502M_FIXED_VALIDATION=EVALUATE_502M_FIXED_VALIDATION_ONCE`,
+    the exact training/evaluator commits and artifact hashes above, and a new
+    output root. Keep 503M-515M sealed.
 
 ### Active Stop Rules
 
