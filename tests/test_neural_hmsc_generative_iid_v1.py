@@ -837,3 +837,369 @@ def test_fixed_validation_refuses_before_any_502m_generation(
             python="python3",
         )
     assert not (tmp_path / "evaluation").exists()
+
+
+def _write_recovery_shard_fixture(tmp_path, shard_index=0):
+    record = production_harness._recovery_record(shard_index)
+    shard_root = tmp_path / "shards"
+    root = shard_root / production_harness._recovery_shard_name(record)
+    exact_root = root / "exact_mcmc"
+    python_root = root / "python_hmsc"
+    exact_root.mkdir(parents=True)
+    python_root.mkdir()
+    (exact_root / f"{record['seed']}.npz").write_bytes(b"exact-fixture")
+    (python_root / f"{record['seed']}.json").write_text(
+        '{"fixture": true}\n',
+        encoding="utf-8",
+    )
+    bindings = {
+        "training_source_commit": "training-commit",
+        "evaluator_source_commit": "evaluator-commit",
+        "training_freeze_sha256": "f" * 64,
+        "checkpoint_content_sha256": "a" * 64,
+        "ablation_content_sha256": "b" * 64,
+    }
+    result = {
+        "schema_version": 1,
+        "kind": "generative_iid_v1_502m_recovery_shard_result",
+        "protocol": production_harness.PROTOCOL,
+        "recovery_evaluator_version": (
+            production_harness.RECOVERY_EVALUATOR_VERSION
+        ),
+        "shard_index": shard_index,
+        "seed": record["seed"],
+        "cell": record["cell"],
+        **bindings,
+        "timeout_report_sha256": (
+            production_harness.TIMEOUT_REPORT_SHA256
+        ),
+        "timed_out_job_id": production_harness.TIMED_OUT_JOB_ID,
+        "exact_rows": [{"seed": record["seed"], "score": 0.1}],
+        "mcmc_diagnostics": [{"seed": record["seed"], "rhat": 1.01}],
+        "exact_mcmc_seconds": 1.0,
+        "python_rows": [{"seed": record["seed"], "score": 0.2}],
+        "python_hmsc_seconds": 2.0,
+        "exact_mcmc_artifacts": production_harness._artifact_inventory(
+            exact_root,
+            relative_to=root,
+        ),
+        "python_hmsc_artifacts": production_harness._artifact_inventory(
+            python_root,
+            relative_to=root,
+        ),
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    result_path = root / "shard_result.json"
+    production_harness._write_json(result_path, result)
+    freeze = {
+        "schema_version": 1,
+        "kind": "generative_iid_v1_502m_recovery_shard_freeze",
+        "protocol": production_harness.PROTOCOL,
+        "recovery_evaluator_version": (
+            production_harness.RECOVERY_EVALUATOR_VERSION
+        ),
+        "shard_index": shard_index,
+        "seed": record["seed"],
+        **bindings,
+        "timeout_report_sha256": (
+            production_harness.TIMEOUT_REPORT_SHA256
+        ),
+        "timed_out_job_id": production_harness.TIMED_OUT_JOB_ID,
+        "result": {
+            "path": result_path.name,
+            "sha256": production_harness.file_sha256(result_path),
+        },
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    production_harness._write_json(root / "shard_freeze.json", freeze)
+    return shard_root, root, bindings
+
+
+def test_recovery_subset_has_frozen_unique_seed_ownership():
+    records = production_harness._recovery_subset_records()
+    assert len(records) == production_harness.RECOVERY_SHARD_COUNT == 36
+    assert [record["shard_index"] for record in records] == list(range(36))
+    assert len({record["seed"] for record in records}) == 36
+    assert records[0]["seed"] == 502_000_001
+    assert records[-1]["seed"] == 502_000_305
+    assert all(
+        record["seed"] in production_harness.FIXED_VALIDATION_SEEDS
+        for record in records
+    )
+
+
+def test_recovery_preflight_is_token_free_and_seed_sealed(
+    monkeypatch, tmp_path
+):
+    for name in (
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        production_harness.RECOVERY_CONFIRMATION_ENV,
+        production_harness.RECOVERY_FINALIZE_CONFIRMATION_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        production_harness,
+        "_validate_recovery_bindings",
+        lambda *args, **kwargs: (
+            "evaluator-commit",
+            {
+                "freeze_sha256": "f" * 64,
+                "checkpoint_content_sha256": "a" * 64,
+                "no_latent_ablation_content_sha256": "b" * 64,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_validate_timed_out_502m_root",
+        lambda root: {"exact_count": 11},
+    )
+
+    result = production_harness.preflight_fixed_validation_recovery(
+        tmp_path / "training",
+        timed_out_root=tmp_path / "timed-out",
+        expected_training_source_commit="training-commit",
+        expected_evaluator_source_commit="evaluator-commit",
+        expected_training_freeze_sha256="f" * 64,
+        expected_checkpoint_content_sha256="a" * 64,
+        expected_ablation_content_sha256="b" * 64,
+    )
+
+    assert result["fixed_validation_recovery_opened"] is False
+    assert result["timed_out_partial_exact_count"] == 11
+    assert result["partial_attempt_excluded_from_decision"] is True
+    assert result["recovery_shard_count"] == 36
+    assert result["reserved_seed_ranges_opened"] is False
+    assert result["redesign_seed_ranges_opened"] is False
+
+
+@pytest.mark.parametrize(
+    "confirmation_env",
+    [
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        production_harness.RECOVERY_CONFIRMATION_ENV,
+        production_harness.RECOVERY_FINALIZE_CONFIRMATION_ENV,
+    ],
+)
+def test_recovery_preflight_refuses_every_opening_token(
+    monkeypatch, tmp_path, confirmation_env
+):
+    for name in (
+        production_harness.TRAIN_CONFIRMATION_ENV,
+        production_harness.VALIDATION_CONFIRMATION_ENV,
+        production_harness.RECOVERY_CONFIRMATION_ENV,
+        production_harness.RECOVERY_FINALIZE_CONFIRMATION_ENV,
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(confirmation_env, "present")
+    monkeypatch.setattr(
+        production_harness,
+        "_validate_recovery_bindings",
+        lambda *args, **kwargs: pytest.fail(
+            "preflight crossed the token boundary"
+        ),
+    )
+    with pytest.raises(RuntimeError, match="must remain unset"):
+        production_harness.preflight_fixed_validation_recovery(
+            tmp_path / "training",
+            timed_out_root=tmp_path / "timed-out",
+            expected_training_source_commit="training-commit",
+            expected_evaluator_source_commit="evaluator-commit",
+            expected_training_freeze_sha256="f" * 64,
+            expected_checkpoint_content_sha256="a" * 64,
+            expected_ablation_content_sha256="b" * 64,
+        )
+
+
+def test_recovery_shard_refuses_before_any_502m_generation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(
+        production_harness.RECOVERY_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_generate_fixed_validation_recovery_context",
+        lambda seed: pytest.fail("502M recovery seed was generated"),
+    )
+    with pytest.raises(RuntimeError, match="TIMEOUT_RECOVERY"):
+        production_harness.run_fixed_validation_recovery_shard(
+            tmp_path / "training",
+            tmp_path / "shards",
+            shard_index=0,
+            expected_training_source_commit="training-commit",
+            expected_evaluator_source_commit="evaluator-commit",
+            expected_training_freeze_sha256="f" * 64,
+            expected_checkpoint_content_sha256="a" * 64,
+            expected_ablation_content_sha256="b" * 64,
+            python="python3",
+        )
+    assert not (tmp_path / "shards").exists()
+
+
+def test_recovery_finalizer_refuses_before_shard_or_seed_access(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(
+        production_harness.RECOVERY_FINALIZE_CONFIRMATION_ENV,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_validated_recovery_shards",
+        lambda *args, **kwargs: pytest.fail("recovery shards were read"),
+    )
+    monkeypatch.setattr(
+        production_harness,
+        "_generate_fixed_validation_recovery_block",
+        lambda: pytest.fail("502M recovery seeds were generated"),
+    )
+    with pytest.raises(RuntimeError, match="RECOVERY_FINALIZER"):
+        production_harness.finalize_fixed_validation_recovery(
+            tmp_path / "training",
+            tmp_path / "shards",
+            tmp_path / "final",
+            expected_training_source_commit="training-commit",
+            expected_evaluator_source_commit="evaluator-commit",
+            expected_training_freeze_sha256="f" * 64,
+            expected_checkpoint_content_sha256="a" * 64,
+            expected_ablation_content_sha256="b" * 64,
+            release_registry=tmp_path / "release",
+        )
+    assert not (tmp_path / "final").exists()
+
+
+def test_recovery_shard_fixture_roundtrip_and_tamper_detection(tmp_path):
+    shard_root, root, bindings = _write_recovery_shard_fixture(tmp_path)
+    result = production_harness.validate_fixed_validation_recovery_shard(
+        shard_root,
+        shard_index=0,
+        expected_training_source_commit=bindings[
+            "training_source_commit"
+        ],
+        expected_evaluator_source_commit=bindings[
+            "evaluator_source_commit"
+        ],
+        expected_training_freeze_sha256=bindings[
+            "training_freeze_sha256"
+        ],
+        expected_checkpoint_content_sha256=bindings[
+            "checkpoint_content_sha256"
+        ],
+        expected_ablation_content_sha256=bindings[
+            "ablation_content_sha256"
+        ],
+    )
+    assert result["status"] == "fixed_validation_recovery_shard_valid"
+    assert result["seed"] == 502_000_001
+
+    (root / "exact_mcmc" / "502000001.npz").write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="hash differs"):
+        production_harness.validate_fixed_validation_recovery_shard(
+            shard_root,
+            shard_index=0,
+            expected_training_source_commit=bindings[
+                "training_source_commit"
+            ],
+            expected_evaluator_source_commit=bindings[
+                "evaluator_source_commit"
+            ],
+            expected_training_freeze_sha256=bindings[
+                "training_freeze_sha256"
+            ],
+            expected_checkpoint_content_sha256=bindings[
+                "checkpoint_content_sha256"
+            ],
+            expected_ablation_content_sha256=bindings[
+                "ablation_content_sha256"
+            ],
+        )
+
+
+def test_recovery_shard_rejects_uninventoried_artifact(tmp_path):
+    shard_root, root, bindings = _write_recovery_shard_fixture(tmp_path)
+    (root / "exact_mcmc" / "unexpected.txt").write_text(
+        "not frozen\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="inventory is not exact"):
+        production_harness.validate_fixed_validation_recovery_shard(
+            shard_root,
+            shard_index=0,
+            expected_training_source_commit=bindings[
+                "training_source_commit"
+            ],
+            expected_evaluator_source_commit=bindings[
+                "evaluator_source_commit"
+            ],
+            expected_training_freeze_sha256=bindings[
+                "training_freeze_sha256"
+            ],
+            expected_checkpoint_content_sha256=bindings[
+                "checkpoint_content_sha256"
+            ],
+            expected_ablation_content_sha256=bindings[
+                "ablation_content_sha256"
+            ],
+        )
+
+
+def test_recovery_shard_aggregation_rejects_incomplete_ownership(
+    tmp_path,
+):
+    _, _, bindings = _write_recovery_shard_fixture(tmp_path)
+    with pytest.raises(ValueError, match="ownership is incomplete"):
+        production_harness._validated_recovery_shards(
+            tmp_path / "shards",
+            expected_training_source_commit=bindings[
+                "training_source_commit"
+            ],
+            expected_evaluator_source_commit=bindings[
+                "evaluator_source_commit"
+            ],
+            expected_training_freeze_sha256=bindings[
+                "training_freeze_sha256"
+            ],
+            expected_checkpoint_content_sha256=bindings[
+                "checkpoint_content_sha256"
+            ],
+            expected_ablation_content_sha256=bindings[
+                "ablation_content_sha256"
+            ],
+        )
+
+
+def test_recovery_scheduler_contracts_are_sealed_and_sharded():
+    preflight = (
+        production_harness.ROOT
+        / "docs"
+        / "lumi_generative_neural_hmsc_iid_v1_recovery_preflight_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    shard = (
+        production_harness.ROOT
+        / "docs"
+        / "lumi_generative_neural_hmsc_iid_v1_recovery_shard_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    finalizer = (
+        production_harness.ROOT
+        / "docs"
+        / "lumi_generative_neural_hmsc_iid_v1_recovery_finalize_sbatch.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "#SBATCH --partition=dev-g" in preflight
+    assert "Token-free preflight refuses" in preflight
+    assert "#SBATCH --array=0-35%12" in shard
+    assert production_harness.RECOVERY_CONFIRMATION in shard
+    assert "fixed-validation-recovery-shard" in shard
+    assert production_harness.RECOVERY_FINALIZE_CONFIRMATION in finalizer
+    assert "finalize-fixed-validation-recovery" in finalizer
+    assert "validate-fixed-validation-recovery" in finalizer
+    assert "503M-515M remain sealed" in shard
+    assert "503M-515M remain sealed" in finalizer

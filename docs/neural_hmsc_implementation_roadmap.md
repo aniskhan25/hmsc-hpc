@@ -4625,10 +4625,38 @@ and an explicit decision separate from this roadmap.
     exact seed ownership, complete artifact inventories, and a separately
     authorized finalizer. No partial/recovery result selection is allowed.
 
-    Next, implement and test the sealed sharded 502M recovery harness and
-    scheduler using ordinary non-ledger fixtures. Then run a token-free LUMI
-    preflight and explicitly decide whether to authorize the same-seed 502M
-    timeout recovery. Keep 503M-515M sealed.
+    The sealed sharded recovery implementation is complete locally. The
+    production harness now assigns the unchanged 36-context exact-MCMC/Python-
+    HMSC subset to 36 immutable one-seed shards, validates exact artifact
+    inventories and all training/checkpoint/evaluator bindings, excludes the
+    timed-out partial root, and atomically reconstructs the unchanged 324-
+    context fixed-validation report through the existing
+    `fixed_validation_gates` evaluator. Shard execution and finalization use
+    distinct authorization tokens.
+
+    Three scheduler stages are frozen:
+
+    - `docs/lumi_generative_neural_hmsc_iid_v1_recovery_preflight_sbatch.sh`
+      runs token-free on `dev-g`;
+    - `docs/lumi_generative_neural_hmsc_iid_v1_recovery_shard_sbatch.sh`
+      owns array indices `0-35` on `standard-g`;
+    - `docs/lumi_generative_neural_hmsc_iid_v1_recovery_finalize_sbatch.sh`
+      requires a separate finalizer token and reruns the unchanged gate
+      evaluator on `dev-g`.
+
+    Ordinary non-ledger fixtures cover token ordering, all 36 fixed seed
+    owners, shard roundtrip, artifact tampering, uninventoried files,
+    incomplete ownership, and scheduler contracts. The focused generative iid
+    and fixed-gate suites pass with `49 passed, 1 skipped`; Python compilation,
+    shell syntax, and whitespace validation also pass. No 502M recovery or
+    503M-515M seed was opened by these tests.
+
+    Next, commit this implementation to establish the immutable evaluator
+    source hash. From that clean commit, run the token-free LUMI preflight
+    against the accepted 501M root and immutable job-`20351142` partial root.
+    Explicitly authorize the same-seed 502M shard recovery only if that
+    preflight passes exactly. Keep the finalizer separately authorized and
+    keep 503M-515M sealed.
 
 ### Active Stop Rules
 

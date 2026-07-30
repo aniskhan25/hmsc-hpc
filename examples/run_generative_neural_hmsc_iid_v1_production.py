@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import itertools
 import json
 import os
@@ -61,6 +62,12 @@ TRAIN_CONFIRMATION_ENV = "OPEN_GENERATIVE_IID_501M_TRAINING"
 TRAIN_CONFIRMATION = "GENERATE_501M_CANDIDATE_TRAINING_ONLY"
 VALIDATION_CONFIRMATION_ENV = "OPEN_GENERATIVE_IID_502M_FIXED_VALIDATION"
 VALIDATION_CONFIRMATION = "EVALUATE_502M_FIXED_VALIDATION_ONCE"
+RECOVERY_CONFIRMATION_ENV = "OPEN_GENERATIVE_IID_502M_TIMEOUT_RECOVERY"
+RECOVERY_CONFIRMATION = "RECOVER_502M_TIMEOUT_SHARDS_ONLY"
+RECOVERY_FINALIZE_CONFIRMATION_ENV = (
+    "OPEN_GENERATIVE_IID_502M_TIMEOUT_RECOVERY_FINALIZER"
+)
+RECOVERY_FINALIZE_CONFIRMATION = "FINALIZE_502M_TIMEOUT_RECOVERY_ONCE"
 
 TRAINING_SEEDS = tuple(range(501_000_001, 501_000_325))
 FIXED_VALIDATION_SEEDS = tuple(range(502_000_001, 502_000_325))
@@ -110,6 +117,42 @@ REQUIRED_502_EVALUATOR_COMPONENTS = (
     "all_preregistered_aggregate_and_stratum_gates",
 )
 FIXED_VALIDATION_EVALUATOR_VERSION = "generative_iid_v1_502_evaluator_v1"
+RECOVERY_EVALUATOR_VERSION = "generative_iid_v1_502_sharded_recovery_v1"
+RECOVERY_SHARD_COUNT = 36
+TIMEOUT_REPORT = (
+    ROOT / "docs" / "generative_neural_hmsc_iid_v1_502m_timeout_2026-07-30.md"
+)
+TIMEOUT_REPORT_SHA256 = (
+    "a64884b09da18ae85b7076682949fcd09f65cb312502621be24b0b50b190ac89"
+)
+TIMED_OUT_JOB_ID = "20351142"
+TIMED_OUT_EXACT_SHA256 = {
+    502000001: "8875293025fb05af6bbb5b045653e0f142828824ab5a3357ab64dfb930af6b3b",
+    502000005: "e30041030352cf02f9cc3c4ec5a8ef470e0038994e0f81aecd3dd6274091db99",
+    502000013: "9190456cae18eb1dcc91dc51d15fcff758c6c4d0330a84c34eb9b93219128a9f",
+    502000017: "0aa2377386bf936dbef0abfde2a24da97c837217a488fe6abc69c6521d39f07b",
+    502000055: "4b582b2004acdd25a41d73ca6893ccb3b998aae443be1f9bff3fe7996c27d8c3",
+    502000059: "a79954a70caa57592d037c82150eea166ba2344818a102e93bedabbe1e2b2317",
+    502000067: "2079f71fe27398b2a571855b9acfda21489bfe5182132c840098a996b98430b3",
+    502000071: "ef1edbbce6357d1f57afa2e1a0d3d15409a84647772a0fdf1dc818c72d7bc3ad",
+    502000073: "5c82848a6716d5830ce9ecb89034ab1ba9ddf94351804b446d15db26ad152d82",
+    502000077: "15be5ffcfa1faac5ce73381de9c03f90e2a8e9610f82c6f0fc9b21d84a973ed0",
+    502000085: "e86f02c3ea3523c77896596abae49712c675a9fb776080bf9cb6ea42172e7d45",
+}
+
+
+def _add_recovery_bindings(
+    parser: argparse.ArgumentParser,
+    *,
+    include_freeze_root: bool = True,
+) -> None:
+    if include_freeze_root:
+        parser.add_argument("--freeze-root", type=Path, required=True)
+    parser.add_argument("--expected-training-source-commit", required=True)
+    parser.add_argument("--expected-evaluator-source-commit", required=True)
+    parser.add_argument("--expected-training-freeze-sha256", required=True)
+    parser.add_argument("--expected-checkpoint-content-sha256", required=True)
+    parser.add_argument("--expected-ablation-content-sha256", required=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -160,6 +203,62 @@ def parse_args() -> argparse.Namespace:
         "--expected-training-freeze-sha256",
         required=True,
     )
+
+    recovery_preflight = subparsers.add_parser(
+        "preflight-fixed-validation-recovery"
+    )
+    _add_recovery_bindings(recovery_preflight)
+    recovery_preflight.add_argument(
+        "--timed-out-root",
+        type=Path,
+        required=True,
+    )
+
+    recovery_shard = subparsers.add_parser("fixed-validation-recovery-shard")
+    _add_recovery_bindings(recovery_shard)
+    recovery_shard.add_argument("--shard-root", type=Path, required=True)
+    recovery_shard.add_argument("--shard-index", type=int, required=True)
+    recovery_shard.add_argument("--python", default=sys.executable)
+
+    validate_recovery_shard = subparsers.add_parser(
+        "validate-fixed-validation-recovery-shard"
+    )
+    _add_recovery_bindings(
+        validate_recovery_shard,
+        include_freeze_root=False,
+    )
+    validate_recovery_shard.add_argument(
+        "--shard-root",
+        type=Path,
+        required=True,
+    )
+    validate_recovery_shard.add_argument(
+        "--shard-index",
+        type=int,
+        required=True,
+    )
+
+    recovery_finalize = subparsers.add_parser(
+        "finalize-fixed-validation-recovery"
+    )
+    _add_recovery_bindings(recovery_finalize)
+    recovery_finalize.add_argument("--shard-root", type=Path, required=True)
+    recovery_finalize.add_argument("--output", type=Path, required=True)
+    recovery_finalize.add_argument(
+        "--release-registry",
+        type=Path,
+        required=True,
+    )
+
+    validate_recovery = subparsers.add_parser(
+        "validate-fixed-validation-recovery"
+    )
+    _add_recovery_bindings(
+        validate_recovery,
+        include_freeze_root=False,
+    )
+    validate_recovery.add_argument("--shard-root", type=Path, required=True)
+    validate_recovery.add_argument("--root", type=Path, required=True)
 
     return parser.parse_args()
 
@@ -218,7 +317,7 @@ def main() -> None:
             release_registry=args.release_registry,
             python=args.python,
         )
-    else:
+    elif args.command == "validate-fixed-validation":
         result = validate_fixed_validation_freeze(
             args.root,
             expected_training_source_commit=(
@@ -231,7 +330,61 @@ def main() -> None:
                 args.expected_training_freeze_sha256
             ),
         )
+    elif args.command == "preflight-fixed-validation-recovery":
+        result = preflight_fixed_validation_recovery(
+            args.freeze_root,
+            timed_out_root=args.timed_out_root,
+            **_recovery_binding_args(args),
+        )
+    elif args.command == "fixed-validation-recovery-shard":
+        result = run_fixed_validation_recovery_shard(
+            args.freeze_root,
+            args.shard_root,
+            shard_index=args.shard_index,
+            python=args.python,
+            **_recovery_binding_args(args),
+        )
+    elif args.command == "validate-fixed-validation-recovery-shard":
+        result = validate_fixed_validation_recovery_shard(
+            args.shard_root,
+            shard_index=args.shard_index,
+            **_recovery_binding_args(args),
+        )
+    elif args.command == "finalize-fixed-validation-recovery":
+        result = finalize_fixed_validation_recovery(
+            args.freeze_root,
+            args.shard_root,
+            args.output,
+            release_registry=args.release_registry,
+            **_recovery_binding_args(args),
+        )
+    else:
+        result = validate_fixed_validation_recovery(
+            args.root,
+            args.shard_root,
+            **_recovery_binding_args(args),
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def _recovery_binding_args(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "expected_training_source_commit": (
+            args.expected_training_source_commit
+        ),
+        "expected_evaluator_source_commit": (
+            args.expected_evaluator_source_commit
+        ),
+        "expected_training_freeze_sha256": (
+            args.expected_training_freeze_sha256
+        ),
+        "expected_checkpoint_content_sha256": (
+            args.expected_checkpoint_content_sha256
+        ),
+        "expected_ablation_content_sha256": (
+            args.expected_ablation_content_sha256
+        ),
+    }
 
 
 def production_seal_status() -> dict[str, Any]:
@@ -250,6 +403,7 @@ def production_seal_status() -> dict[str, Any]:
         "redesign_seed_ranges": [list(value) for value in REDESIGN_SEED_RANGES],
         "candidate_training_opened": False,
         "fixed_validation_opened": False,
+        "timeout_recovery_opened": False,
         "reserved_seed_ranges_opened": False,
         "redesign_seed_ranges_opened": False,
         "training_confirmation_env": TRAIN_CONFIRMATION_ENV,
@@ -261,6 +415,15 @@ def production_seal_status() -> dict[str, Any]:
             FIXED_VALIDATION_EVALUATOR_VERSION
         ),
         "fixed_validation_requires_separate_confirmation": True,
+        "timeout_recovery_confirmation_env": RECOVERY_CONFIRMATION_ENV,
+        "timeout_recovery_confirmation_value": RECOVERY_CONFIRMATION,
+        "timeout_recovery_finalizer_confirmation_env": (
+            RECOVERY_FINALIZE_CONFIRMATION_ENV
+        ),
+        "timeout_recovery_finalizer_confirmation_value": (
+            RECOVERY_FINALIZE_CONFIRMATION
+        ),
+        "timeout_recovery_shard_count": RECOVERY_SHARD_COUNT,
     }
 
 
@@ -1147,34 +1310,1059 @@ def validate_fixed_validation_freeze(
     }
 
 
+def preflight_fixed_validation_recovery(
+    freeze_root: Path,
+    *,
+    timed_out_root: Path,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> dict[str, Any]:
+    """Validate the timeout-recovery boundary without opening a seed."""
+    for name in (
+        TRAIN_CONFIRMATION_ENV,
+        VALIDATION_CONFIRMATION_ENV,
+        RECOVERY_CONFIRMATION_ENV,
+        RECOVERY_FINALIZE_CONFIRMATION_ENV,
+    ):
+        if os.environ.get(name):
+            raise RuntimeError(f"{name} must remain unset during preflight")
+    evaluator_commit, training = _validate_recovery_bindings(
+        freeze_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    partial = _validate_timed_out_502m_root(timed_out_root)
+    records = _recovery_subset_records()
+    return {
+        "status": "fixed_validation_recovery_preflight_sealed",
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_commit,
+        "training_freeze_sha256": training["freeze_sha256"],
+        "checkpoint_content_sha256": training[
+            "checkpoint_content_sha256"
+        ],
+        "no_latent_ablation_content_sha256": training[
+            "no_latent_ablation_content_sha256"
+        ],
+        "timeout_report_sha256": file_sha256(TIMEOUT_REPORT),
+        "timed_out_job_id": TIMED_OUT_JOB_ID,
+        "timed_out_partial_exact_count": partial["exact_count"],
+        "partial_attempt_excluded_from_decision": True,
+        "recovery_shard_count": len(records),
+        "recovery_seeds": [record["seed"] for record in records],
+        "fixed_validation_recovery_opened": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+        "decision": (
+            "same-seed 502M timeout recovery requires separate explicit "
+            "authorization"
+        ),
+    }
+
+
+def run_fixed_validation_recovery_shard(
+    freeze_root: Path,
+    shard_root: Path,
+    *,
+    shard_index: int,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+    python: str,
+) -> dict[str, Any]:
+    """Run one atomic exact-MCMC plus Python-HMSC recovery shard."""
+    _require_unset_confirmations(
+        TRAIN_CONFIRMATION_ENV,
+        VALIDATION_CONFIRMATION_ENV,
+        RECOVERY_FINALIZE_CONFIRMATION_ENV,
+    )
+    _require_confirmation(
+        RECOVERY_CONFIRMATION_ENV,
+        RECOVERY_CONFIRMATION,
+        action="502M timeout-recovery shard",
+    )
+    evaluator_commit, _ = _validate_recovery_bindings(
+        freeze_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    record = _recovery_record(shard_index)
+    shard_root = shard_root.expanduser().resolve()
+    shard_root.mkdir(parents=True, exist_ok=True)
+    final = shard_root / _recovery_shard_name(record)
+    if final.exists():
+        raise FileExistsError(f"recovery shard already exists: {final}")
+    staging = shard_root / (
+        f".{_recovery_shard_name(record)}.{os.getpid()}.partial"
+    )
+    if staging.exists():
+        raise FileExistsError(f"recovery staging root exists: {staging}")
+    staging.mkdir()
+
+    from pyhmsc.neural.generative_iid_comparators import (
+        evaluate_exact_mcmc_contexts,
+        evaluate_python_hmsc_contexts,
+    )
+
+    dataset = _generate_fixed_validation_recovery_context(record["seed"])
+    exact_rows, diagnostics, exact_seconds = evaluate_exact_mcmc_contexts(
+        [dataset],
+        output_root=staging / "exact_mcmc",
+    )
+    python_rows, python_seconds = evaluate_python_hmsc_contexts(
+        [dataset],
+        output_root=staging / "python_hmsc",
+        python=python,
+    )
+    result = {
+        "schema_version": 1,
+        "kind": "generative_iid_v1_502m_recovery_shard_result",
+        "protocol": PROTOCOL,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "shard_index": record["shard_index"],
+        "seed": record["seed"],
+        "cell": record["cell"],
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_commit,
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "ablation_content_sha256": expected_ablation_content_sha256,
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "timed_out_job_id": TIMED_OUT_JOB_ID,
+        "exact_rows": exact_rows,
+        "mcmc_diagnostics": diagnostics,
+        "exact_mcmc_seconds": exact_seconds,
+        "python_rows": python_rows,
+        "python_hmsc_seconds": python_seconds,
+        "exact_mcmc_artifacts": _artifact_inventory(
+            staging / "exact_mcmc",
+            relative_to=staging,
+        ),
+        "python_hmsc_artifacts": _artifact_inventory(
+            staging / "python_hmsc",
+            relative_to=staging,
+        ),
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    result_path = staging / "shard_result.json"
+    _write_json(result_path, result)
+    freeze = {
+        "schema_version": 1,
+        "kind": "generative_iid_v1_502m_recovery_shard_freeze",
+        "protocol": PROTOCOL,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "shard_index": record["shard_index"],
+        "seed": record["seed"],
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_commit,
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "ablation_content_sha256": expected_ablation_content_sha256,
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "timed_out_job_id": TIMED_OUT_JOB_ID,
+        "result": {
+            "path": result_path.name,
+            "sha256": file_sha256(result_path),
+        },
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    _write_json(staging / "shard_freeze.json", freeze)
+    _validate_fixed_validation_recovery_shard_dir(
+        staging,
+        shard_index=shard_index,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_commit,
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    staging.rename(final)
+    return validate_fixed_validation_recovery_shard(
+        shard_root,
+        shard_index=shard_index,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_commit,
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+
+
+def validate_fixed_validation_recovery_shard(
+    shard_root: Path,
+    *,
+    shard_index: int,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> dict[str, Any]:
+    """Validate one completed recovery shard without seed access."""
+    record = _recovery_record(shard_index)
+    root = (
+        shard_root.expanduser().resolve() / _recovery_shard_name(record)
+    )
+    return _validate_fixed_validation_recovery_shard_dir(
+        root,
+        shard_index=shard_index,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+
+
+def finalize_fixed_validation_recovery(
+    freeze_root: Path,
+    shard_root: Path,
+    output: Path,
+    *,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+    release_registry: Path,
+) -> dict[str, Any]:
+    """Aggregate all fixed shards and evaluate the unchanged 502M gates."""
+    from pyhmsc.neural.generative_iid_comparators import (
+        evaluate_neural_contexts,
+        evaluate_v0_1_contexts,
+    )
+    from pyhmsc.neural.generative_iid_evaluation import (
+        fixed_validation_gates,
+        qualification_report,
+    )
+    from pyhmsc.neural.release import NeuralHmscRelease
+
+    _require_unset_confirmations(
+        TRAIN_CONFIRMATION_ENV,
+        VALIDATION_CONFIRMATION_ENV,
+        RECOVERY_CONFIRMATION_ENV,
+    )
+    _require_confirmation(
+        RECOVERY_FINALIZE_CONFIRMATION_ENV,
+        RECOVERY_FINALIZE_CONFIRMATION,
+        action="502M timeout-recovery finalizer",
+    )
+    evaluator_commit, _ = _validate_recovery_bindings(
+        freeze_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    shard_records = _validated_recovery_shards(
+        shard_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_commit,
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    final_output = output.expanduser().resolve()
+    if final_output.exists():
+        raise FileExistsError(
+            f"502M recovery final output already exists: {final_output}"
+        )
+    staging_output = final_output.parent / (
+        f".{final_output.name}.{os.getpid()}.partial"
+    )
+    if staging_output.exists():
+        raise FileExistsError(
+            f"502M recovery final staging output exists: {staging_output}"
+        )
+    output = _empty_output(staging_output)
+    exact_output = output / "exact_mcmc"
+    python_output = output / "python_hmsc"
+    exact_output.mkdir()
+    python_output.mkdir()
+    exact_rows = []
+    python_rows = []
+    mcmc_diagnostics = []
+    exact_seconds = 0.0
+    python_seconds = 0.0
+    for record in shard_records:
+        shard_dir = Path(record["root"])
+        result = record["result"]
+        _hardlink_tree(shard_dir / "exact_mcmc", exact_output)
+        _hardlink_tree(shard_dir / "python_hmsc", python_output)
+        exact_rows.extend(result["exact_rows"])
+        python_rows.extend(result["python_rows"])
+        mcmc_diagnostics.extend(result["mcmc_diagnostics"])
+        exact_seconds += float(result["exact_mcmc_seconds"])
+        python_seconds += float(result["python_hmsc_seconds"])
+
+    validation_datasets = _generate_fixed_validation_recovery_block()
+    freeze_root = freeze_root.expanduser().resolve()
+    training_freeze_path = freeze_root / "freeze.json"
+    training_freeze = json.loads(
+        training_freeze_path.read_text(encoding="utf-8")
+    )
+    candidate_inference = GenerativeIidInference.load(
+        freeze_root / training_freeze["checkpoint"]["path"]
+    )
+    ablation_inference = GenerativeIidInference.load(
+        freeze_root
+        / training_freeze["no_latent_ablation_checkpoint"]["path"]
+    )
+    candidate_rows, candidate_operational = evaluate_neural_contexts(
+        candidate_inference,
+        validation_datasets,
+        draws=256,
+        zero_latent=False,
+        method="generative_neural_hmsc_iid_v1",
+    )
+    ablation_rows, _ = evaluate_neural_contexts(
+        ablation_inference,
+        validation_datasets,
+        draws=256,
+        zero_latent=True,
+        method="same_architecture_no_latent_ablation",
+    )
+    matched_v0 = [
+        dataset
+        for dataset in validation_datasets
+        if dataset.Y.shape == (40, 75)
+    ]
+    release = NeuralHmscRelease.load(release_registry)
+    v0_rows = evaluate_v0_1_contexts(release, matched_v0, draws=256)
+    invariance = _production_invariance_checks(
+        candidate_inference,
+        validation_datasets,
+    )
+    training_report = json.loads(
+        (
+            freeze_root / training_freeze["training_report"]["path"]
+        ).read_text(encoding="utf-8")
+    )
+    max_exact_seconds = max(
+        (
+            float(row["inference_seconds"])
+            for row in exact_rows
+            if int(row["n_sites"]) == 96 and int(row["n_species"]) == 75
+        ),
+        default=max(
+            (float(row["inference_seconds"]) for row in exact_rows),
+            default=0.0,
+        ),
+    )
+    max_neural_seconds = max(
+        float(candidate_operational["max_shape_inference_seconds"]),
+        np.finfo(float).eps,
+    )
+    runtime = {
+        "training_dev_gpu_hours": (
+            float(training_report["wall_time_seconds"]) / 3600.0
+        ),
+        "max_shape_inference_seconds": candidate_operational[
+            "max_shape_inference_seconds"
+        ],
+        "peak_device_memory_bytes": candidate_operational[
+            "peak_device_memory_bytes"
+        ],
+        "speedup_vs_exact_mcmc": max_exact_seconds / max_neural_seconds,
+        "exact_mcmc_total_seconds": exact_seconds,
+        "python_hmsc_total_seconds": python_seconds,
+    }
+    operational = {
+        "checkpoint_roundtrip": True,
+        "permutation_invariance": (
+            invariance["permutation_max_abs_delta"] <= 2e-5
+        ),
+        "padding_invariance": (
+            invariance["padding_max_abs_delta"] <= 2e-5
+        ),
+        "dependency_inventory_clean": (
+            candidate_inference.manifest["dependency_inventory"] == []
+        ),
+        "covariance_jitter_fraction": candidate_operational[
+            "covariance_jitter_fraction"
+        ],
+        "covariance_condition_max": candidate_operational[
+            "covariance_condition_max"
+        ],
+    }
+    gates = fixed_validation_gates(
+        candidate_rows,
+        ablation_rows=ablation_rows,
+        exact_rows=exact_rows,
+        python_rows=python_rows,
+        v0_rows=v0_rows,
+        operational=operational,
+        mcmc_diagnostics=mcmc_diagnostics,
+        runtime=runtime,
+    )
+    metrics_path = output / "context_metrics.json.gz"
+    with gzip.open(metrics_path, "wt", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "candidate": candidate_rows,
+                "no_latent_ablation": ablation_rows,
+                "exact_model_mcmc": exact_rows,
+                "qualified_python_hmsc_hpc": python_rows,
+                "immutable_neural_hmsc_v0_1": v0_rows,
+                "mcmc_diagnostics": mcmc_diagnostics,
+                "invariance": invariance,
+                "runtime": runtime,
+                "execution_mode": "timeout_recovery_sharded_v1",
+            },
+            handle,
+            sort_keys=True,
+        )
+    shard_bindings = [
+        {
+            "shard_index": record["validation"]["shard_index"],
+            "seed": record["validation"]["seed"],
+            "freeze_sha256": record["validation"]["freeze_sha256"],
+            "result_sha256": record["validation"]["result_sha256"],
+        }
+        for record in shard_records
+    ]
+    shard_bindings_sha256 = _json_sha256(shard_bindings)
+    report = qualification_report(
+        gates=gates,
+        freeze_binding={
+            "training_freeze_sha256": file_sha256(training_freeze_path),
+            "training_source_commit": expected_training_source_commit,
+            "evaluator_source_commit": evaluator_commit,
+            "candidate_checkpoint_content_sha256": (
+                expected_checkpoint_content_sha256
+            ),
+            "ablation_checkpoint_content_sha256": (
+                expected_ablation_content_sha256
+            ),
+            "evaluator_version": FIXED_VALIDATION_EVALUATOR_VERSION,
+            "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+            "execution_mode": "timeout_recovery_sharded_v1",
+            "timeout_report_sha256": file_sha256(TIMEOUT_REPORT),
+            "recovery_shard_bindings_sha256": shard_bindings_sha256,
+            "v0_1_release_id": release.release_id,
+        },
+        seed_roles={
+            "fixed_validation": [
+                FIXED_VALIDATION_SEEDS[0],
+                FIXED_VALIDATION_SEEDS[-1],
+            ],
+            "context_count": len(validation_datasets),
+            "exact_mcmc_subset_count": len(exact_rows),
+            "recovery_shard_count": len(shard_bindings),
+            "partial_attempt_reused": False,
+            "reserved_seed_ranges_opened": False,
+            "redesign_seed_ranges_opened": False,
+        },
+        artifacts={
+            "context_metrics": {
+                "path": metrics_path.name,
+                "sha256": file_sha256(metrics_path),
+            },
+            "exact_mcmc": _artifact_inventory(
+                exact_output,
+                relative_to=output,
+            ),
+            "python_hmsc": _artifact_inventory(
+                python_output,
+                relative_to=output,
+            ),
+            "recovery_shards": shard_bindings,
+            "immutable_v0_1_release": {
+                "release_id": release.release_id,
+                "content_sha256": release.manifest["content_sha256"],
+            },
+        },
+    )
+    report_path = output / "fixed_validation_report.json"
+    _write_json(report_path, report)
+    freeze = {
+        "protocol": PROTOCOL,
+        "kind": "generative_iid_v1_502m_fixed_validation_freeze",
+        "execution_mode": "timeout_recovery_sharded_v1",
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": evaluator_commit,
+        "training_freeze_sha256": file_sha256(training_freeze_path),
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "timeout_report_sha256": file_sha256(TIMEOUT_REPORT),
+        "recovery_shard_bindings": shard_bindings,
+        "recovery_shard_bindings_sha256": shard_bindings_sha256,
+        "report": {
+            "path": report_path.name,
+            "sha256": file_sha256(report_path),
+        },
+        "context_metrics": {
+            "path": metrics_path.name,
+            "sha256": file_sha256(metrics_path),
+        },
+        "all_gates_passed": report["all_gates_passed"],
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    freeze_path = output / "freeze.json"
+    _write_json(freeze_path, freeze)
+    validate_fixed_validation_recovery(
+        output,
+        shard_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_commit,
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    output.rename(final_output)
+    return validate_fixed_validation_recovery(
+        final_output,
+        shard_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=evaluator_commit,
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+
+
+def validate_fixed_validation_recovery(
+    root: Path,
+    shard_root: Path,
+    *,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> dict[str, Any]:
+    """Validate the completed sharded recovery without seed access."""
+    base = validate_fixed_validation_freeze(
+        root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+    )
+    shard_records = _validated_recovery_shards(
+        shard_root,
+        expected_training_source_commit=expected_training_source_commit,
+        expected_evaluator_source_commit=(
+            expected_evaluator_source_commit
+        ),
+        expected_training_freeze_sha256=expected_training_freeze_sha256,
+        expected_checkpoint_content_sha256=(
+            expected_checkpoint_content_sha256
+        ),
+        expected_ablation_content_sha256=(
+            expected_ablation_content_sha256
+        ),
+    )
+    shard_bindings = [
+        {
+            "shard_index": record["validation"]["shard_index"],
+            "seed": record["validation"]["seed"],
+            "freeze_sha256": record["validation"]["freeze_sha256"],
+            "result_sha256": record["validation"]["result_sha256"],
+        }
+        for record in shard_records
+    ]
+    root = root.expanduser().resolve()
+    freeze = json.loads(
+        (root / "freeze.json").read_text(encoding="utf-8")
+    )
+    expected = {
+        "execution_mode": "timeout_recovery_sharded_v1",
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": expected_evaluator_source_commit,
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "recovery_shard_bindings": shard_bindings,
+        "recovery_shard_bindings_sha256": _json_sha256(shard_bindings),
+        "partial_attempt_reused": False,
+    }
+    for key, value in expected.items():
+        if freeze.get(key) != value:
+            raise ValueError(f"502M recovery freeze differs: {key}")
+    report = json.loads(
+        (root / freeze["report"]["path"]).read_text(encoding="utf-8")
+    )
+    binding = report["freeze_binding"]
+    expected_binding = {
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": expected_evaluator_source_commit,
+        "candidate_checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "ablation_checkpoint_content_sha256": (
+            expected_ablation_content_sha256
+        ),
+        "evaluator_version": FIXED_VALIDATION_EVALUATOR_VERSION,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "execution_mode": "timeout_recovery_sharded_v1",
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "recovery_shard_bindings_sha256": _json_sha256(shard_bindings),
+    }
+    for key, value in expected_binding.items():
+        if binding.get(key) != value:
+            raise ValueError(f"502M recovery report binding differs: {key}")
+    expected_seed_roles = {
+        "fixed_validation": [
+            FIXED_VALIDATION_SEEDS[0],
+            FIXED_VALIDATION_SEEDS[-1],
+        ],
+        "context_count": len(FIXED_VALIDATION_SEEDS),
+        "exact_mcmc_subset_count": RECOVERY_SHARD_COUNT,
+        "recovery_shard_count": RECOVERY_SHARD_COUNT,
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    for key, value in expected_seed_roles.items():
+        if report["seed_roles"].get(key) != value:
+            raise ValueError(f"502M recovery seed role differs: {key}")
+    if report["artifacts"].get("recovery_shards") != shard_bindings:
+        raise ValueError("502M recovery report shard inventory differs")
+    if freeze["all_gates_passed"] != report["all_gates_passed"]:
+        raise ValueError("502M recovery freeze gate decision differs")
+    for name in ("exact_mcmc", "python_hmsc"):
+        _validate_recovery_artifact_inventory(
+            root,
+            report["artifacts"][name],
+        )
+    return {
+        **base,
+        "status": "fixed_validation_recovery_freeze_valid",
+        "recovery_shard_count": len(shard_bindings),
+        "recovery_shard_bindings_sha256": _json_sha256(shard_bindings),
+        "partial_attempt_reused": False,
+    }
+
+
+def _validated_recovery_shards(
+    shard_root: Path,
+    *,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> list[dict[str, Any]]:
+    shard_root = shard_root.expanduser().resolve()
+    if not shard_root.is_dir():
+        raise FileNotFoundError(
+            f"502M recovery shard root is missing: {shard_root}"
+        )
+    records = _recovery_subset_records()
+    expected_names = {_recovery_shard_name(record) for record in records}
+    observed_names = {
+        path.name
+        for path in shard_root.iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    }
+    if observed_names != expected_names:
+        raise ValueError("502M recovery shard ownership is incomplete")
+    validated = []
+    for record in records:
+        root = shard_root / _recovery_shard_name(record)
+        validation = _validate_fixed_validation_recovery_shard_dir(
+            root,
+            shard_index=record["shard_index"],
+            expected_training_source_commit=(
+                expected_training_source_commit
+            ),
+            expected_evaluator_source_commit=(
+                expected_evaluator_source_commit
+            ),
+            expected_training_freeze_sha256=(
+                expected_training_freeze_sha256
+            ),
+            expected_checkpoint_content_sha256=(
+                expected_checkpoint_content_sha256
+            ),
+            expected_ablation_content_sha256=(
+                expected_ablation_content_sha256
+            ),
+        )
+        freeze = json.loads(
+            (root / "shard_freeze.json").read_text(encoding="utf-8")
+        )
+        result = json.loads(
+            (root / freeze["result"]["path"]).read_text(encoding="utf-8")
+        )
+        validated.append(
+            {
+                "root": str(root),
+                "validation": validation,
+                "result": result,
+            }
+        )
+    return validated
+
+
+def _hardlink_tree(source: Path, destination: Path) -> None:
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        target = destination / relative
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        elif path.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                raise FileExistsError(
+                    f"502M recovery artifact collision: {target}"
+                )
+            os.link(path, target)
+
+
+def _validate_fixed_validation_recovery_shard_dir(
+    root: Path,
+    *,
+    shard_index: int,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> dict[str, Any]:
+    record = _recovery_record(shard_index)
+    freeze_path = root / "shard_freeze.json"
+    freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
+    expected_freeze = {
+        "kind": "generative_iid_v1_502m_recovery_shard_freeze",
+        "protocol": PROTOCOL,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "shard_index": shard_index,
+        "seed": record["seed"],
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": expected_evaluator_source_commit,
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "ablation_content_sha256": expected_ablation_content_sha256,
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "timed_out_job_id": TIMED_OUT_JOB_ID,
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    for key, expected in expected_freeze.items():
+        if freeze.get(key) != expected:
+            raise ValueError(f"502M recovery shard freeze differs: {key}")
+    result_path = root / str(freeze["result"]["path"])
+    if file_sha256(result_path) != freeze["result"]["sha256"]:
+        raise ValueError("502M recovery shard result hash differs")
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    expected_result = {
+        "kind": "generative_iid_v1_502m_recovery_shard_result",
+        "protocol": PROTOCOL,
+        "recovery_evaluator_version": RECOVERY_EVALUATOR_VERSION,
+        "shard_index": shard_index,
+        "seed": record["seed"],
+        "cell": record["cell"],
+        "training_source_commit": expected_training_source_commit,
+        "evaluator_source_commit": expected_evaluator_source_commit,
+        "training_freeze_sha256": expected_training_freeze_sha256,
+        "checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "ablation_content_sha256": expected_ablation_content_sha256,
+        "timeout_report_sha256": TIMEOUT_REPORT_SHA256,
+        "timed_out_job_id": TIMED_OUT_JOB_ID,
+        "partial_attempt_reused": False,
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+    for key, expected in expected_result.items():
+        if result.get(key) != expected:
+            raise ValueError(f"502M recovery shard result differs: {key}")
+    for key in ("exact_rows", "mcmc_diagnostics", "python_rows"):
+        values = result.get(key)
+        if not isinstance(values, list) or len(values) != 1:
+            raise ValueError(f"502M recovery shard {key} ownership differs")
+        if int(values[0]["seed"]) != record["seed"]:
+            raise ValueError(f"502M recovery shard {key} seed differs")
+    for key in ("exact_mcmc_seconds", "python_hmsc_seconds"):
+        value = result.get(key)
+        if (
+            not isinstance(value, (int, float))
+            or not np.isfinite(value)
+            or float(value) < 0.0
+        ):
+            raise ValueError(f"502M recovery shard timing differs: {key}")
+    if not _nested_numeric_values_are_finite(result):
+        raise ValueError("502M recovery shard contains non-finite values")
+    _validate_recovery_artifact_inventory(
+        root,
+        result["exact_mcmc_artifacts"],
+    )
+    _validate_recovery_artifact_inventory(
+        root,
+        result["python_hmsc_artifacts"],
+    )
+    return {
+        "status": "fixed_validation_recovery_shard_valid",
+        "shard_index": shard_index,
+        "seed": record["seed"],
+        "freeze_sha256": file_sha256(freeze_path),
+        "result_sha256": file_sha256(result_path),
+        "reserved_seed_ranges_opened": False,
+        "redesign_seed_ranges_opened": False,
+    }
+
+
+def _validate_recovery_bindings(
+    freeze_root: Path,
+    *,
+    expected_training_source_commit: str,
+    expected_evaluator_source_commit: str,
+    expected_training_freeze_sha256: str,
+    expected_checkpoint_content_sha256: str,
+    expected_ablation_content_sha256: str,
+) -> tuple[str, dict[str, Any]]:
+    if file_sha256(TIMEOUT_REPORT) != TIMEOUT_REPORT_SHA256:
+        raise RuntimeError("502M timeout report hash differs")
+    evaluator_commit = _require_clean_pinned_source(
+        expected_evaluator_source_commit
+    )
+    training = validate_training_freeze(
+        freeze_root,
+        expected_source_commit=expected_training_source_commit,
+        write_validation=False,
+    )
+    expected = {
+        "freeze_sha256": expected_training_freeze_sha256,
+        "checkpoint_content_sha256": (
+            expected_checkpoint_content_sha256
+        ),
+        "no_latent_ablation_content_sha256": (
+            expected_ablation_content_sha256
+        ),
+    }
+    for key, value in expected.items():
+        if training.get(key) != value:
+            raise ValueError(f"502M recovery binding differs: {key}")
+    return evaluator_commit, training
+
+
+def _validate_timed_out_502m_root(root: Path) -> dict[str, Any]:
+    root = root.expanduser().resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"timed-out 502M root is missing: {root}")
+    for forbidden in (
+        "fixed_validation_report.json",
+        "context_metrics.json.gz",
+        "freeze.json",
+        "read_only_validation.json",
+    ):
+        if (root / forbidden).exists():
+            raise ValueError("timed-out 502M root contains final evidence")
+    exact_root = root / "exact_mcmc"
+    all_exact_files = {
+        path.resolve()
+        for path in exact_root.rglob("*")
+        if path.is_file()
+    }
+    npz_files = {path.resolve() for path in exact_root.glob("*.npz")}
+    if all_exact_files != npz_files:
+        raise ValueError("timed-out 502M exact artifact set differs")
+    observed = {
+        int(path.stem): file_sha256(path)
+        for path in exact_root.glob("*.npz")
+    }
+    if observed != TIMED_OUT_EXACT_SHA256:
+        raise ValueError("timed-out 502M partial artifact inventory differs")
+    python_root = root / "python_hmsc"
+    if python_root.exists() and any(
+        path.is_file() for path in python_root.rglob("*")
+    ):
+        raise ValueError("timed-out 502M root contains Python-HMSC output")
+    return {
+        "job_id": TIMED_OUT_JOB_ID,
+        "exact_count": len(observed),
+        "exact_sha256": observed,
+        "excluded_from_decision": True,
+    }
+
+
+def _recovery_subset_records() -> tuple[dict[str, Any], ...]:
+    from pyhmsc.neural.generative_iid_evaluation import (
+        fixed_mcmc_subset_seeds,
+    )
+
+    rows = [
+        {"seed": seed, **cell}
+        for seed, cell in zip(FIXED_VALIDATION_SEEDS, _factorial_cells())
+    ]
+    seeds = fixed_mcmc_subset_seeds(rows)
+    records = []
+    for shard_index, seed in enumerate(seeds):
+        offset = seed - FIXED_VALIDATION_SEEDS[0]
+        records.append(
+            {
+                "shard_index": shard_index,
+                "seed": seed,
+                "cell": _factorial_cells()[offset],
+            }
+        )
+    if len(records) != RECOVERY_SHARD_COUNT:
+        raise AssertionError("502M recovery shard ownership differs")
+    return tuple(records)
+
+
+def _recovery_record(shard_index: int) -> dict[str, Any]:
+    if not 0 <= shard_index < RECOVERY_SHARD_COUNT:
+        raise ValueError("502M recovery shard index is outside 0-35")
+    return _recovery_subset_records()[shard_index]
+
+
+def _recovery_shard_name(record: dict[str, Any]) -> str:
+    return f"shard_{record['shard_index']:02d}_{record['seed']}"
+
+
+def _nested_numeric_values_are_finite(value: Any) -> bool:
+    if isinstance(value, dict):
+        return all(
+            _nested_numeric_values_are_finite(item)
+            for item in value.values()
+        )
+    if isinstance(value, list):
+        return all(_nested_numeric_values_are_finite(item) for item in value)
+    if isinstance(value, float):
+        return bool(np.isfinite(value))
+    return True
+
+
+def _json_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _generate_fixed_validation_block() -> list:
     _require_confirmation(
         VALIDATION_CONFIRMATION_ENV,
         VALIDATION_CONFIRMATION,
         action="502M fixed validation",
     )
-    datasets = []
-    for seed, cell in zip(FIXED_VALIDATION_SEEDS, _factorial_cells()):
-        mask = make_stratified_response_mask(
-            cell["n_sites"],
-            cell["n_species"],
-            seed=seed,
-        )
-        datasets.append(
-            simulate_generative_iid_dataset(
-                n_sites=cell["n_sites"],
-                n_species=cell["n_species"],
-                covariate_shape=cell["covariate_shape"],
-                loading_stratum=cell["loading_stratum"],
-                prevalence_stratum=cell["prevalence_stratum"],
-                seed=seed,
-                response_realization=0,
-                response_mask=mask,
-            )
-        )
+    datasets = [
+        _simulate_fixed_validation_context(seed)
+        for seed in FIXED_VALIDATION_SEEDS
+    ]
     if len(datasets) != 324:
         raise AssertionError("502M fixed validation must contain 324 contexts")
     return datasets
+
+
+def _generate_fixed_validation_recovery_block() -> list:
+    _require_confirmation(
+        RECOVERY_FINALIZE_CONFIRMATION_ENV,
+        RECOVERY_FINALIZE_CONFIRMATION,
+        action="502M timeout-recovery finalizer",
+    )
+    return [
+        _simulate_fixed_validation_context(seed)
+        for seed in FIXED_VALIDATION_SEEDS
+    ]
+
+
+def _generate_fixed_validation_recovery_context(seed: int):
+    _require_confirmation(
+        RECOVERY_CONFIRMATION_ENV,
+        RECOVERY_CONFIRMATION,
+        action="502M timeout-recovery shard",
+    )
+    if seed not in {
+        record["seed"] for record in _recovery_subset_records()
+    }:
+        raise ValueError("502M recovery context is outside the fixed subset")
+    return _simulate_fixed_validation_context(seed)
+
+
+def _simulate_fixed_validation_context(seed: int):
+    if seed not in FIXED_VALIDATION_SEEDS:
+        raise ValueError("502M context seed is outside the fixed block")
+    cell = _factorial_cells()[seed - FIXED_VALIDATION_SEEDS[0]]
+    mask = make_stratified_response_mask(
+        cell["n_sites"],
+        cell["n_species"],
+        seed=seed,
+    )
+    return simulate_generative_iid_dataset(
+        n_sites=cell["n_sites"],
+        n_species=cell["n_species"],
+        covariate_shape=cell["covariate_shape"],
+        loading_stratum=cell["loading_stratum"],
+        prevalence_stratum=cell["prevalence_stratum"],
+        seed=seed,
+        response_realization=0,
+        response_mask=mask,
+    )
 
 
 def _production_invariance_checks(
@@ -1449,9 +2637,40 @@ def _validate_artifact_inventory(
             raise ValueError("502M comparator artifact size differs")
 
 
+def _validate_recovery_artifact_inventory(
+    root: Path,
+    inventory: dict[str, Any],
+) -> None:
+    _validate_artifact_inventory(root, inventory)
+    inventory_root = (root / str(inventory["root"])).resolve()
+    try:
+        inventory_root.relative_to(root.resolve())
+    except ValueError as error:
+        raise ValueError(
+            "502M recovery inventory root escapes run root"
+        ) from error
+    recorded = {
+        (root / str(record["path"])).resolve()
+        for record in inventory["files"]
+    }
+    observed = {
+        path.resolve()
+        for path in inventory_root.rglob("*")
+        if path.is_file()
+    }
+    if observed != recorded:
+        raise ValueError("502M recovery artifact inventory is not exact")
+
+
 def _require_confirmation(name: str, value: str, *, action: str) -> None:
     if os.environ.get(name) != value:
         raise RuntimeError(f"{name} must equal {value!r} before {action}")
+
+
+def _require_unset_confirmations(*names: str) -> None:
+    for name in names:
+        if os.environ.get(name):
+            raise RuntimeError(f"{name} must remain unset at this boundary")
 
 
 def _require_clean_pinned_source(expected_source_commit: str) -> str:
