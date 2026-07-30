@@ -4693,6 +4693,40 @@ and an explicit decision separate from this roadmap.
     unchanged 502M gate. Open no later seed unless the complete final report
     passes.
 
+67. Close the first generative iid candidate on fixed-validation failure.
+    Status: complete as a valid negative result. LUMI finalizer job `20461616`
+    completed on `dev-g` in 10:16 with exit code `0:0`. The frozen report
+    contains 65 named gates: 26 passed and 39 failed. Its decision is
+    `stop_before_reserved_evaluation`.
+
+    Independent reconstruction validation confirmed all 36 shard owners, 36
+    exact-MCMC files, 108 Python-HMSC files, all 144 same-inode shard
+    hardlinks, immutable-v0.1 provenance, and no partial-attempt reuse. The
+    metrics bundle was downloaded and the unchanged evaluator was rerun
+    locally; every gate Boolean matched exactly.
+
+    The failure is scientific and material. Beta, R, alpha, and log(tau) 95%
+    coverage were 0.6740, 0.3062, 0.3333, and 0.0247. Median association truth
+    correlation was -0.0015, candidate/Python association correlation was
+    -0.0044, and random-effect RMSE was effectively identical to the no-latent
+    ablation. Masked Brier/log-loss ratios were 1.148/1.161 against exact MCMC
+    and 1.211/1.217 against Python HMSC. Site-richness coverage was 0.751.
+    Runtime gates passed, including 0.139-second maximum-shape inference, but
+    speed does not compensate for posterior and predictive failure.
+
+    This blocks 503M-505M, real-data replay, and promotion. Blocks 511M-515M
+    remain sealed. The full disposition is
+    `docs/generative_neural_hmsc_iid_v1_502m_failure_2026-07-30.md`.
+    Its SHA-256 is
+    `36f04ee135974f549e5544c33dc911f213fa0536c9ec902a2c71e0046c09bb91`.
+
+    Next, conduct one bounded no-seed representation decision. Either
+    preregister the single permitted representation-level redesign with a
+    genuinely different posterior representation and encoder, or close the
+    iid generative family and retain Python MCMC as the qualified structural
+    path. Do not open 511M-515M before a concrete redesign is reviewed and
+    hash-frozen.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
