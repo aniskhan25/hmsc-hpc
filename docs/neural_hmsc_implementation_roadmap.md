@@ -4668,13 +4668,30 @@ and an explicit decision separate from this roadmap.
     `docs/generative_neural_hmsc_iid_v1_502m_recovery_authorization_2026-07-30.md`.
     Its SHA-256 is
     `92747de1deb02386b97593b21cf77f8513bd7aa664da9f83cefd5d739c6c26e8`.
-    The separate finalizer token remains unset; 503M-515M remain sealed.
+    Job `20430754` completed all 36 shards with exit code `0:0`. Standalone,
+    token-free validation job `20461335` then independently re-hashed all
+    freezes, results, 36 exact-MCMC files, and 108 Python-HMSC files. The
+    validation artifact SHA-256 is
+    `b19c1b5e45cdc27b9e7cc41bacdbef07af15e35b22125c908085ee5cf2a5b623`;
+    its shard-binding SHA-256 is
+    `4d2ec028f3eef8d60e75d40fa91d8f47fbbebd8ae52ac2b42d21cb263e50df98`.
+    It found exact ownership, exact inventories, no extra files, no partial
+    reuse, and no opened 503M-515M block.
 
-    Next, monitor all 36 tasks in job `20430754`. If and only if every shard
-    completes, independently validate exact seed ownership, exact and
-    Python-HMSC inventories, shard result/freeze hashes, source/checkpoint
-    bindings, and absence of partial-attempt reuse. Only then consider a
-    separate one-shot finalizer authorization.
+    That complete evidence separately authorized the one-shot finalizer with
+    `OPEN_GENERATIVE_IID_502M_TIMEOUT_RECOVERY_FINALIZER=FINALIZE_502M_TIMEOUT_RECOVERY_ONCE`.
+    LUMI job `20461616` was submitted on `dev-g`; the shard token was unset.
+    The immutable authorization record is
+    `docs/generative_neural_hmsc_iid_v1_502m_finalizer_authorization_2026-07-30.md`.
+    Its SHA-256 is
+    `db9443711a3449e7f6ab2cc203d116eb050c46e6b64407092bb283e9a837f79f`.
+    Blocks 503M-515M remain sealed.
+
+    Next, monitor job `20461616`. On completion, independently validate the
+    final freeze, report, compressed context metrics, reconstructed comparator
+    inventories, shard bindings, immutable-v0.1 provenance, and every
+    unchanged 502M gate. Open no later seed unless the complete final report
+    passes.
 
 ### Active Stop Rules
 
