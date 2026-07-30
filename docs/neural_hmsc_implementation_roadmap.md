@@ -4651,12 +4651,30 @@ and an explicit decision separate from this roadmap.
     shell syntax, and whitespace validation also pass. No 502M recovery or
     503M-515M seed was opened by these tests.
 
-    Next, commit this implementation to establish the immutable evaluator
-    source hash. From that clean commit, run the token-free LUMI preflight
-    against the accepted 501M root and immutable job-`20351142` partial root.
-    Explicitly authorize the same-seed 502M shard recovery only if that
-    preflight passes exactly. Keep the finalizer separately authorized and
-    keep 503M-515M sealed.
+    The implementation was frozen at evaluator commit
+    `d32093b367e0af40a9d9bd583d0812419b83667f` and pushed to the fork.
+    Token-free LUMI preflight job `20430583` completed on `dev-g` in 31 seconds
+    with exit code `0:0`. Its JSON evidence SHA-256 is
+    `8d07dfdcbf37a14ecfc1ebbcf3e45cecd8f1375662e5da22ab1de0c021ce17f3`.
+    It matched the accepted 501M freeze, candidate, and ablation hashes; the
+    timeout-report hash; all 36 unchanged recovery owners; and all 11 excluded
+    partial exact-MCMC artifact hashes. Every recovery/reserved/redesign
+    opening flag remained false.
+
+    Based on that exact preflight, the comparator-shard token was explicitly
+    authorized and LUMI array job `20430754` was submitted on `standard-g`
+    with indices `0-35` and concurrency limit 12. The immutable authorization
+    record is
+    `docs/generative_neural_hmsc_iid_v1_502m_recovery_authorization_2026-07-30.md`.
+    Its SHA-256 is
+    `92747de1deb02386b97593b21cf77f8513bd7aa664da9f83cefd5d739c6c26e8`.
+    The separate finalizer token remains unset; 503M-515M remain sealed.
+
+    Next, monitor all 36 tasks in job `20430754`. If and only if every shard
+    completes, independently validate exact seed ownership, exact and
+    Python-HMSC inventories, shard result/freeze hashes, source/checkpoint
+    bindings, and absence of partial-attempt reuse. Only then consider a
+    separate one-shot finalizer authorization.
 
 ### Active Stop Rules
 
