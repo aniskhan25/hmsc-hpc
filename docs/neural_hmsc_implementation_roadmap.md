@@ -4727,6 +4727,54 @@ and an explicit decision separate from this roadmap.
     path. Do not open 511M-515M before a concrete redesign is reviewed and
     hash-frozen.
 
+68. Preregister the single permitted generative iid representation redesign.
+    Status: complete without implementation or seed access. The bounded
+    decision is
+    `docs/generative_neural_hmsc_iid_v2_representation_decision_2026-07-31.md`,
+    SHA-256
+    `13041f6368eeaa64d4eae4446782c99c7a0b8af2a13bb13be9a69bec040df7ea`.
+    The frozen redesign protocol is
+    `docs/generative_neural_hmsc_iid_v2_orbit_preregistration_2026-07-31.md`,
+    SHA-256
+    `a2eaee0441833167f707f7cb9ae6b1162ba4e118ee3dfc1a245983cc9ada24c2`.
+    The redesign seed reaudit is
+    `docs/generative_neural_hmsc_iid_v2_seed_reaudit_2026-07-31.json.md`,
+    SHA-256
+    `9a463943508651e74855701cdbd9870961efd3fd3c07a444674da36a67d49344`.
+
+    Decision: use the one redesign for
+    `generative_neural_hmsc_iid_probit_v2_orbit`. The posterior replaces the
+    raw joint Gaussian with a low-rank multivariate Student-t global block and
+    an exact O(2)-orbit-symmetrized matrix-Normal latent block over concatenated
+    Eta and transpose(Lambda). A four-block permutation-equivariant attention
+    encoder initializes the joint conditional posterior, followed by exactly
+    four fixed common-random IWAE refinement steps.
+
+    This directly targets the demonstrated failure: the raw Gaussian averaged
+    over factor rotations, ignored the latent path, and produced severe global
+    and random-effect undercoverage. A raw-coordinate flow was rejected because
+    it does not enforce the continuous symmetry. Direct R/A inference was
+    rejected because its manifold measure and induced prior would exceed the
+    permitted posterior/encoder redesign.
+
+    The generative model, simulator, prior, likelihood, factor count, objective
+    class, factorial, comparators, metrics, thresholds, real-data boundary, and
+    stop rules remain unchanged. Calibration, truth losses, MCMC teachers,
+    routing, fallback, and gate changes remain prohibited.
+
+    The local and retained LUMI evidence reaudit found no actual use of
+    511M-515M or 593M-594M. One broad lexical LUMI match was GPU telemetry
+    value `515747354`, outside the reserved 515M interval, and was classified
+    as a non-seed false positive. All redesign ranges remain sealed.
+
+    Next, implement only the v2 posterior-math and encoder skeleton using
+    ordinary non-ledger fixtures. Before any disposable seed, prove analytic
+    orbit-density/quadrature parity, dense Student-t and matrix-Normal parity,
+    finite refinement gradients, nondecreasing accepted refinement steps,
+    permutation/padding gates, checkpoint incompatibility with v1, immutable
+    v1 hash regression, and maximum-shape inference without dense state
+    covariance materialization.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
