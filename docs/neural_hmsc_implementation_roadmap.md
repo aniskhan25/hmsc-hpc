@@ -4599,6 +4599,37 @@ and an explicit decision separate from this roadmap.
     read-only validation output. Open 503M-505M only if every fixed 502M gate
     passes; keep 511M-515M sealed.
 
+66. Classify the 502M monolithic timeout and freeze a recovery boundary.
+    Status: complete without a 502M gate decision and without opening
+    503M-515M. The timeout report is
+    `docs/generative_neural_hmsc_iid_v1_502m_timeout_2026-07-30.md`,
+    SHA-256
+    `a64884b09da18ae85b7076682949fcd09f65cb312502621be24b0b50b190ac89`.
+
+    LUMI job `20351142` ended as `TIMEOUT` after `1-00:00:11`; the batch step
+    was cancelled with exit code `0:15`. It wrote 11 of the fixed 36
+    exact-MCMC artifacts and no Python-HMSC comparator output, context-metrics
+    bundle, report, freeze, or read-only validation. All 11 partial files are
+    members of the preregistered subset and pass archive-integrity checks.
+
+    This is an incomplete infrastructure attempt, not a qualification result
+    and not a candidate failure. Serial exact MCMC projects to roughly 75
+    hours before the remaining comparators, while `standard-g` permits at most
+    48 hours. Another monolithic submission is therefore prohibited.
+
+    The original partial run root remains immutable and is excluded wholesale
+    from the final decision. A recovery may reuse only the same deterministic
+    502M seeds under unchanged simulator, candidate, ablation, exact-MCMC,
+    Python-HMSC, immutable-v0.1, metric, gate, threshold, and continuation
+    semantics. It must use independently hash-frozen comparator shards,
+    exact seed ownership, complete artifact inventories, and a separately
+    authorized finalizer. No partial/recovery result selection is allowed.
+
+    Next, implement and test the sealed sharded 502M recovery harness and
+    scheduler using ordinary non-ledger fixtures. Then run a token-free LUMI
+    preflight and explicitly decide whether to authorize the same-seed 502M
+    timeout recovery. Keep 503M-515M sealed.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
