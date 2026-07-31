@@ -4820,6 +4820,39 @@ and an explicit decision separate from this roadmap.
     Run a token-free/no-seed preflight before separately authorizing that
     smoke.
 
+70. Implement and review the sealed 593M-594M disposable harness.
+    Status: implementation review complete; clean-commit preflight pending.
+    The review is
+    `docs/generative_neural_hmsc_iid_v2_disposable_harness_review_2026-07-31.md`,
+    SHA-256
+    `2830238c927a3a2d90174b0b200c38ffa423483ec658004a73de33122a9f4208`.
+
+    The harness fixes the 18-cell `593000001-593000018` training block,
+    18-cell masked `594000001-594000018` validation block, model seed
+    `511900001`, two smoke epochs, and the unchanged v2 objective and
+    refinement. It exposes no 511M-515M execution mode.
+
+    Preflight refuses every `OPEN_GENERATIVE_IID*` token before source
+    inspection, calls no simulation function, creates no output, and requires
+    a clean pinned commit. Disposable execution and replay require only
+    `OPEN_GENERATIVE_IID_V2_593M_594M_DISPOSABLE_SMOKE` with the exact frozen
+    value and reject every unrelated opening token.
+
+    Authorized output would include byte-level fingerprints for all 36
+    disposable datasets and a complete hash/size inventory for the corpus,
+    report, checkpoint manifest, and weights. Independent validation replays
+    all corpus fingerprints, the fixed validation objective, exact target,
+    optimizer movement, source provenance, and all later-seed seal booleans.
+    Disposable metrics remain operational evidence only.
+
+    The v2 implementation and harness suites pass 19/19 tests. The no-token
+    seal check reports every 593M-594M and 511M-515M role unopened. No ledger
+    simulation was generated.
+
+    Next, freeze the harness and review in a clean commit. Run the token-free
+    preflight against that exact commit. Only after a complete no-seed
+    preflight may a separate record authorize the 593M-594M disposable smoke.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
