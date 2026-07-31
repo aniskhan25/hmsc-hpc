@@ -4821,7 +4821,7 @@ and an explicit decision separate from this roadmap.
     smoke.
 
 70. Implement and review the sealed 593M-594M disposable harness.
-    Status: implementation review complete; clean-commit preflight pending.
+    Status: complete through clean-commit, token-free preflight.
     The review is
     `docs/generative_neural_hmsc_iid_v2_disposable_harness_review_2026-07-31.md`,
     SHA-256
@@ -4849,9 +4849,23 @@ and an explicit decision separate from this roadmap.
     seal check reports every 593M-594M and 511M-515M role unopened. No ledger
     simulation was generated.
 
-    Next, freeze the harness and review in a clean commit. Run the token-free
-    preflight against that exact commit. Only after a complete no-seed
-    preflight may a separate record authorize the 593M-594M disposable smoke.
+    The clean preflight ran against
+    `ba48fc93c53447cf4277f9c15946bb95f00d332e` and returned
+    `generative_iid_v2_disposable_preflight_sealed`. It confirmed 18 unique
+    cells, model seed `511900001`, two epochs, exact source-file hashes, no
+    simulation generation, no output creation, and every 593M-594M and
+    511M-515M open flag false. The evidence is
+    `docs/generative_neural_hmsc_iid_v2_disposable_preflight_2026-07-31.md`,
+    SHA-256
+    `bd895a7bfb51f240bdc5cdc4c710959322015b258dfd0996a4b6b4ce042aed3a`.
+
+    Next, conduct a separate authorization decision for only the 593M-594M
+    disposable smoke. If authorized, pin a clean reviewed commit and use only
+    `OPEN_GENERATIVE_IID_V2_593M_594M_DISPOSABLE_SMOKE=GENERATE_593M_594M_DISPOSABLE_ONLY`.
+    After completion, independently validate the freeze, all 36 corpus
+    fingerprints, checkpoint artifacts, finite optimization, validation
+    IWELBO, exact target, optimizer movement, source provenance, and all
+    511M-515M seal booleans. Disposable output cannot tune the candidate.
 
 ### Active Stop Rules
 
