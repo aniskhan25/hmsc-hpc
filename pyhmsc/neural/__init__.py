@@ -198,6 +198,16 @@ __all__ = [
     "train_generative_iid_model",
     "run_exact_model_mcmc",
     "validate_generative_iid_checkpoint",
+    "GENERATIVE_IID_V2_PROTOCOL",
+    "GenerativeIidOrbitPosteriorModel",
+    "GenerativeIidOrbitInference",
+    "JointOrbitPosterior",
+    "MaskedLowRankStudentT",
+    "OrbitMatrixNormal",
+    "generative_iid_v2_log_joint",
+    "importance_weighted_orbit_loss",
+    "train_generative_iid_orbit_model",
+    "validate_generative_iid_v2_checkpoint",
 ]
 
 
@@ -263,6 +273,52 @@ def __getattr__(name: str) -> object:
         from pyhmsc.neural.generative_iid_mcmc import run_exact_model_mcmc
 
         return run_exact_model_mcmc
+    if name in {
+        "GENERATIVE_IID_V2_PROTOCOL",
+        "GenerativeIidOrbitPosteriorModel",
+        "JointOrbitPosterior",
+        "MaskedLowRankStudentT",
+        "OrbitMatrixNormal",
+        "generative_iid_v2_log_joint",
+        "importance_weighted_orbit_loss",
+        "train_generative_iid_orbit_model",
+    }:
+        from pyhmsc.neural.generative_iid_v2 import (
+            GENERATIVE_IID_V2_PROTOCOL,
+            GenerativeIidOrbitPosteriorModel,
+            JointOrbitPosterior,
+            MaskedLowRankStudentT,
+            OrbitMatrixNormal,
+            generative_iid_v2_log_joint,
+            importance_weighted_orbit_loss,
+            train_generative_iid_orbit_model,
+        )
+
+        return {
+            "GENERATIVE_IID_V2_PROTOCOL": GENERATIVE_IID_V2_PROTOCOL,
+            "GenerativeIidOrbitPosteriorModel": GenerativeIidOrbitPosteriorModel,
+            "JointOrbitPosterior": JointOrbitPosterior,
+            "MaskedLowRankStudentT": MaskedLowRankStudentT,
+            "OrbitMatrixNormal": OrbitMatrixNormal,
+            "generative_iid_v2_log_joint": generative_iid_v2_log_joint,
+            "importance_weighted_orbit_loss": importance_weighted_orbit_loss,
+            "train_generative_iid_orbit_model": train_generative_iid_orbit_model,
+        }[name]
+    if name in {
+        "GenerativeIidOrbitInference",
+        "validate_generative_iid_v2_checkpoint",
+    }:
+        from pyhmsc.neural.generative_iid_v2_artifact import (
+            GenerativeIidOrbitInference,
+            validate_generative_iid_v2_checkpoint,
+        )
+
+        return {
+            "GenerativeIidOrbitInference": GenerativeIidOrbitInference,
+            "validate_generative_iid_v2_checkpoint": (
+                validate_generative_iid_v2_checkpoint
+            ),
+        }[name]
     if name in {
         "TRAIT_GAMMA_BASELINE_ID",
         "TRAIT_GAMMA_CHECKPOINT_VERSION",

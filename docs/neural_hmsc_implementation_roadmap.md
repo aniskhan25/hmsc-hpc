@@ -4775,6 +4775,51 @@ and an explicit decision separate from this roadmap.
     v1 hash regression, and maximum-shape inference without dense state
     covariance materialization.
 
+69. Implement the generative iid v2 orbit posterior and pass every
+    ordinary-fixture feasibility gate.
+    Status: complete without ledger-seed access. The implementation evidence
+    is
+    `docs/generative_neural_hmsc_iid_v2_implementation_2026-07-31.md`,
+    SHA-256
+    `0d54f04ea5ec5c654df73594b7ff6614157152ec87bdfc3ecfd09c2401550cab`.
+
+    The implementation is isolated in
+    `pyhmsc/neural/generative_iid_v2.py` and
+    `pyhmsc/neural/generative_iid_v2_artifact.py`. It adds the frozen masked
+    low-rank Student-t global block, exact O(2)-orbit matrix-Normal latent
+    block, theta-conditioned FiLM mean, four edge-aware bipartite attention
+    blocks, four common-random IWAE refinement steps, unchanged raw-state
+    assembly, immutable schema-v2 artifacts, and v1/v2 compatibility
+    rejection. It imports the existing prior and likelihood rather than
+    defining a changed target.
+
+    The complete v2 feasibility suite passed 9/9 tests, including dense
+    Student-t and matrix-Normal references, 4096-angle orbit quadrature,
+    O(2) target invariance, finite gradients through all four refinement
+    steps, nondecreasing accepted common-random IWELBOs, hidden-response
+    isolation, permutation/padding gates, exact checkpoint roundtrip,
+    immutable v1 hashes, and full refined `96 x 75` inference without a dense
+    state covariance. The unchanged non-slow v1 generative suite passed 45/45,
+    and public/release API regressions passed 26/26.
+
+    Two pre-freeze defects were found and closed: the conditional latent-mean
+    layer was initially absent from unrefined checkpoint builds, and the
+    stateful Student-t gamma draw duplicated the batch dimension. Exact
+    conditional-mean roundtrip and both stateful/stateless sample shapes are
+    now tested. A one-epoch ordinary-fixture outer-training smoke completed
+    with finite diagnostics.
+
+    This is implementation feasibility only, not statistical qualification.
+    No calibration, truth loss, teacher, routing, fallback, selector, gate
+    change, or threshold change was added. The 593M-594M disposable roles and
+    every 511M-515M role remain sealed.
+
+    Next, freeze the implementation and evidence in one clean commit. Then
+    implement and review a sealed 593M-594M disposable harness using the
+    unchanged preregistered architecture, objective, gates, and seed roles.
+    Run a token-free/no-seed preflight before separately authorizing that
+    smoke.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
