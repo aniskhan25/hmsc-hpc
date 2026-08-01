@@ -4953,13 +4953,36 @@ and an explicit decision separate from this roadmap.
     `ac9881c9574cae15eea1a4ff51c8effcd7b4bf57500abf555b9e8f0c89760f5f`.
 
 73. Conduct a bounded no-seed numerical decision for generative iid v2.
-    Status: pending. Determine with ordinary non-ledger fixtures whether the
-    non-finite gradient is a backend-specific implementation defect that can be
-    repaired while preserving the frozen posterior mathematics,
-    representation, objective, refinement, schedule, gates, thresholds, and
-    seed roles. If that constrained repair cannot establish finite gradients
-    on the target LUMI backend, close the generative iid v2 family. Do not
-    authorize another disposable run or open 511M-515M during this review.
+    Status: complete; bounded implementation repair accepted. The decision and
+    evidence are frozen in
+    `docs/generative_neural_hmsc_iid_v2_numerical_review_2026-08-01.md`,
+    SHA-256
+    `e3b708a09b0c920676e592759f44f7457cc75decff66138b6b29c509254a6192`.
+
+    Ordinary mixed-shape training exposed a missing feasibility test. LUMI job
+    `20519231` showed that float32 and symmetric float64 GPU Cholesky each
+    emitted 16 rejected decompositions, while symmetric float64 CPU Cholesky
+    emitted none and preserved identical finite metrics. The accepted repair
+    moves only the small rank-16 Woodbury factorization to symmetric float64 CPU
+    arithmetic. It adds no jitter, clipping, calibration, fallback, posterior,
+    objective, refinement, architecture, schedule, gate, threshold, simulator,
+    or seed-role change.
+
+    The repaired source SHA-256 is
+    `87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc`.
+    LUMI job `20519352` validated the actual repaired source over ordinary seeds
+    `983001-983018`: two epochs were finite, repaired metrics exactly matched
+    both explicit float64 reference modes, failed-Cholesky warnings were zero,
+    and `ledger_seeds_opened = false`. The complete local slow suite passed
+    29/29 tests. The family remains open, but the prior disposable failure is
+    not converted into a pass. Blocks 511M-515M remain sealed.
+
+74. Freeze the numerical repair before any disposable decision.
+    Status: pending. Commit the repaired source, no-ledger diagnostic, scheduler,
+    tests, and review evidence from a clean tree. Then update and verify the
+    sealed harness source inventory and run token-free/no-seed preflight pinned
+    to that clean commit. Only afterward may a separate decision consider one
+    final 593M-594M disposable verification. Do not open 511M-515M.
 
 ### Active Stop Rules
 

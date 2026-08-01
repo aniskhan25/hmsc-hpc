@@ -118,21 +118,32 @@ def _masked_low_rank_terms(
 ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
     """Return inverse diagonal, weighted factor, Cholesky, and log determinant."""
     dtype = log_diagonal_scale.dtype
-    mask_float = tf.cast(mask, dtype)
-    variance = tf.exp(2.0 * log_diagonal_scale) * mask_float + (1.0 - mask_float)
+    # ROCm's batched float32 Cholesky can reject these analytically positive
+    # rank-16 Woodbury systems during refinement. Evaluate only this small
+    # factorization in symmetric float64 CPU arithmetic, then return tensors in
+    # the model dtype. This preserves the represented covariance and density.
+    work_dtype = tf.float64
+    log_scale = tf.cast(log_diagonal_scale, work_dtype)
+    mask_float = tf.cast(mask, work_dtype)
+    variance = tf.exp(2.0 * log_scale) * mask_float + (1.0 - mask_float)
     inverse_variance = tf.math.reciprocal(variance)
-    factor = low_rank_factor * mask_float[..., None]
+    factor = tf.cast(low_rank_factor, work_dtype) * mask_float[..., None]
     weighted_factor = factor * inverse_variance[..., None]
     rank = tf.shape(factor)[-1]
     small = tf.eye(
         rank,
         batch_shape=[tf.shape(factor)[0]],
-        dtype=dtype,
+        dtype=work_dtype,
     ) + tf.einsum("bdr,bds->brs", factor, weighted_factor)
-    chol = tf.linalg.cholesky(small)
+    small = 0.5 * (small + tf.linalg.matrix_transpose(small))
+    with tf.device("/CPU:0"):
+        chol = tf.linalg.cholesky(small)
     logdet = tf.reduce_sum(tf.math.log(variance) * mask_float, axis=-1)
     logdet += 2.0 * tf.reduce_sum(tf.math.log(tf.linalg.diag_part(chol)), axis=-1)
-    return inverse_variance, weighted_factor, chol, logdet
+    return tuple(
+        tf.cast(value, dtype)
+        for value in (inverse_variance, weighted_factor, chol, logdet)
+    )
 
 
 def _masked_low_rank_quadratic(
