@@ -4868,7 +4868,8 @@ and an explicit decision separate from this roadmap.
     511M-515M seal booleans. Disposable output cannot tune the candidate.
 
 71. Authorize one 593M-594M disposable smoke and independent replay.
-    Status: authorized for one LUMI `dev-g` execution; result pending. The
+    Status: attempted in LUMI job `20518403`; failed during token-free
+    preflight before any disposable seed or artifact was opened. The
     authorization record is
     `docs/generative_neural_hmsc_iid_v2_disposable_authorization_2026-08-01.md`,
     SHA-256
@@ -4888,12 +4889,32 @@ and an explicit decision separate from this roadmap.
     The job runs token-free preflight, two-epoch candidate training, frozen
     validation, and independent replay. Blocks 511M-515M remain sealed.
 
-    Next, submit the authorized job on `dev-g`, monitor it through completion,
-    download the complete run, and independently validate all 36 corpus
-    fingerprints, freeze inventory, checkpoint hashes, finite optimization,
-    fixed validation objective, exact target, optimizer movement, source
-    provenance, and all later-seed seals. Do not advance on scheduler success
-    alone.
+    The isolated archive was verified, but the scheduler's host-absolute
+    `PYTHONPATH` did not survive the TensorFlow Singularity `/scratch` to
+    `/pfs/lustrep4/scratch` namespace translation. Python resolved another
+    installed `pyhmsc` package and raised `ModuleNotFoundError` for
+    `pyhmsc.neural`. Independent inventory found an absent run root, a zero-byte
+    preflight file, and no corpus, checkpoint, freeze, or post-freeze artifact.
+    Thus 593M-594M were not opened and 511M-515M remain sealed. The complete
+    negative result is recorded in
+    `docs/generative_neural_hmsc_iid_v2_disposable_attempt_20518403.md`.
+
+    A bounded scheduler correction now uses `PYTHONPATH=.` after changing to
+    the isolated source root and launches the harness with `python -m`, avoiding
+    script-mode path preemption by `examples/`. The full token-free LUMI
+    preflight passed with no simulation generation, no output creation, and all
+    later blocks sealed. No representation, objective, optimization, artifact,
+    gate, threshold, or seed role changed. The failed authorization is consumed
+    under its preregistered retry rule. The corrected, unsubmitted scheduler is
+    hash-frozen at
+    `ff618d92c4d4f616507aaa31e2f434cb2cdaa9b2d985bcc0e7e567bc6735cdb7`.
+
+    Next, make a separate explicit retry authorization decision for only
+    593M-594M using the reviewed scheduler hash above. If authorized and
+    completed, independently validate all 36 corpus fingerprints, freeze
+    inventory, checkpoint hashes, finite optimization, fixed validation
+    objective, exact-target replay, optimizer movement, source provenance, and
+    every 511M-515M seal boolean.
 
 ### Active Stop Rules
 

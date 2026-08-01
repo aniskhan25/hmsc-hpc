@@ -29,3 +29,23 @@ def test_v2_disposable_authorization_keeps_later_blocks_sealed():
     assert "7a0bf9ecf89a5e1896ba254d24e916978cfe8e76caf0898a7dffef1df679cf07" in record
     assert "does not open 511M-515M" in record
     assert "Any retry requires a new" in record
+
+
+def test_v2_disposable_retry_scheduler_uses_container_safe_pythonpath():
+    script = Path(
+        "docs/lumi_generative_neural_hmsc_iid_v2_disposable_retry_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    assert 'export PYTHONPATH=".:${PYTHONPATH:-}"' in script
+    assert 'export PYTHONPATH="${SOURCE_ROOT}:${PYTHONPATH:-}"' not in script
+    assert script.count("-m examples.run_generative_neural_hmsc_iid_v2") == 3
+    assert '"${PYTHON}" examples/run_generative_neural_hmsc_iid_v2.py' not in script
+    assert "940d73d6de6e032797e4d695bd9799a74ef0b943" in script
+    assert "GENERATE_593M_594M_DISPOSABLE_ONLY" in script
+    assert 'env -u "${OPENING_ENV}"' in script
+    assert "OPEN_GENERATIVE_IID_V2_511M" not in script
+
+    attempt = Path(
+        "docs/generative_neural_hmsc_iid_v2_disposable_attempt_20518403.md"
+    ).read_text(encoding="utf-8")
+    assert "ff618d92c4d4f616507aaa31e2f434cb2cdaa9b2d985bcc0e7e567bc6735cdb7" in attempt
+    assert "No 593M or 594M seed was opened" in attempt
