@@ -39,9 +39,12 @@ def test_transport_first_scope_and_controls_are_bounded():
 def test_roadmap_requires_preregistration_before_implementation():
     roadmap = ROADMAP.read_text(encoding="utf-8")
     assert "79. Preregister Neural-Transport HMSC on a new branch" in roadmap
-    assert "Do not implement the model or generate simulations" in roadmap
+    assert "no implementation or" in roadmap
+    assert "simulation generation occurred" in roadmap
     assert "80. Implement the ordinary-fixture transport kernel" in roadmap
-    assert "Status: blocked by Milestone 79" in roadmap
+    assert "Status: pending separate implementation authorization" in roadmap
+    assert "No seed or scheduler is" in roadmap
+    assert "authorized by Milestone 79" in roadmap
     assert (
         "81. Run fresh disposable exactness and efficiency qualification" in roadmap
     )

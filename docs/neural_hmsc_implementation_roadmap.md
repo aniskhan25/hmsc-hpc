@@ -5058,8 +5058,8 @@ and an explicit decision separate from this roadmap.
     them, and close this branch for model-family development.
 
 78. Conduct a bounded no-seed go/no-go review for any future generative family.
-    Status: complete with a scoped pivot. Do not build a third standalone
-    amortized posterior. Proceed only to preregistration for
+    Status: complete, reviewed, and accepted with a scoped pivot. Do not build
+    a third standalone amortized posterior. Proceed only to preregistration for
     `neural_transport_hmsc_iid_probit_v0_1`: a neural warm start and frozen
     data-conditioned affine transport around the existing corrected HMC/Gibbs
     target. The network may improve initialization and geometry but may not
@@ -5074,21 +5074,40 @@ and an explicit decision separate from this roadmap.
     identity transport, warm-start-only path, and ordinary Python MCMC are
     mandatory controls.
 
+    The acceptance record is
+    `docs/neural_transport_hmsc_milestone_78_acceptance_2026-08-01.md`, SHA-256
+    `85940ebda51bbb3e4892f931c9d3beec041afd1c80ccebe4ae35bdf072174f61`.
+    The new branch was created directly from clean accepted commit
+    `253e7802642192b0d72427b461bf9fc9cc30fa99`.
+
 79. Preregister Neural-Transport HMSC on a new branch.
-    Status: pending review of the Milestone 78 decision. If accepted, create a
-    new feature branch and hash-freeze the target/state contract, affine
-    transform and Jacobian, training targets, ordinary-Gibbs fallback,
-    baselines, exactness gates, efficiency gates, fresh seed ledger, and
-    terminal stop rule. Do not implement the model or generate simulations in
-    this milestone.
+    Status: complete on `feature/neural-transport-hmsc`; no implementation or
+    simulation generation occurred. The complete preregistration is
+    `docs/neural_transport_hmsc_iid_probit_v0_1_preregistration_2026-08-01.md`,
+    SHA-256
+    `6badb6391af537ec4d8886d08e76ef6e000766f492d333628cf1441db165ec89`.
+    The unopened seed audit is
+    `docs/neural_transport_hmsc_iid_probit_v0_1_seed_audit_2026-08-01.json.md`,
+    SHA-256
+    `cf876a599ce93ed807dc8c939b7c3fca4b6168f716c71bc94d03fdeb0b227330`.
+
+    The preregistration freezes the native HMSC prior-predictive law, target and
+    kernel composition, two-stream DeepSets encoder, deterministic rank-two
+    warm start, positive affine transport, exact Jacobian, supervised robust
+    center/scale objective, four controls, MCMC settings, 18-cell factorial,
+    exactness and efficiency gates, artifact semantics, fallbacks, and stop
+    rules. Fresh 711M-717M, 719M, and 791M-792M roles remain sealed. Retired
+    511M-515M remains forbidden.
 
 80. Implement the ordinary-fixture transport kernel.
-    Status: blocked by Milestone 79. Extract the reusable HMC target/state
-    adapter, then implement the context encoder, warm start, positive affine
-    bijector, transformed corrected HMC, and explicit Gibbs fallback. All
-    target/Jacobian, identity, finite-gradient, stationary-moment, permutation,
-    padding, compatibility, fallback, and immutable-regression tests must pass
-    before a disposable seed is authorized.
+    Status: pending separate implementation authorization. Extract the reusable
+    HMC target/state adapter, then implement the frozen simulator, context
+    encoder, warm start, positive affine bijector, transformed corrected HMC,
+    artifact schema, and explicit Gibbs fallback using only ordinary fixtures
+    below one million. All prior-law, target/Jacobian, identity,
+    finite-gradient, stationary-moment, permutation, compatibility, fallback,
+    checkpoint, and immutable-regression tests must pass before a disposable
+    seed is considered. No seed or scheduler is authorized by Milestone 79.
 
 81. Run fresh disposable exactness and efficiency qualification.
     Status: blocked by Milestones 79-80. Compare ordinary Python MCMC,
