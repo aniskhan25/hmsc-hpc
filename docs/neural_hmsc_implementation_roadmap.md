@@ -4978,11 +4978,13 @@ and an explicit decision separate from this roadmap.
     not converted into a pass. Blocks 511M-515M remain sealed.
 
 74. Freeze the numerical repair before any disposable decision.
-    Status: pending. Commit the repaired source, no-ledger diagnostic, scheduler,
-    tests, and review evidence from a clean tree. Then update and verify the
-    sealed harness source inventory and run token-free/no-seed preflight pinned
-    to that clean commit. Only afterward may a separate decision consider one
-    final 593M-594M disposable verification. Do not open 511M-515M.
+    Status: repair and no-ledger evidence committed at `a057721`; harness
+    refreeze and preflight pending. The clean commit contains the repaired
+    source, diagnostic, scheduler, tests, and bounded review evidence. Next,
+    update and verify the sealed harness source inventory to include the repair
+    evidence, then run token-free/no-seed preflight pinned to a clean reviewed
+    commit. Only afterward may a separate decision consider one final
+    593M-594M disposable verification. Do not open 511M-515M.
 
 ### Active Stop Rules
 
