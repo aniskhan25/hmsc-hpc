@@ -76,3 +76,17 @@ def test_v2_disposable_retry_failure_stops_before_production():
     assert "checkpoint manifest or weights" in result
     assert "Do not open 511M-515M" in result
     assert "retry authorization is consumed" in result
+
+
+def test_v2_repaired_preflight_scheduler_is_token_free_and_hash_pinned():
+    script = Path(
+        "docs/lumi_generative_neural_hmsc_iid_v2_repaired_preflight_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --partition=dev-g" in script
+    assert "87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc" in script
+    assert "e3b708a09b0c920676e592759f44f7457cc75decff66138b6b29c509254a6192" in script
+    assert "--mode preflight" in script
+    assert "simulation_generation_called" in script
+    assert "disposable_seed_ranges_opened" in script
+    assert "GENERATE_593M" not in script
+    assert "OPEN_GENERATIVE_IID_V2_511M" not in script
