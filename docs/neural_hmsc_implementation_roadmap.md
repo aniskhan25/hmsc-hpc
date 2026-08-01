@@ -5001,12 +5001,35 @@ and an explicit decision separate from this roadmap.
     `f17c0ac5d4c57519331c44495820d7a4312c6a2f473b93633a42fd8d8c4a784f`.
 
 75. Decide separately whether to authorize one final repaired disposable run.
-    Status: pending. The decision may authorize only 593M-594M, pinned to clean
-    commit `cca9e97518e77c5ca958dfdc3bee753997ed7ac5`, the exact repaired source
-    archive, a fresh output root, and a reviewed one-shot scheduler. It must not
-    alter the candidate, objective, refinement, schedule, gates, thresholds,
-    or seed roles. Keep 511M-515M sealed until a complete disposable artifact
-    and independent replay pass every frozen requirement.
+    Status: complete; one final repaired disposable verification authorized,
+    execution not started. The decision is recorded in
+    `docs/generative_neural_hmsc_iid_v2_final_disposable_authorization_2026-08-01.md`,
+    SHA-256
+    `a3e051a916798a41ea53cdb3d63bcf6f3685a342986003bef01d1284c477d858`.
+
+    The candidate remains pinned to clean commit
+    `cca9e97518e77c5ca958dfdc3bee753997ed7ac5`, archive SHA-256
+    `bb343bcef927455b5ffedb0483015f75f3da053176d58c1f032b3fece7790eb1`,
+    and repaired model SHA-256
+    `87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc`.
+    The reviewed terminal scheduler SHA-256 is
+    `9ca1238d7e88560e58b0e92727c821933e90ec704d1ea69e61a86c4aef31066c`.
+
+    Only `593000001-593000018` training and `594000001-594000018` masked
+    validation may open, using fresh run root
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/generative_iid_v2_disposable_final_cca9e97_20260801`.
+    Any scheduler, numerical, artifact, replay, provenance, warning, or seal
+    failure closes v2 before production and does not authorize another retry.
+    Passing permits only a separate 511M authorization decision.
+
+76. Submit and independently validate the final repaired disposable run.
+    Status: pending. Before submission, verify the scheduler hash, clean source
+    archive hash, isolated source inventory, fresh run/preflight paths, and
+    absence of every inherited opening variable. Submit exactly once with the
+    authorized confirmation, then download and independently validate all 36
+    corpus fingerprints, freeze and checkpoint hashes, finite optimization,
+    deterministic replay, exact target, zero Cholesky failures, provenance,
+    and all 511M-515M seal flags. Do not open 511M-515M.
 
 ### Active Stop Rules
 

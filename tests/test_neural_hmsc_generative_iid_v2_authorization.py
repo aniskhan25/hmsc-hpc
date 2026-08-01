@@ -102,3 +102,37 @@ def test_v2_repaired_preflight_record_keeps_all_seed_roles_sealed():
     assert "a9f3c3f0f535f31217da279f9907f8c1d0fcf11001a7337ffbb4a4fdade9fe6f" in record
     assert "Blocks 593M-594M and 511M-515M remain sealed" in record
     assert "not authorize disposable simulation" in record
+
+
+def test_v2_final_disposable_scheduler_is_terminal_and_exactly_scoped():
+    script = Path(
+        "docs/lumi_generative_neural_hmsc_iid_v2_disposable_final_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    assert "cca9e97518e77c5ca958dfdc3bee753997ed7ac5" in script
+    assert "GENERATE_593M_594M_DISPOSABLE_ONLY" in script
+    assert "593000001-593000018" in script
+    assert "594000001-594000018" in script
+    assert "511000001-515000324" in script
+    assert "87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc" in script
+    assert "b09e3e1eb743fe62a509876a284323e5bb151ce043cac7b60dba8a9a35f9300e" in script
+    assert "--mode preflight" in script
+    assert "--mode disposable-smoke" in script
+    assert "--mode validate-disposable" in script
+    assert "OPEN_GENERATIVE_IID_V2_511M" not in script
+
+
+def test_v2_final_disposable_authorization_is_terminal_and_bounded():
+    record = Path(
+        "docs/generative_neural_hmsc_iid_v2_final_disposable_"
+        "authorization_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert "authorize_one_final_repaired_disposable_verification" in record
+    assert "cca9e97518e77c5ca958dfdc3bee753997ed7ac5" in record
+    assert "bb343bcef927455b5ffedb0483015f75f3da053176d58c1f032b3fece7790eb1" in record
+    assert "9ca1238d7e88560e58b0e92727c821933e90ec704d1ea69e61a86c4aef31066c" in record
+    assert "593000001-593000018" in record
+    assert "594000001-594000018" in record
+    assert "zero failed-Cholesky warnings" in record
+    assert "final disposable execution" in record
+    assert "does not authorize an" in record
+    assert "every 511M-515M seed remain" in record
