@@ -5001,8 +5001,9 @@ and an explicit decision separate from this roadmap.
     `f17c0ac5d4c57519331c44495820d7a4312c6a2f473b93633a42fd8d8c4a784f`.
 
 75. Decide separately whether to authorize one final repaired disposable run.
-    Status: complete; one final repaired disposable verification authorized,
-    execution not started. The decision is recorded in
+    Status: complete; one final repaired disposable verification was
+    authorized and consumed by terminal LUMI job `20521366`. The decision is
+    recorded in
     `docs/generative_neural_hmsc_iid_v2_final_disposable_authorization_2026-08-01.md`,
     SHA-256
     `a3e051a916798a41ea53cdb3d63bcf6f3685a342986003bef01d1284c477d858`.
@@ -5023,13 +5024,34 @@ and an explicit decision separate from this roadmap.
     Passing permits only a separate 511M authorization decision.
 
 76. Submit and independently validate the final repaired disposable run.
-    Status: pending. Before submission, verify the scheduler hash, clean source
-    archive hash, isolated source inventory, fresh run/preflight paths, and
-    absence of every inherited opening variable. Submit exactly once with the
-    authorized confirmation, then download and independently validate all 36
-    corpus fingerprints, freeze and checkpoint hashes, finite optimization,
-    deterministic replay, exact target, zero Cholesky failures, provenance,
-    and all 511M-515M seal flags. Do not open 511M-515M.
+    Status: terminal failure; generative iid v2 is closed before production.
+    The final scheduler was submitted exactly once as LUMI job `20521366` and
+    failed after `00:02:12` with exit code `1:0`.
+
+    The token-free preflight passed and independently validated all 11 frozen
+    source records. The authorized run generated exactly 18 training and 18
+    masked-validation communities. Independent local regeneration from the
+    exact `cca9e975` archive matched all 36 fingerprints and the complete corpus
+    manifest. All 511M-515M flags remained false, and the logs contained zero
+    Cholesky warnings.
+
+    Training nevertheless stopped at the frozen guard with
+    `FloatingPointError: non-finite v2 gradient`. Only the corpus manifest was
+    produced: checkpoint, weights, smoke report, freeze, deterministic replay,
+    and exact-target evidence are absent. The conjunctive terminal gate fails.
+    The full record is
+    `docs/generative_neural_hmsc_iid_v2_final_disposable_failure_2026-08-01.md`,
+    SHA-256
+    `ed835cab3a3dd492a29463604da61afb6fbef6664db6f28c9ab6e98bab1fb993`.
+    Do not retry v2 and do not open 511M-515M.
+
+77. Conduct a no-seed branch-level closure audit.
+    Status: pending. Reconcile the qualified fixed-effect predictive neural
+    capability with the failed iid generative v1/v2 families. Produce a final
+    capability matrix, retain qualified Python MCMC as the statistical
+    reference, and decide which implementation scaffolding should be merged or
+    archived. Do not add another calibration model, representation, or seed
+    opening in this step.
 
 ### Active Stop Rules
 

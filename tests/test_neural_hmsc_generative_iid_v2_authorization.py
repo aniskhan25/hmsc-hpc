@@ -136,3 +136,23 @@ def test_v2_final_disposable_authorization_is_terminal_and_bounded():
     assert "final disposable execution" in record
     assert "does not authorize an" in record
     assert "every 511M-515M seed remain" in record
+
+
+def test_v2_final_disposable_failure_closes_before_production():
+    result = Path(
+        "docs/generative_neural_hmsc_iid_v2_final_disposable_"
+        "failure_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        "close_generative_iid_v2_before_production_nonfinite_gradient" in result
+    )
+    assert "20521366" in result
+    assert "matched all" in result
+    assert "36/36" in result
+    assert "non-finite v2 gradient" in result
+    assert "zero case-insensitive `Cholesky`" in result
+    assert "no `freeze.json` was produced" in result
+    assert "no checkpoint was produced" in result
+    assert "Do not open 511M-515M" in result
+    assert "do not retry" in result
+    assert "representation" in result
