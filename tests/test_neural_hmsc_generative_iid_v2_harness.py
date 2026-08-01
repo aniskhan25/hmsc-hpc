@@ -52,7 +52,17 @@ def test_v2_disposable_harness_validates_all_frozen_documents():
         ("docs/generative_neural_hmsc_iid_v2_seed_" "reaudit_2026-07-31.json.md"),
         ("docs/generative_neural_hmsc_iid_v2_representation_" "decision_2026-07-31.md"),
         ("docs/generative_neural_hmsc_iid_v2_" "implementation_2026-07-31.md"),
+        ("docs/generative_neural_hmsc_iid_v2_" "numerical_review_2026-08-01.md"),
     }
+    inventory = {
+        item["path"]: item["sha256"] for item in harness._source_file_inventory()
+    }
+    assert inventory["pyhmsc/neural/generative_iid_v2.py"] == (
+        "87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc"
+    )
+    assert inventory[
+        "docs/generative_neural_hmsc_iid_v2_numerical_review_2026-08-01.md"
+    ] == harness.NUMERICAL_REVIEW_SHA256
 
 
 def test_token_free_preflight_is_read_only_and_seed_sealed(monkeypatch):

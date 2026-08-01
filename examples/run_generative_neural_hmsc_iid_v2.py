@@ -75,11 +75,17 @@ REPRESENTATION_DECISION = (
 IMPLEMENTATION_EVIDENCE = (
     ROOT / "docs" / "generative_neural_hmsc_iid_v2_implementation_2026-07-31.md"
 )
+NUMERICAL_REVIEW = (
+    ROOT / "docs" / "generative_neural_hmsc_iid_v2_numerical_review_2026-08-01.md"
+)
 REPRESENTATION_DECISION_SHA256 = (
     "13041f6368eeaa64d4eae4446782c99c7a0b8af2a13bb13be9a69bec040df7ea"
 )
 IMPLEMENTATION_EVIDENCE_SHA256 = (
     "0d54f04ea5ec5c654df73594b7ff6614157152ec87bdfc3ecfd09c2401550cab"
+)
+NUMERICAL_REVIEW_SHA256 = (
+    "e3b708a09b0c920676e592759f44f7457cc75decff66138b6b29c509254a6192"
 )
 
 SOURCE_PATHS = (
@@ -93,6 +99,7 @@ SOURCE_PATHS = (
     "docs/generative_neural_hmsc_iid_v2_seed_reaudit_2026-07-31.json.md",
     "docs/generative_neural_hmsc_iid_v2_representation_decision_2026-07-31.md",
     "docs/generative_neural_hmsc_iid_v2_implementation_2026-07-31.md",
+    "docs/generative_neural_hmsc_iid_v2_numerical_review_2026-08-01.md",
 )
 
 
@@ -353,6 +360,7 @@ def run_disposable_smoke(
         "seed_audit_sha256": GENERATIVE_IID_V2_SEED_AUDIT_SHA256,
         "representation_decision_sha256": REPRESENTATION_DECISION_SHA256,
         "implementation_evidence_sha256": IMPLEMENTATION_EVIDENCE_SHA256,
+        "numerical_review_sha256": NUMERICAL_REVIEW_SHA256,
         "artifacts": {
             "corpus_manifest": _artifact_record(corpus_path, output=output),
             "report": _artifact_record(report_path, output=output),
@@ -714,6 +722,7 @@ def _validate_frozen_documents() -> None:
         SEED_AUDIT: GENERATIVE_IID_V2_SEED_AUDIT_SHA256,
         REPRESENTATION_DECISION: REPRESENTATION_DECISION_SHA256,
         IMPLEMENTATION_EVIDENCE: IMPLEMENTATION_EVIDENCE_SHA256,
+        NUMERICAL_REVIEW: NUMERICAL_REVIEW_SHA256,
     }
     for path, digest in expected.items():
         if file_sha256(path) != digest:
