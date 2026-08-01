@@ -1,0 +1,31 @@
+from pathlib import Path
+
+
+def test_v2_disposable_scheduler_is_exactly_scoped():
+    script = Path(
+        "docs/lumi_generative_neural_hmsc_iid_v2_disposable_sbatch.sh"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --partition=dev-g" in script
+    assert "#SBATCH --time=03:00:00" in script
+    assert "#SBATCH --gpus-per-node=1" in script
+    assert "940d73d6de6e032797e4d695bd9799a74ef0b943" in script
+    assert "GENERATE_593M_594M_DISPOSABLE_ONLY" in script
+    assert "593000001-593000018" in script
+    assert "594000001-594000018" in script
+    assert "511000001-515000324" in script
+    assert 'env -u "${OPENING_ENV}"' in script
+    assert "--mode preflight" in script
+    assert "--mode disposable-smoke" in script
+    assert "--mode validate-disposable" in script
+    assert "OPEN_GENERATIVE_IID_V2_511M" not in script
+
+
+def test_v2_disposable_authorization_keeps_later_blocks_sealed():
+    record = Path(
+        "docs/generative_neural_hmsc_iid_v2_disposable_"
+        "authorization_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert "76911182c1d34bcd4c979f70b1340af126ddd89baafdc821c4024cc6f846a43a" in record
+    assert "7a0bf9ecf89a5e1896ba254d24e916978cfe8e76caf0898a7dffef1df679cf07" in record
+    assert "does not open 511M-515M" in record
+    assert "Any retry requires a new" in record

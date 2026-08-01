@@ -4867,6 +4867,34 @@ and an explicit decision separate from this roadmap.
     IWELBO, exact target, optimizer movement, source provenance, and all
     511M-515M seal booleans. Disposable output cannot tune the candidate.
 
+71. Authorize one 593M-594M disposable smoke and independent replay.
+    Status: authorized for one LUMI `dev-g` execution; result pending. The
+    authorization record is
+    `docs/generative_neural_hmsc_iid_v2_disposable_authorization_2026-08-01.md`,
+    SHA-256
+    `2d4e8068be49c4b21a4c9dacc3067074b92d2e7572e093a7df8fd72c2a63988c`.
+
+    Source is pinned to
+    `940d73d6de6e032797e4d695bd9799a74ef0b943` and packaged as isolated archive
+    SHA-256
+    `76911182c1d34bcd4c979f70b1340af126ddd89baafdc821c4024cc6f846a43a`.
+    The shared dirty LUMI checkout must not be modified or used. The reviewed
+    scheduler wrapper SHA-256 is
+    `7a0bf9ecf89a5e1896ba254d24e916978cfe8e76caf0898a7dffef1df679cf07`.
+
+    Only `593000001-593000018` training and `594000001-594000018` masked
+    validation may open, with exact token
+    `OPEN_GENERATIVE_IID_V2_593M_594M_DISPOSABLE_SMOKE=GENERATE_593M_594M_DISPOSABLE_ONLY`.
+    The job runs token-free preflight, two-epoch candidate training, frozen
+    validation, and independent replay. Blocks 511M-515M remain sealed.
+
+    Next, submit the authorized job on `dev-g`, monitor it through completion,
+    download the complete run, and independently validate all 36 corpus
+    fingerprints, freeze inventory, checkpoint hashes, finite optimization,
+    fixed validation objective, exact target, optimizer movement, source
+    provenance, and all later-seed seals. Do not advance on scheduler success
+    alone.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and
