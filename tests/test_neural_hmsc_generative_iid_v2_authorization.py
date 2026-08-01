@@ -63,3 +63,16 @@ def test_v2_disposable_retry_authorization_is_bounded():
     assert "does not open 511M-515M" in record
     assert "does not authorize another retry" in record
     assert "generative_iid_v2_disposable_retry1_940d73d_20260801" in record
+
+
+def test_v2_disposable_retry_failure_stops_before_production():
+    result = Path(
+        "docs/generative_neural_hmsc_iid_v2_disposable_retry_"
+        "failure_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert "stop_before_511m_numerical_failure" in result
+    assert "matched all 36" in result
+    assert "non-finite v2 gradient" in result
+    assert "checkpoint manifest or weights" in result
+    assert "Do not open 511M-515M" in result
+    assert "retry authorization is consumed" in result

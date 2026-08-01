@@ -4917,7 +4917,8 @@ and an explicit decision separate from this roadmap.
     every 511M-515M seal boolean.
 
 72. Separately authorize one corrected 593M-594M disposable retry.
-    Status: authorized; execution pending. The immutable decision is recorded
+    Status: completed with numerical failure in LUMI job `20518775`; stop before
+    511M. The immutable decision is recorded
     in
     `docs/generative_neural_hmsc_iid_v2_disposable_retry_authorization_2026-08-01.md`,
     SHA-256
@@ -4934,10 +4935,31 @@ and an explicit decision separate from this roadmap.
     The corrected full token-free LUMI preflight already passed without
     simulation generation or output creation. Blocks 511M-515M remain sealed.
 
-    Next, submit this one corrected retry, monitor it to completion, download
-    the complete artifact tree, and independently validate every preregistered
-    corpus, freeze, checkpoint, optimization, replay, exact-target, provenance,
-    and later-seed seal requirement before any production authorization.
+    The corrected token-free preflight passed. The run generated the authorized
+    18 training and 18 masked-validation communities, and independent replay
+    matched all 36 corpus fingerprints. Both preflight and corpus manifest keep
+    511M-515M sealed. Training then emitted failed batched Cholesky operations
+    and stopped at the frozen guard with `FloatingPointError: non-finite v2
+    gradient`. No checkpoint, smoke report, freeze, post-freeze validation,
+    validation IWELBO, or exact-target replay was produced. The artifact and
+    finite-optimization conjunction therefore fails. Full evidence is in
+    `docs/generative_neural_hmsc_iid_v2_disposable_retry_failure_2026-08-01.md`.
+
+    Decision: `stop_before_511m_numerical_failure`. The retry authorization is
+    consumed. Do not open 511M-515M and do not report the disposable smoke as a
+    pass.
+
+    The frozen failure record SHA-256 is
+    `ac9881c9574cae15eea1a4ff51c8effcd7b4bf57500abf555b9e8f0c89760f5f`.
+
+73. Conduct a bounded no-seed numerical decision for generative iid v2.
+    Status: pending. Determine with ordinary non-ledger fixtures whether the
+    non-finite gradient is a backend-specific implementation defect that can be
+    repaired while preserving the frozen posterior mathematics,
+    representation, objective, refinement, schedule, gates, thresholds, and
+    seed roles. If that constrained repair cannot establish finite gradients
+    on the target LUMI backend, close the generative iid v2 family. Do not
+    authorize another disposable run or open 511M-515M during this review.
 
 ### Active Stop Rules
 
