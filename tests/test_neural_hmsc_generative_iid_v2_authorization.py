@@ -90,3 +90,15 @@ def test_v2_repaired_preflight_scheduler_is_token_free_and_hash_pinned():
     assert "disposable_seed_ranges_opened" in script
     assert "GENERATE_593M" not in script
     assert "OPEN_GENERATIVE_IID_V2_511M" not in script
+
+
+def test_v2_repaired_preflight_record_keeps_all_seed_roles_sealed():
+    record = Path(
+        "docs/generative_neural_hmsc_iid_v2_repaired_preflight_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert "repaired_boundary_preflight_passed_no_seed_opened" in record
+    assert "cca9e97518e77c5ca958dfdc3bee753997ed7ac5" in record
+    assert "bb343bcef927455b5ffedb0483015f75f3da053176d58c1f032b3fece7790eb1" in record
+    assert "a9f3c3f0f535f31217da279f9907f8c1d0fcf11001a7337ffbb4a4fdade9fe6f" in record
+    assert "Blocks 593M-594M and 511M-515M remain sealed" in record
+    assert "not authorize disposable simulation" in record

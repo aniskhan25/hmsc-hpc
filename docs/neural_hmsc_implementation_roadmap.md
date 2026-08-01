@@ -4978,13 +4978,35 @@ and an explicit decision separate from this roadmap.
     not converted into a pass. Blocks 511M-515M remain sealed.
 
 74. Freeze the numerical repair before any disposable decision.
-    Status: repair and no-ledger evidence committed at `a057721`; harness
-    refreeze and preflight pending. The clean commit contains the repaired
-    source, diagnostic, scheduler, tests, and bounded review evidence. Next,
-    update and verify the sealed harness source inventory to include the repair
-    evidence, then run token-free/no-seed preflight pinned to a clean reviewed
-    commit. Only afterward may a separate decision consider one final
-    593M-594M disposable verification. Do not open 511M-515M.
+    Status: complete. Repair and no-ledger evidence were committed at
+    `a057721`; the harness refreeze is commit
+    `80a0a35c57eaf1f0786c473eea5185ff149b72cf`, and the final clean preflight
+    boundary is `cca9e97518e77c5ca958dfdc3bee753997ed7ac5`.
+
+    The harness now validates the immutable numerical-review hash, inventories
+    repaired model SHA-256
+    `87828857ee1718a8825a1a15e7af99abe49a86ee4d179f6cbce6591162aa71bc`,
+    and carries the numerical-review digest into future freeze metadata. The
+    complete local slow suite passed 30/30 tests.
+
+    LUMI token-free preflight job `20520889` completed at clean commit
+    `cca9e97518e77c5ca958dfdc3bee753997ed7ac5`. Its JSON SHA-256 is
+    `a9f3c3f0f535f31217da279f9907f8c1d0fcf11001a7337ffbb4a4fdade9fe6f`,
+    byte-identical to local output. All 11 source records passed independent
+    path/size/hash validation. No simulation or output generation occurred and
+    every 593M-594M and 511M-515M opening flag remained false. Full evidence is
+    in
+    `docs/generative_neural_hmsc_iid_v2_repaired_preflight_2026-08-01.md`,
+    SHA-256
+    `f17c0ac5d4c57519331c44495820d7a4312c6a2f473b93633a42fd8d8c4a784f`.
+
+75. Decide separately whether to authorize one final repaired disposable run.
+    Status: pending. The decision may authorize only 593M-594M, pinned to clean
+    commit `cca9e97518e77c5ca958dfdc3bee753997ed7ac5`, the exact repaired source
+    archive, a fresh output root, and a reviewed one-shot scheduler. It must not
+    alter the candidate, objective, refinement, schedule, gates, thresholds,
+    or seed roles. Keep 511M-515M sealed until a complete disposable artifact
+    and independent replay pass every frozen requirement.
 
 ### Active Stop Rules
 
