@@ -5046,12 +5046,25 @@ and an explicit decision separate from this roadmap.
     Do not retry v2 and do not open 511M-515M.
 
 77. Conduct a no-seed branch-level closure audit.
-    Status: pending. Reconcile the qualified fixed-effect predictive neural
-    capability with the failed iid generative v1/v2 families. Produce a final
-    capability matrix, retain qualified Python MCMC as the statistical
-    reference, and decide which implementation scaffolding should be merged or
-    archived. Do not add another calibration model, representation, or seed
-    opening in this step.
+    Status: complete. The audit is recorded in
+    `docs/generative_neural_hmsc_branch_closure_audit_2026-08-01.md`, SHA-256
+    `696aecb72290cbbf2fe907f78a61f526a270ca1d5766ff60f135b31b3db7763b`.
+
+    The branch added no qualified structural neural capability. Retain the
+    immutable v0.1 and variable-probit-v1 marginal baselines, the
+    predictive-only affine ensemble, qualified Python MCMC, and the reusable
+    simulator/comparator/artifact infrastructure. Archive generative iid v1
+    and v2 as negative research evidence. Retire 511M-515M without opening
+    them, and close this branch for model-family development.
+
+78. Conduct a bounded no-seed go/no-go review for any future generative family.
+    Status: pending. Do not implement a model or allocate seeds. A new branch
+    and preregistration are justified only if the proposed representation
+    addresses both v1 structural collapse and v2 numerical brittleness,
+    defines identifiable association and joint-posterior targets, passes an
+    ordinary mixed-shape optimization stress design on paper, uses fresh seed
+    blocks, and retains a one-redesign terminal stop rule. If no design clears
+    that review, keep the generative path closed.
 
 ### Active Stop Rules
 
