@@ -4916,6 +4916,29 @@ and an explicit decision separate from this roadmap.
     objective, exact-target replay, optimizer movement, source provenance, and
     every 511M-515M seal boolean.
 
+72. Separately authorize one corrected 593M-594M disposable retry.
+    Status: authorized; execution pending. The immutable decision is recorded
+    in
+    `docs/generative_neural_hmsc_iid_v2_disposable_retry_authorization_2026-08-01.md`,
+    SHA-256
+    `257cba945a3d7a40697190812021a69d01be5e7a831d8f2fca0e69018ef4770f`.
+    It retains source commit
+    `940d73d6de6e032797e4d695bd9799a74ef0b943`, archive SHA-256
+    `76911182c1d34bcd4c979f70b1340af126ddd89baafdc821c4024cc6f846a43a`,
+    and corrected scheduler SHA-256
+    `ff618d92c4d4f616507aaa31e2f434cb2cdaa9b2d985bcc0e7e567bc6735cdb7`.
+
+    Only disposable training `593000001-593000018` and masked validation
+    `594000001-594000018` may open. The fresh retry run root is
+    `/scratch/project_462000131/anisrahm/hmsc-hpc-runs/generative_iid_v2_disposable_retry1_940d73d_20260801`.
+    The corrected full token-free LUMI preflight already passed without
+    simulation generation or output creation. Blocks 511M-515M remain sealed.
+
+    Next, submit this one corrected retry, monitor it to completion, download
+    the complete artifact tree, and independently validate every preregistered
+    corpus, freeze, checkpoint, optimization, replay, exact-target, provenance,
+    and later-seed seal requirement before any production authorization.
+
 ### Active Stop Rules
 
 - A failed candidate family may receive one representation-level redesign and

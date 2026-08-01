@@ -49,3 +49,17 @@ def test_v2_disposable_retry_scheduler_uses_container_safe_pythonpath():
     ).read_text(encoding="utf-8")
     assert "ff618d92c4d4f616507aaa31e2f434cb2cdaa9b2d985bcc0e7e567bc6735cdb7" in attempt
     assert "No 593M or 594M seed was opened" in attempt
+
+
+def test_v2_disposable_retry_authorization_is_bounded():
+    record = Path(
+        "docs/generative_neural_hmsc_iid_v2_disposable_retry_"
+        "authorization_2026-08-01.md"
+    ).read_text(encoding="utf-8")
+    assert "ff618d92c4d4f616507aaa31e2f434cb2cdaa9b2d985bcc0e7e567bc6735cdb7" in record
+    assert "940d73d6de6e032797e4d695bd9799a74ef0b943" in record
+    assert "593000001-593000018" in record
+    assert "594000001-594000018" in record
+    assert "does not open 511M-515M" in record
+    assert "does not authorize another retry" in record
+    assert "generative_iid_v2_disposable_retry1_940d73d_20260801" in record
