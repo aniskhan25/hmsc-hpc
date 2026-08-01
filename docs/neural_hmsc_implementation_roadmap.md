@@ -5058,13 +5058,49 @@ and an explicit decision separate from this roadmap.
     them, and close this branch for model-family development.
 
 78. Conduct a bounded no-seed go/no-go review for any future generative family.
-    Status: pending. Do not implement a model or allocate seeds. A new branch
-    and preregistration are justified only if the proposed representation
-    addresses both v1 structural collapse and v2 numerical brittleness,
-    defines identifiable association and joint-posterior targets, passes an
-    ordinary mixed-shape optimization stress design on paper, uses fresh seed
-    blocks, and retains a one-redesign terminal stop rule. If no design clears
-    that review, keep the generative path closed.
+    Status: complete with a scoped pivot. Do not build a third standalone
+    amortized posterior. Proceed only to preregistration for
+    `neural_transport_hmsc_iid_probit_v0_1`: a neural warm start and frozen
+    data-conditioned affine transport around the existing corrected HMC/Gibbs
+    target. The network may improve initialization and geometry but may not
+    define the accepted posterior.
+
+    The decision is recorded in
+    `docs/neural_transport_hmsc_go_no_go_2026-08-01.md`, SHA-256
+    `135adb8b2614d75f1aab17f2fbe0d2d379b9c971aec62e2fbfa5968acb6fc887`.
+    The first scope is fixed at probit, two covariates, 40 sites, 12 species,
+    two latent factors, and one iid site-level random intercept. Exact posterior
+    parity is a prerequisite to scoring time-to-convergence or ESS/second. The
+    identity transport, warm-start-only path, and ordinary Python MCMC are
+    mandatory controls.
+
+79. Preregister Neural-Transport HMSC on a new branch.
+    Status: pending review of the Milestone 78 decision. If accepted, create a
+    new feature branch and hash-freeze the target/state contract, affine
+    transform and Jacobian, training targets, ordinary-Gibbs fallback,
+    baselines, exactness gates, efficiency gates, fresh seed ledger, and
+    terminal stop rule. Do not implement the model or generate simulations in
+    this milestone.
+
+80. Implement the ordinary-fixture transport kernel.
+    Status: blocked by Milestone 79. Extract the reusable HMC target/state
+    adapter, then implement the context encoder, warm start, positive affine
+    bijector, transformed corrected HMC, and explicit Gibbs fallback. All
+    target/Jacobian, identity, finite-gradient, stationary-moment, permutation,
+    padding, compatibility, fallback, and immutable-regression tests must pass
+    before a disposable seed is authorized.
+
+81. Run fresh disposable exactness and efficiency qualification.
+    Status: blocked by Milestones 79-80. Compare ordinary Python MCMC,
+    warm-start-only MCMC, and corrected neural-transport HMC/Gibbs. Every
+    posterior-parity gate must pass before scoring the proposed 25% reduction
+    in time to convergence and 1.25x median ESS/second target.
+
+82. Run fixed validation and bounded real-data confirmation.
+    Status: blocked by Milestone 81. Open fixed validation only after a complete
+    disposable pass. Real ecological outcomes are last and may evaluate the
+    frozen transport but may not train or select it. Traits, phylogeny, spatial
+    effects, broader likelihoods, and variable shapes remain out of scope.
 
 ### Active Stop Rules
 
